@@ -21,6 +21,17 @@ test('mescla arquivo com defaults', () => {
   const s = loadSettings(p);
   assert.equal(s.fontSize, 18);
   assert.equal(s.theme, 'agzos-dark');
+  assert.equal(s.iconTheme, 'lucide-color');
+});
+
+test('mescla e persiste iconTheme customizado', () => {
+  const p = tmpFile();
+  fs.writeFileSync(p, JSON.stringify({ iconTheme: 'emoji' }));
+  const s = loadSettings(p);
+  assert.equal(s.iconTheme, 'emoji');
+
+  saveSettings(p, { ...s, iconTheme: 'badges' });
+  assert.equal(loadSettings(p).iconTheme, 'badges');
 });
 
 test('JSON inválido vira backup e retorna defaults', () => {

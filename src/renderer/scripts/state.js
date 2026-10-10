@@ -9,6 +9,7 @@ const State = {
   expandedDirs: new Set(),
   settings: {
     theme: 'agzos-dark',
+    iconTheme: 'lucide-color',
     performanceMode: 'balanced',
     aiProvider: null,
     telemetry: false,
