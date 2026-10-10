@@ -218,7 +218,7 @@ const deps = {
 require('./ipc/fs').register(ipcMain);
 require('./ipc/dialog').register(ipcMain, deps);
 require('./ipc/term').register(ipcMain);
-require('./ipc/settings').register(ipcMain, deps);
+const settingsStore = require('./ipc/settings').register(ipcMain, deps);
 require('./ipc/app-info').register(ipcMain, deps);
 
 /* -------------------------------------------------------------------------- */
