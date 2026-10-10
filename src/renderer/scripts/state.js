@@ -11,7 +11,6 @@ const State = {
     theme: 'agzos-dark',
     performanceMode: 'balanced',
     aiProvider: null,
-    aiApiKey: null,
     telemetry: false,
     fontSize: 14,
     recentFolders: [],

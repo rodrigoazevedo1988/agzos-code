@@ -210,10 +210,14 @@ function invalidateTree() {
    Public API
    -------------------------------------------------------------------------- */
 export async function openWorkspace(folderPath) {
+  const allowed = await window.agzos.workspace.open(folderPath);
+  if (!allowed) {
+    toast('Abra a pasta pelo diálogo.', 'error');
+    return;
+  }
   State.workspaceRoot = folderPath;
   treeRoot = null;
   document.getElementById('topbar-workspace').textContent = `— ${basename(folderPath)}`;
-  await window.agzos.settings.save({ ...State.settings, recentFolders: dedup([folderPath, ...State.settings.recentFolders]).slice(0, 10) });
   render();
 }
 
@@ -260,4 +264,3 @@ function iconForFile(name) {
 function cssEscape(s) {
   return s.replace(/[\\"]/g, '\\$&');
 }
-function dedup(arr) { return [...new Set(arr)]; }

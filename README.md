@@ -215,7 +215,7 @@ Customizar o tema: edite as CSS variables em `app.css` ou crie um novo bloco `bo
 
 1. Fork + branch (`git checkout -b feature/minha-feature`)
 2. `npm run dev` para iterar
-3. `npm run check` para rodar validações (TODO: adicionar linter + tests)
+3. `npm run check` (lint + testes unitários) e `npm run test:e2e` (Playwright; no Linux sem display use `xvfb-run -a npm run test:e2e`)
 4. PR descrevendo o que mudou e por quê
 
 ## 📋 TODOs próximos

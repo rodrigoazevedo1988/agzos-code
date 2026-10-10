@@ -1,6 +1,6 @@
 # ADR-0001 — Base do editor: Electron + Monaco próprio vs. fork do Code-OSS
 
-**Status:** Proposto (decidir antes de iniciar a Fase 1)
+**Status:** Aceito — opção A (09/10/2026)
 **Data:** 09/10/2026
 
 ## Contexto
@@ -31,15 +31,22 @@ Extensões do VS Code **não rodam** no app atual. Para rodar, seria preciso rei
 - ✅ Rebase com upstream fica muito mais barato (menos patches no core).
 - ✅ O código de UI atual (onboarding, welcome, tema) pode ser portado como webview de extensão.
 
-## Recomendação
+## Decisão
 
-**Opção C.** O must-have do MVP inclui compatibilidade com extensões, chat com aplicação de diffs e multi-GitHub — tudo isso já existe como API no VS Code.
-Continuar investindo no app Monaco próprio gera trabalho que será descartado na migração.
+**Opção A — manter Electron + Monaco próprio**, decidida em 09/10/2026.
 
-Até a decisão, a v0.x atual segue como protótipo de UX (onboarding, welcome, tema, identidade) e laboratório da camada de IA.
-A camada de IA deve ser escrita em TypeScript, independente de UI, para ser reaproveitada em qualquer opção.
+A recomendação técnica inicial era a opção C (fork Code-OSS). O time escolheu a opção A pelo peso do fork:
+build de 30–60 min por plataforma, máquina de 16 GB+ e rebase mensal com upstream.
+
+Decisões complementares (09/10/2026):
+- Chat de IA: painel próprio Agzos.
+- Primeiro provider: compatível com OpenAI (cobre OpenAI, Groq, OpenRouter, Ollama, Gemini e endpoints custom).
+- Assinatura de código: sem certificados por enquanto.
 
 ## Consequências
 
-- Fase 1 começa com um spike de 1 semana: build do Code-OSS/VSCodium com branding Agzos nas 3 plataformas.
-- Se o spike falhar (custo de build/CI inviável), registrar nova decisão e seguir com A, removendo do PRD a promessa de compatibilidade com extensões.
+- **Extensões do VS Code não serão suportadas.** O PRD foi ajustado: o objetivo "Familiaridade" passa a ser atalhos, layout e temas no estilo VS Code.
+- Recursos que o VS Code traz prontos são implementados por nós, em escopo mínimo: Git, terminal com pty, busca com ripgrep, IntelliSense via workers do Monaco (TS/JS/JSON/CSS/HTML).
+- Outras linguagens (Python, Go etc.) ficam sem IntelliSense até uma fase futura com `monaco-languageclient` + LSP.
+- Build continua com `electron-builder`, em minutos.
+- Se no futuro a compatibilidade com extensões virar requisito, reabrir este ADR.
