@@ -11,6 +11,9 @@ import { setupAI } from './ai-chat.js';
 import { setupSearch } from './search.js';
 import { initTerminal, toggleTerminal, focusTerminal } from './terminal.js';
 import { openWorkspace } from './file-tree.js';
+import { lucideIcon } from './lucide.js';
+import { showWelcome, hideWelcome, showEditorWelcome } from './welcome.js';
+import { startOnboarding, exitOnboarding } from './onboarding.js';
 
 const State = window.AgzosState;
 
@@ -18,12 +21,22 @@ const State = window.AgzosState;
    Boot
    -------------------------------------------------------------------------- */
 async function boot() {
-  // Carrega settings
+  // 1) Carrega settings
   const s = await window.agzos.settings.load();
   Object.assign(State.settings, s);
-  applySettingsToUI();
 
-  // Setup Monaco (carrega vendor on demand)
+  // 2) Carrega app info
+  const info = await window.agzos.app.info();
+  State.appVersion = info.version;
+  State.platform = info.platform;
+
+  // 3) Inicializa Lucide sprite
+  await lucideIcon.ready;
+
+  // 4) Decora todos os pontos com .icon-host usando data-icon
+  hydrateLucideIcons();
+
+  // 5) Setup Monaco
   try {
     await setupEditor();
   } catch (e) {
@@ -31,14 +44,20 @@ async function boot() {
     return;
   }
 
-  // Setup command palette
+  // 6) Aplica settings à UI
+  applySettingsToUI();
+
+  // 7) Setup command palette
   setupCommandPalette();
 
-  // Setup AI
+  // 8) Setup panels
   setupAI();
   setupSearch();
 
-  // Atalho Ctrl+P → busca rápida
+  // 9) Welcome do editor (estado vazio)
+  showEditorWelcome();
+
+  // 10) Topbar search
   document.getElementById('search').addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') {
       const q = e.target.value.trim();
@@ -47,7 +66,7 @@ async function boot() {
     }
   });
 
-  // Botões topbar
+  // 11) Botões topbar
   document.getElementById('btn-command-palette').addEventListener('click', showCommandPalette);
   document.getElementById('btn-toggle-terminal').addEventListener('click', toggleTerminal);
   document.getElementById('btn-toggle-sidebar').addEventListener('click', () => {
@@ -56,28 +75,150 @@ async function boot() {
   });
   document.getElementById('btn-settings').addEventListener('click', () => switchSidebarView('settings'));
 
-  // Botões do header da sidebar
+  // 12) Botões do header da sidebar
   document.getElementById('btn-open-folder').addEventListener('click', openFolderDialog);
   document.getElementById('btn-open-folder-2').addEventListener('click', openFolderDialog);
   document.getElementById('btn-new-file').addEventListener('click', newFileInRoot);
   document.getElementById('btn-new-folder').addEventListener('click', newFolderInRoot);
+  document.getElementById('btn-close-bottom').addEventListener('click', () => {
+    document.getElementById('bottom-panel').hidden = true;
+    State.bottomHidden = true;
+  });
 
-  // Botões welcome
-  document.getElementById('welcome-open-folder').addEventListener('click', openFolderDialog);
-  document.getElementById('welcome-open-file').addEventListener('click', openFileDialog);
-  document.getElementById('welcome-clone').addEventListener('click', cloneRepo);
-
-  // Activity bar
+  // 13) Activity bar
   document.querySelectorAll('.activity-btn').forEach((btn) => {
     btn.addEventListener('click', () => switchSidebarView(btn.dataset.view));
   });
 
-  // Settings inputs
+  // 14) Bottom tabs
+  document.querySelectorAll('.bottom-tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.bottom-tab').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.bottom-pane').forEach((p) => p.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById(`pane-${t.dataset.tab}`).classList.add('active');
+    });
+  });
+
+  // 15) Settings inputs
+  bindSettingsInputs();
+
+  // 16) Atalhos globais
+  bindShortcuts();
+
+  // 17) Menu nativo → renderer
+  window.agzos.onMenu((channel) => {
+    if (channel === 'menu:open-folder') openFolderDialog();
+    else if (channel === 'menu:save') saveActive();
+    else if (channel === 'menu:command-palette') showCommandPalette();
+    else if (channel === 'menu:toggle-terminal') toggleTerminal();
+    else if (channel === 'menu:toggle-sidebar') document.body.classList.toggle('sidebar-hidden');
+  });
+
+  // 18) Init terminal (lazy no primeiro toggle)
+  let termInit = false;
+  const observer = new MutationObserver(() => {
+    const panel = document.getElementById('bottom-panel');
+    if (!panel.hidden && !termInit) {
+      termInit = true;
+      initTerminal();
+    }
+  });
+  observer.observe(document.getElementById('bottom-panel'), { attributes: true, attributeFilter: ['hidden'] });
+
+  // 19) Expor para debug
+  window.AgzosEditor = { openFile, saveActive };
+  window.AgzosOnboarding = { start: startOnboarding, exit: exitOnboarding };
+
+  // 20) Atalho no menu: Help → Onboarding
+  setTimeout(() => {
+    const btn = document.getElementById('btn-restart-onboarding');
+    if (btn) btn.addEventListener('click', () => {
+      State.onboardingForced = true;
+      startOnboarding();
+    });
+  }, 100);
+
+  // 21) Decide se mostra Welcome/Onboarding
+  // - Se nunca viu welcome → welcome + onboarding
+  // - Se viu welcome mas não completou onboarding → onboarding
+  // - Se completou → só o editor welcome normal
+  if (!State.settings.welcomeSeen) {
+    setTimeout(() => showWelcome(), 400);
+  } else if (!State.settings.onboardingCompleted && !State.settings.onboardingSkipped) {
+    setTimeout(() => startOnboarding(), 400);
+  }
+
+  console.log(`[Agzos Code] v${info.version} • Electron ${info.electron} • ${info.platform}/${info.arch}`);
+  updateStatusAI();
+  toast('Agzos Code carregado.', 'success', 1500);
+}
+
+/* --------------------------------------------------------------------------
+   Lucide: percorre .icon-host[data-icon] e injeta SVG
+   -------------------------------------------------------------------------- */
+function hydrateLucideIcons() {
+  const map = {
+    'btn-toggle-sidebar': 'panel-left-close',
+    'btn-toggle-terminal': 'square-terminal',
+    'btn-command-palette': 'square-asterisk',
+    'btn-settings': 'settings',
+    'btn-new-file': 'file-plus',
+    'btn-new-folder': 'folder-plus',
+    'btn-open-folder': 'folder-open',
+    'btn-close-bottom': 'x',
+    'cmd-palette-input-icon': 'square-asterisk',
+    'status-remote': 'git-branch',
+    'status-perf': 'zap',
+    'status-ai': 'sparkles',
+  };
+  // Activity bar
+  const activityMap = {
+    'explorer': 'folder-tree',
+    'search': 'search',
+    'git': 'git-branch',
+    'extensions': 'puzzle',
+    'ai': 'sparkles',
+    'settings': 'settings',
+  };
+  document.querySelectorAll('.activity-btn').forEach((btn) => {
+    const view = btn.dataset.view;
+    if (view && activityMap[view]) {
+      btn.appendChild(lucideIcon(activityMap[view], { size: 22, strokeWidth: 1.6 }));
+    }
+  });
+  // IDs simples
+  Object.entries(map).forEach(([id, name]) => {
+    const el = document.getElementById(id);
+    if (el) el.appendChild(lucideIcon(name, { size: id === 'status-remote' || id === 'status-perf' || id === 'status-ai' ? 12 : 16, strokeWidth: 1.8 }));
+  });
+}
+
+/* --------------------------------------------------------------------------
+   Settings
+   -------------------------------------------------------------------------- */
+function applySettingsToUI() {
+  const s = State.settings;
+  document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${s.theme}`;
+  if (s.performanceMode === 'economy') document.body.classList.add('perf-economy');
+  if (s.performanceMode === 'high') document.body.classList.add('perf-high');
+  document.getElementById('setting-theme').value = s.theme;
+  document.getElementById('setting-perf').value = s.performanceMode;
+  document.getElementById('setting-telemetry').checked = !!s.telemetry;
+  document.getElementById('setting-fontsize').value = s.fontSize;
+  document.getElementById('setting-ai-provider').value = s.aiProvider || '';
+  document.getElementById('setting-ai-key').value = s.aiApiKey || '';
+  document.getElementById('status-perf').textContent = `${s.performanceMode === 'high' ? 'alta performance' : s.performanceMode}`;
+}
+
+function bindSettingsInputs() {
   document.getElementById('setting-theme').addEventListener('change', async (e) => {
     const theme = e.target.value;
     document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${theme}`;
     const mod = await import('./editor.js');
     mod.applyTheme(theme);
+    // Re-renderiza welcome com novo logo
+    if (!State.workspaceRoot || !State.activePath) showEditorWelcome();
   });
   document.getElementById('setting-perf').addEventListener('change', async (e) => {
     const mode = e.target.value;
@@ -85,7 +226,7 @@ async function boot() {
     document.body.classList.remove('perf-economy', 'perf-high');
     if (mode === 'economy') document.body.classList.add('perf-economy');
     if (mode === 'high') document.body.classList.add('perf-high');
-    document.getElementById('status-perf').textContent = `⚡ ${mode === 'high' ? 'alta performance' : mode}`;
+    document.getElementById('status-perf').textContent = mode === 'high' ? 'alta performance' : mode;
     await window.agzos.settings.save(State.settings);
   });
   document.getElementById('setting-telemetry').addEventListener('change', async (e) => {
@@ -107,90 +248,34 @@ async function boot() {
     State.settings.aiApiKey = e.target.value || null;
     await window.agzos.settings.save(State.settings);
   });
-
-  // Bottom panel
-  document.getElementById('btn-close-bottom').addEventListener('click', () => {
-    document.getElementById('bottom-panel').hidden = true;
-    State.bottomHidden = true;
-  });
-  document.querySelectorAll('.bottom-tab').forEach((t) => {
-    t.addEventListener('click', () => {
-      document.querySelectorAll('.bottom-tab').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.bottom-pane').forEach((p) => p.classList.remove('active'));
-      t.classList.add('active');
-      document.getElementById(`pane-${t.dataset.tab}`).classList.add('active');
-    });
-  });
-
-  // Atalhos globais
-  bindShortcuts();
-
-  // Menu nativo → renderer
-  window.agzos.onMenu((channel) => {
-    if (channel === 'menu:open-folder') openFolderDialog();
-    else if (channel === 'menu:save') saveActive();
-    else if (channel === 'menu:command-palette') showCommandPalette();
-    else if (channel === 'menu:toggle-terminal') toggleTerminal();
-    else if (channel === 'menu:toggle-sidebar') document.body.classList.toggle('sidebar-hidden');
-  });
-
-  // Init terminal (lazy no primeiro toggle, mas já carrega o módulo)
-  // Vamos iniciar o terminal quando o usuário abrir pela 1ª vez.
-  let termInit = false;
-  const observer = new MutationObserver(() => {
-    const panel = document.getElementById('bottom-panel');
-    if (!panel.hidden && !termInit) {
-      termInit = true;
-      initTerminal();
-    }
-  });
-  observer.observe(document.getElementById('bottom-panel'), { attributes: true, attributeFilter: ['hidden'] });
-
-  // Expor para debug + integrações
-  window.AgzosEditor = { openFile, saveActive };
-
-  // Carrega app info
-  const info = await window.agzos.app.info();
-  document.title = `Agzos Code ${info.version}`;
-  console.log(`[Agzos Code] v${info.version} • Electron ${info.electron} • ${info.platform}/${info.arch}`);
-
-  // Restaura folders recentes (se houver)
-  if (State.settings.recentFolders && State.settings.recentFolders.length > 0) {
-    const last = State.settings.recentFolders[0];
-    // Opcional: reabrir automaticamente. Comentado pra evitar carga surpresa.
-    // await openWorkspace(last);
-  }
-
-  updateStatusAI();
-  toast('Agzos Code carregado.', 'success', 1500);
-}
-
-function applySettingsToUI() {
-  const s = State.settings;
-  document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${s.theme}`;
-  if (s.performanceMode === 'economy') document.body.classList.add('perf-economy');
-  if (s.performanceMode === 'high') document.body.classList.add('perf-high');
-  document.getElementById('setting-theme').value = s.theme;
-  document.getElementById('setting-perf').value = s.performanceMode;
-  document.getElementById('setting-telemetry').checked = !!s.telemetry;
-  document.getElementById('setting-fontsize').value = s.fontSize;
-  document.getElementById('setting-ai-provider').value = s.aiProvider || '';
-  document.getElementById('setting-ai-key').value = s.aiApiKey || '';
-  document.getElementById('status-perf').textContent = `⚡ ${s.performanceMode === 'high' ? 'alta performance' : s.performanceMode}`;
 }
 
 function updateStatusAI() {
   const el = document.getElementById('status-ai');
   if (State.settings.aiProvider) {
-    el.textContent = `✦ IA: ${State.settings.aiProvider}`;
+    el.textContent = `IA: ${State.settings.aiProvider}`;
   } else {
-    el.textContent = `✦ IA: off`;
+    el.textContent = `IA: off`;
   }
 }
 
+/* --------------------------------------------------------------------------
+   Atalhos
+   -------------------------------------------------------------------------- */
 function bindShortcuts() {
   document.addEventListener('keydown', (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
+    if (State.onboardingActive || State.welcomeOpen) {
+      // Bloqueia atalhos durante onboarding/welcome
+      if (e.key === 'Escape') {
+        // permite ESC pra fechar welcome
+        if (State.welcomeOpen && e.key === 'Escape') {
+          // não fecha, mas absorve
+          e.preventDefault();
+        }
+      }
+      return;
+    }
     if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       showCommandPalette();
@@ -234,12 +319,10 @@ function switchSidebarView(view) {
   const cfg = map[view];
   if (!cfg) return;
   document.getElementById('sidebar-title').textContent = cfg.title;
-  // Esconde tudo
   ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai','panel-settings'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
-  // Mostra o selecionado (exceto file-tree que tem lógica própria)
   if (cfg.panel === 'file-tree') {
     if (State.workspaceRoot) {
       document.getElementById('file-tree').hidden = false;
@@ -249,20 +332,15 @@ function switchSidebarView(view) {
   } else {
     document.getElementById(cfg.panel).hidden = false;
   }
-  // Activity bar active state
   document.querySelectorAll('.activity-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
 }
 
 /* --------------------------------------------------------------------------
-   Ações de arquivo
+   Ações
    -------------------------------------------------------------------------- */
 async function openFolderDialog() {
   const p = await window.agzos.dialog.openFolder();
   if (p) await openWorkspace(p);
-}
-async function openFileDialog() {
-  const p = await window.agzos.dialog.openFile();
-  if (p) await openFile(p);
 }
 async function newFileInRoot() {
   if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
@@ -287,15 +365,7 @@ async function newFolderInRoot() {
     mod.refreshTree();
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
-async function cloneRepo() {
-  const url = prompt('URL do repositório git:');
-  if (!url) return;
-  const target = prompt('Pasta de destino:', url.split('/').pop().replace('.git', ''));
-  if (!target) return;
-  toast(`Para clonar, use o terminal: git clone ${url}`, 'info', 5000);
-}
 async function quickOpen(query) {
-  // Match simples por nome de arquivo na workspace
   if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
   const lower = query.toLowerCase();
   const results = [];
@@ -318,7 +388,6 @@ async function walkForQuickOpen(dir, q, results, depth = 0) {
 
 function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }
 
-// Boot!
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);
 } else {

@@ -3,8 +3,8 @@
  */
 
 const State = {
-  workspaceRoot: null,        // path absoluto da pasta aberta
-  files: new Map(),            // path → { path, content, dirty, model }
+  workspaceRoot: null,
+  files: new Map(),
   activePath: null,
   expandedDirs: new Set(),
   settings: {
@@ -15,11 +15,19 @@ const State = {
     telemetry: false,
     fontSize: 14,
     recentFolders: [],
+    welcomeSeen: false,
+    onboardingCompleted: false,
+    onboardingSkipped: false,
+    onboardingAnswers: null,
   },
-  term: null,                  // { id, proc, term, fit }
+  term: null,
   sidebarHidden: false,
   bottomHidden: false,
+  welcomeOpen: false,
+  onboardingActive: false,
+  onboardingForced: false,
+  appVersion: null,
+  platform: null,
 };
 
-// Expõe para outros módulos
 window.AgzosState = State;

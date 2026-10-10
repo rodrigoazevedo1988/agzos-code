@@ -2,15 +2,16 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
   <title>Agzos Code</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg" />
   <link rel="stylesheet" href="styles/app.css" />
 </head>
 <body class="theme-agzos-dark">
   <!-- TOP BAR -->
   <header id="topbar">
     <div class="topbar-left">
-      <div class="topbar-logo">A</div>
+      <img src="assets/logo-icon.svg" alt="Agzos Code" class="topbar-logo" />
       <span class="topbar-title">Agzos Code</span>
       <span class="topbar-section" id="topbar-workspace">— Sem pasta aberta</span>
     </div>
@@ -19,10 +20,10 @@
              spellcheck="false" autocomplete="off" />
     </div>
     <div class="topbar-right">
-      <button class="topbar-btn" id="btn-toggle-sidebar" title="Alternar Sidebar (Ctrl+B)">▣</button>
-      <button class="topbar-btn" id="btn-toggle-terminal" title="Alternar Terminal (Ctrl+`)">▶_</button>
-      <button class="topbar-btn" id="btn-command-palette" title="Command Palette (Ctrl+Shift+P)">⌘</button>
-      <button class="topbar-btn" id="btn-settings" title="Configurações">⚙</button>
+      <button class="topbar-btn icon-host" id="btn-toggle-sidebar" title="Alternar Sidebar (Ctrl+B)"></button>
+      <button class="topbar-btn icon-host" id="btn-toggle-terminal" title="Alternar Terminal (Ctrl+`)"></button>
+      <button class="topbar-btn icon-host" id="btn-command-palette" title="Command Palette (Ctrl+Shift+P)"></button>
+      <button class="topbar-btn icon-host" id="btn-settings" title="Configurações"></button>
     </div>
   </header>
 
@@ -30,22 +31,22 @@
   <div id="main">
     <!-- Activity Bar (lateral estreita) -->
     <nav id="activitybar">
-      <button class="activity-btn active" data-view="explorer" title="Explorer (Ctrl+Shift+E)">📁</button>
-      <button class="activity-btn" data-view="search" title="Buscar (Ctrl+Shift+F)">🔎</button>
-      <button class="activity-btn" data-view="git" title="Controle de Versão (Ctrl+Shift+G)">⎇</button>
-      <button class="activity-btn" data-view="extensions" title="Extensões (Ctrl+Shift+X)">▦</button>
-      <button class="activity-btn" data-view="ai" title="Agzos IA">✦</button>
+      <button class="activity-btn active icon-host" data-view="explorer" title="Explorer (Ctrl+Shift+E)"></button>
+      <button class="activity-btn icon-host" data-view="search" title="Buscar (Ctrl+Shift+F)"></button>
+      <button class="activity-btn icon-host" data-view="git" title="Controle de Versão (Ctrl+Shift+G)"></button>
+      <button class="activity-btn icon-host" data-view="extensions" title="Extensões (Ctrl+Shift+X)"></button>
+      <button class="activity-btn icon-host" data-view="ai" title="Agzos IA"></button>
       <div class="activity-spacer"></div>
-      <button class="activity-btn" data-view="settings" title="Configurações">⚙</button>
+      <button class="activity-btn icon-host" data-view="settings" title="Configurações"></button>
     </nav>
 
     <!-- Sidebar (esquerda) -->
     <aside id="sidebar">
       <div class="sidebar-header">
         <span id="sidebar-title">EXPLORER</span>
-        <button class="icon-btn" id="btn-new-file" title="Novo Arquivo">＋</button>
-        <button class="icon-btn" id="btn-new-folder" title="Nova Pasta">📁＋</button>
-        <button class="icon-btn" id="btn-open-folder" title="Abrir Pasta">⤴</button>
+        <button class="icon-btn icon-host" id="btn-new-file" title="Novo Arquivo"></button>
+        <button class="icon-btn icon-host" id="btn-new-folder" title="Nova Pasta"></button>
+        <button class="icon-btn icon-host" id="btn-open-folder" title="Abrir Pasta"></button>
       </div>
       <div class="sidebar-content" id="sidebar-content">
         <div class="empty-state" id="empty-explorer">
@@ -113,6 +114,10 @@
             <label>API Key</label>
             <input type="password" id="setting-ai-key" placeholder="sk-…" />
           </div>
+          <h3>Ajuda</h3>
+          <div class="setting-row">
+            <button class="primary-btn" id="btn-restart-onboarding">↻ Refazer Onboarding</button>
+          </div>
         </div>
       </div>
     </aside>
@@ -121,22 +126,8 @@
     <main id="editor-area">
       <div id="tabs"></div>
       <div id="editor-host">
-        <div class="welcome" id="welcome">
-          <div class="welcome-logo">A</div>
-          <h1>Agzos Code</h1>
-          <p class="welcome-sub">Editor de código do time Agzos</p>
-          <div class="welcome-actions">
-            <button class="primary-btn" id="welcome-open-folder">📁 Abrir Pasta</button>
-            <button class="primary-btn" id="welcome-open-file">📄 Abrir Arquivo</button>
-            <button class="primary-btn" id="welcome-clone">⎇ Clonar Repo</button>
-          </div>
-          <div class="welcome-shortcuts">
-            <div><kbd>Ctrl+P</kbd> Buscar arquivo</div>
-            <div><kbd>Ctrl+Shift+P</kbd> Command Palette</div>
-            <div><kbd>Ctrl+`</kbd> Terminal</div>
-            <div><kbd>Ctrl+B</kbd> Sidebar</div>
-          </div>
-        </div>
+        <!-- Welcome screen do editor (preenchido por welcome.js) -->
+        <div class="welcome" id="welcome"></div>
       </div>
     </main>
   </div>
@@ -148,7 +139,7 @@
       <button class="bottom-tab" data-tab="output">OUTPUT</button>
       <button class="bottom-tab" data-tab="problems">PROBLEMAS</button>
       <div class="bottom-spacer"></div>
-      <button class="icon-btn" id="btn-close-bottom">✕</button>
+      <button class="icon-btn icon-host" id="btn-close-bottom"></button>
     </div>
     <div class="bottom-content">
       <div class="bottom-pane active" id="pane-terminal"><div id="terminal-host"></div></div>
@@ -160,12 +151,12 @@
   <!-- STATUS BAR -->
   <footer id="statusbar">
     <div class="status-left">
-      <span class="status-item" id="status-remote">⎇ main</span>
+      <span class="status-item icon-host" id="status-remote"></span>
       <span class="status-item" id="status-sync">↑0 ↓0</span>
     </div>
     <div class="status-right">
-      <span class="status-item" id="status-perf">⚡ balanceado</span>
-      <span class="status-item" id="status-ai">✦ IA: off</span>
+      <span class="status-item icon-host" id="status-perf"></span>
+      <span class="status-item icon-host" id="status-ai"></span>
       <span class="status-item" id="status-lang">Texto Simples</span>
       <span class="status-item" id="status-pos">Ln 1, Col 1</span>
       <span class="status-item" id="status-encoding">UTF-8</span>
@@ -173,13 +164,22 @@
     </div>
   </footer>
 
-  <!-- COMMAND PALETTE OVERLAY -->
+  <!-- COMMAND PALETTE OVERLAY (bug fix: tinha CSS display:flex que sobrescrevia [hidden]) -->
   <div id="cmd-overlay" class="overlay" hidden>
     <div class="cmd-palette">
-      <input type="text" id="cmd-input" placeholder="Digite um comando…" autocomplete="off" spellcheck="false" />
+      <div class="cmd-palette-input">
+        <span class="cmd-palette-input-icon icon-host"></span>
+        <input type="text" id="cmd-input" placeholder="Digite um comando…" autocomplete="off" spellcheck="false" />
+      </div>
       <ul id="cmd-list"></ul>
     </div>
   </div>
+
+  <!-- WELCOME POP-UP (logo Agzos completo) -->
+  <div id="welcome-popup" class="overlay"></div>
+
+  <!-- ONBOARDING WIZARD (multi-step) -->
+  <div id="onboarding-overlay" class="overlay"></div>
 
   <!-- CONTEXT MENU (file tree) -->
   <div id="context-menu" class="context-menu" hidden>
@@ -195,7 +195,7 @@
   <!-- Toast notifications -->
   <div id="toast-container"></div>
 
-  <!-- Monaco é carregado dinamicamente pelo app.js (precisa do path do node_modules) -->
+  <!-- Scripts -->
   <script type="module" src="scripts/app.js"></script>
 </body>
 </html>

@@ -87,6 +87,22 @@ function copyXterm() {
   console.log(`✓ xterm copiado para ${path.relative(ROOT, dst)}`);
 }
 
+function copyLucide() {
+  const lucideRoot = path.join(ROOT, 'node_modules', 'lucide-static');
+  if (!fs.existsSync(lucideRoot)) {
+    console.error('✗ lucide-static não encontrado em node_modules. Rode `npm install` primeiro.');
+    process.exit(1);
+  }
+  const dst = path.join(VENDOR, 'lucide');
+  fs.mkdirSync(dst, { recursive: true });
+  const sprite = path.join(lucideRoot, 'sprite.svg');
+  if (fs.existsSync(sprite)) {
+    fs.copyFileSync(sprite, path.join(dst, 'sprite.svg'));
+    const size = fs.statSync(sprite).size;
+    console.log(`✓ Lucide sprite copiado (${formatSize(size)})`);
+  }
+}
+
 function dirSize(p) {
   let total = 0;
   function walk(d) {
@@ -109,6 +125,7 @@ function main() {
   ensureCleanVendor();
   copyMonaco();
   copyXterm();
+  copyLucide();
   console.log('\nVendor pronto. Rode `npm start` para abrir o Agzos Code.');
 }
 

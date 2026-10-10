@@ -54,7 +54,12 @@ function createSplash() {
 /*  Janela principal                                                            */
 /* -------------------------------------------------------------------------- */
 function createMainWindow() {
-  mainWindow = new BrowserWindow({
+  // Ícone do app — usa o logo oficial Agzos (símbolo vermelho)
+  let iconPath = path.join(__dirname, '..', '..', 'build', 'icon-256.png');
+  if (!fs.existsSync(iconPath)) {
+    iconPath = path.join(__dirname, '..', '..', 'build', 'icon.png');
+  }
+  const winOpts = {
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -67,10 +72,14 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // sandbox=true quebra require('fs') no preload; usamos contextIsolation
+      sandbox: false,
       spellcheck: false,
     },
-  });
+  };
+  if (fs.existsSync(iconPath)) {
+    winOpts.icon = iconPath;
+  }
+  mainWindow = new BrowserWindow(winOpts);
 
   // Menu nativo — escondemos a barra mas mantemos atalhos
   Menu.setApplicationMenu(buildAppMenu());
