@@ -21,6 +21,13 @@ module.exports = [
     },
   },
   {
+    // Código dentro de page.evaluate() roda no renderer
+    files: ['test/e2e/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
+  },
+  {
     files: ['src/renderer/scripts/state.js'],
     languageOptions: {
       sourceType: 'script',
