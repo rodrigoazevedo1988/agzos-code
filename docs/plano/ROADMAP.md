@@ -2,7 +2,7 @@
 
 **Atualizado:** 09/10/2026
 **Base:** Electron + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md).
-**Estado atual:** Fase 0 concluída. Próxima: Fase 1.
+**Estado atual:** Fase 1 concluída (aguardando revisão e merge). Próxima: Fase 2.
 
 Planos detalhados, tarefa a tarefa, para o executor: [`execucao/`](execucao/00-guia-do-executor.md).
 Relatórios de cada fase: [`relatorios/`](relatorios/).
@@ -27,15 +27,15 @@ Estimativa total até a v1.0: ~9–12 semanas.
 
 ## Fase 1 — Fundação (1–1,5 semana) · [plano](execucao/fase-1-fundacao.md)
 
-- [ ] T1 Lint e testes unitários
-- [ ] T2 E2E com Playwright e `userData` isolado
-- [ ] T3 `main.js` dividido em módulos de IPC
-- [ ] T4 Settings com defaults e tolerância a erro
-- [ ] T5 Secrets no cofre do SO + migração
-- [ ] T6 Acesso a arquivos restrito à pasta aberta
-- [ ] T7 Bugs da Fase 0 (tema do onboarding, boas-vindas do editor, rótulos pt-BR, terminal)
-- [ ] T8 CI no GitHub Actions
-- [ ] T9 Docs + relatório
+- [x] T1 Lint e testes unitários
+- [x] T2 E2E com Playwright e `userData` isolado
+- [x] T3 `main.js` dividido em módulos de IPC
+- [x] T4 Settings com defaults e tolerância a erro
+- [x] T5 Secrets no cofre do SO + migração
+- [x] T6 Acesso a arquivos restrito à pasta aberta
+- [x] T7 Bugs da Fase 0 (tema do onboarding, boas-vindas do editor, rótulos pt-BR, terminal)
+- [x] T8 CI no GitHub Actions
+- [x] T9 Docs
 
 ## Fase 2 — IA (3 semanas) · [plano](execucao/fase-2-ia.md)
 

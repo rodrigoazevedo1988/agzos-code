@@ -75,12 +75,53 @@ Fonte única: `logos/SVG/6.svg` (símbolo vermelho).
 
 Depois roda `tools/patch-electron-dev-mac.js` (só macOS), que aplica nome e ícone Agzos no `Electron.app` usado em `npm run dev`.
 
+## Main process — módulos
+
+| Arquivo | Papel |
+|---|---|
+| `src/main/main.js` | Ciclo de vida, janelas, menu, registro dos módulos IPC, migrações no boot |
+| `src/main/preload.js` | `window.agzos.*` via `contextBridge` |
+| `src/main/ipc/fs.js` | `fs:*` — passa pelo path guard |
+| `src/main/ipc/dialog.js` | `dialog:*` — libera no guard o caminho escolhido |
+| `src/main/ipc/workspace.js` | `workspace:open` — libera a pasta se foi escolhida ou está em `recentFolders` |
+| `src/main/ipc/term.js` | `term:*` — shell via `spawn` (sem pty) |
+| `src/main/ipc/settings.js` | `settings:*` — `settings.json` em `userData` |
+| `src/main/ipc/secrets.js` | `secrets:set/delete/has` — **sem get**: valor nunca sai do main |
+| `src/main/ipc/app-info.js` | `app:info`, `app:openExternal` |
+| `src/main/lib/settings.js` | Defaults, leitura tolerante, escrita atômica, `migrateLegacySecrets` (sem Electron) |
+| `src/main/lib/secrets.js` | Cofre sobre `safeStorage`; arquivo `secrets.json` cifrado (sem Electron) |
+| `src/main/lib/path-guard.js` | Raízes liberadas, `realpath`, prefixo seguro (sem Electron) |
+
+Módulos em `lib/` recebem dependências por parâmetro, então os testes unitários rodam em Node puro.
+
+## Segredos
+
+- API keys e tokens ficam em `secrets.json` (`userData`), cifrados com `safeStorage` (Keychain / DPAPI / libsecret).
+- O renderer só grava (`agzos.secrets.set`), apaga e verifica existência (`has`). Não há leitura pelo IPC.
+- Chaves em uso: `ai.legacy` (campo de API key), `github.onboarding` (token do onboarding). Na Fase 2 viram `ai.<profileId>` e `github.<accountId>`.
+- Migração no boot: `aiApiKey` e `onboardingAnswers.github.token` de versões antigas do `settings.json` vão para o cofre e saem do arquivo. Se o cofre falhar, o valor fica no `settings.json` e o erro vai para o console.
+- `safeStorage.isEncryptionAvailable()` é `false` em Linux sem keyring. Nesse caso `set` falha com `Cofre do sistema indisponível`.
+
+## Acesso a arquivos (path guard)
+
+- `fs:readDir`, `readFile`, `writeFile`, `mkdir`, `delete` e `rename` só funcionam dentro de raízes liberadas.
+- Raízes: pasta escolhida em `dialog:openFolder` (ou `workspace:open` para pastas já conhecidas) e arquivo escolhido em `dialog:openFile`/`saveFile`.
+- Comparação usa `realpath`: symlink para fora da raiz é bloqueado. Caminho inexistente (arquivo novo) é resolvido pelo pai.
+- `fs:exists`, `fs:stat` e `fs:homeDir` não passam pelo guard (só leitura de metadados).
+- Em `AGZOS_TEST=1`, `global.__agzosAllowRoot(p)` libera uma raiz para os testes E2E.
+
+## Testes
+
+- `npm run test:unit` — `node --test` em `test/unit/`, sobre `src/main/lib/`.
+- `npm run test:e2e` — Playwright (`_electron`) em `test/e2e/`. Cada teste usa um `userData` temporário (`AGZOS_USER_DATA`).
+  - `AGZOS_TEST=1` ativa ganchos de teste.
+  - `AGZOS_TEST_SAFESTORAGE=fake` troca o `safeStorage` por um cofre falso, porque o CI Linux não tem keyring. Validar o cofre real é tarefa manual no macOS.
+- `npm run check` — lint + unitários. É o que o CI roda antes do E2E.
+
 ## Segurança — estado atual
 
 - `contextIsolation: true`, `nodeIntegration: false`
-- `sandbox: false` no main window
+- `sandbox: false` na janela principal (preload usa `ipcRenderer`; mover para `sandbox: true` está no roadmap)
 - CSP com `'unsafe-eval'` (exigido pelo loader AMD do Monaco)
-- IPC `fs:*` aceita qualquer caminho, sem restrição à workspace
-- API key de IA salva em texto puro no `settings.json`
-
-Pendências estão no [roadmap](../plano/ROADMAP.md), Fase 0.5.
+- Acesso a arquivos restrito às raízes liberadas; chaves no cofre do SO
+- Pendências: ver [roadmap](../plano/ROADMAP.md) (Fase 1 e Fase 5)
