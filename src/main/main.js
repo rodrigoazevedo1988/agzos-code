@@ -17,7 +17,25 @@ const fsp = require('fs').promises;
 const { spawn } = require('child_process');
 const os = require('os');
 
-const isDev = process.argv.includes('--dev') || !app.isPackaged;
+const isDev = process.argv.includes('--dev') || process.env.AGZOS_DEV === '1' || !app.isPackaged;
+// DevTools só abre se AGZOS_DEV=1 ou flag --devtools explícita
+const openDevToolsOnStart = process.argv.includes('--devtools') || process.env.AGZOS_DEV === '1';
+
+// Resolve ícone do app em ordem de preferência (por plataforma e por tipo)
+function resolveAppIcon() {
+  const candidates = process.platform === 'darwin'
+    ? ['build/icon.icns', 'build/icon-1024.png', 'build/icon-512.png', 'build/icon-256.png', 'build/icon.png']
+    : process.platform === 'win32'
+    ? ['build/icon.ico', 'build/icon-256.png', 'build/icon.png']
+    : ['build/icon-512.png', 'build/icon-256.png', 'build/icon.png'];
+  for (const rel of candidates) {
+    const abs = path.join(__dirname, '..', '..', rel);
+    if (fs.existsSync(abs)) return abs;
+  }
+  return null;
+}
+
+const APP_ICON = resolveAppIcon();
 
 // Branding
 const APP_NAME = 'Agzos Code';
@@ -54,11 +72,6 @@ function createSplash() {
 /*  Janela principal                                                            */
 /* -------------------------------------------------------------------------- */
 function createMainWindow() {
-  // Ícone do app — usa o logo oficial Agzos (símbolo vermelho)
-  let iconPath = path.join(__dirname, '..', '..', 'build', 'icon-256.png');
-  if (!fs.existsSync(iconPath)) {
-    iconPath = path.join(__dirname, '..', '..', 'build', 'icon.png');
-  }
   const winOpts = {
     width: 1400,
     height: 900,
@@ -76,8 +89,8 @@ function createMainWindow() {
       spellcheck: false,
     },
   };
-  if (fs.existsSync(iconPath)) {
-    winOpts.icon = iconPath;
+  if (APP_ICON) {
+    winOpts.icon = APP_ICON;
   }
   mainWindow = new BrowserWindow(winOpts);
 
@@ -92,7 +105,7 @@ function createMainWindow() {
       splashWindow = null;
     }
     mainWindow.show();
-    if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
+    if (openDevToolsOnStart) mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -395,6 +408,21 @@ ipcMain.handle('app:openExternal', (_evt, url) => {
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
+  // macOS: seta o ícone da Dock enquanto o app roda (em dev e empacotado)
+  if (process.platform === 'darwin' && app.dock && APP_ICON) {
+    try { app.dock.setIcon(APP_ICON); } catch (e) { /* ignora */ }
+  }
+  // Windows: pin to taskbar / jump list com ícone correto
+  if (process.platform === 'win32' && APP_ICON) {
+    try {
+      app.setUserTasks?.([{ program: process.execPath, title: 'Nova Janela', iconPath: APP_ICON }]);
+    } catch (e) { /* ignora */ }
+  }
+  // Linux: Unity launcher (best-effort)
+  if (process.platform === 'linux' && APP_ICON) {
+    try { app.setBadgeCount?.(0); } catch (e) { /* ignora */ }
+  }
+
   createSplash();
   // Atrasa um pouquinho pra splash renderizar com calma
   setTimeout(() => createMainWindow(), 350);

@@ -95,12 +95,48 @@ function copyLucide() {
   }
   const dst = path.join(VENDOR, 'lucide');
   fs.mkdirSync(dst, { recursive: true });
-  const sprite = path.join(lucideRoot, 'sprite.svg');
-  if (fs.existsSync(sprite)) {
-    fs.copyFileSync(sprite, path.join(dst, 'sprite.svg'));
-    const size = fs.statSync(sprite).size;
-    console.log(`✓ Lucide sprite copiado (${formatSize(size)})`);
+  const spritePath = path.join(lucideRoot, 'sprite.svg');
+  if (!fs.existsSync(spritePath)) {
+    console.error('✗ lucide-static/sprite.svg não encontrado.');
+    process.exit(1);
   }
+  // Copia sprite.svg cru (pra inspeção)
+  fs.copyFileSync(spritePath, path.join(dst, 'sprite.svg'));
+  // Gera inline.js que injeta os <symbol> direto no body
+  // (mais robusto que fetch em file:// no Electron com CSP)
+  const raw = fs.readFileSync(spritePath, 'utf-8');
+  const m = raw.match(/<defs>([\s\S]*?)<\/defs>/);
+  if (!m) {
+    console.error('✗ sprite.svg não contém <defs>…</defs>');
+    process.exit(1);
+  }
+  const symbols = m[1];
+  // Escreve um <script> que cria um container invisível com os <symbol>s
+  // Usa String.raw pra evitar problemas com caracteres especiais
+  const inlineJs = `/* Auto-gerado por tools/setup-vendor.js a partir de lucide-static/sprite.svg */
+(function () {
+  if (window.__LUCIDE_SPRITE_LOADED__) return;
+  window.__LUCIDE_SPRITE_LOADED__ = true;
+  var symbols = ${JSON.stringify(symbols)};
+  var container = document.createElement('div');
+  container.id = 'lucide-sprite';
+  container.setAttribute('aria-hidden', 'true');
+  container.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;';
+  container.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none">' + symbols + '</svg>';
+  // Insere no body assim que possível
+  function inject() {
+    if (document.body) {
+      document.body.insertBefore(container, document.body.firstChild);
+    } else {
+      document.addEventListener('DOMContentLoaded', inject);
+    }
+  }
+  inject();
+})();
+`;
+  fs.writeFileSync(path.join(dst, 'inline.js'), inlineJs, 'utf-8');
+  const size = fs.statSync(spritePath).size;
+  console.log(`✓ Lucide sprite copiado (${formatSize(size)}) + inline.js gerado`);
 }
 
 function dirSize(p) {

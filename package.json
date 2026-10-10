@@ -13,8 +13,10 @@
   "scripts": {
     "setup:vendor": "node tools/setup-vendor.js",
     "postinstall": "node tools/setup-vendor.js",
+    "build:icons": "node tools/build-pngs-from-svg.js && node tools/build-icons.js",
     "start": "electron .",
-    "dev": "electron . --dev",
+    "dev": "electron .",
+    "dev:tools": "AGZOS_DEV=1 electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
@@ -63,7 +65,7 @@
         },
         "portable"
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -79,7 +81,7 @@
         "rpm"
       ],
       "category": "Development",
-      "icon": "build/icon-256.png",
+      "icon": "build/icon.png",
       "vendor": "Agzos"
     },
     "mac": {
@@ -88,7 +90,7 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "build/icon-1024.png"
+      "icon": "build/icon.icns"
     }
   }
 }

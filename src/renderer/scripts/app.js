@@ -30,8 +30,13 @@ async function boot() {
   State.appVersion = info.version;
   State.platform = info.platform;
 
-  // 3) Inicializa Lucide sprite
-  await lucideIcon.ready;
+  // 3) Inicializa Lucide sprite (com timeout — não bloqueia o boot se falhar)
+  try {
+    await Promise.race([
+      lucideIcon.ready,
+      new Promise((res) => setTimeout(res, 2000)),
+    ]);
+  } catch {}
 
   // 4) Decora todos os pontos com .icon-host usando data-icon
   hydrateLucideIcons();
