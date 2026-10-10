@@ -29,6 +29,8 @@ async function launchApp({ userData, settings } = {}) {
   const page = await waitForMainWindow(app);
   page.on('pageerror', (e) => errors.push(e.message));
   await page.waitForSelector('#topbar', { timeout: 15000 });
+  // #topbar é HTML estático; o boot() só termina quando expõe window.AgzosEditor
+  await page.waitForFunction(() => !!window.AgzosEditor, null, { timeout: 15000 });
 
   return { app, page, userData: dir, errors };
 }

@@ -9,7 +9,11 @@ function register(ipcMain, { app }) {
   const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
   ipcMain.handle('settings:load', () => loadSettings(settingsPath));
-  ipcMain.handle('settings:save', (_evt, settings) => saveSettings(settingsPath, settings));
+  // recentFolders é do main (ver ipc/workspace.js): mantém o valor do disco.
+  ipcMain.handle('settings:save', (_evt, settings) => {
+    const { recentFolders } = loadSettings(settingsPath);
+    return saveSettings(settingsPath, { ...settings, recentFolders });
+  });
 
   // Usado pelo main no boot (migrações), fora do IPC.
   return {

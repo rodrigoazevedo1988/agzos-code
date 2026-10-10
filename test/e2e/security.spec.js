@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { launchApp } = require('./helpers');
+const { launchApp, readSettings } = require('./helpers');
 
 function tmpDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -30,5 +30,45 @@ test('fs fora da workspace é negado; dentro da raiz liberada funciona', async (
     expect(errors).toEqual([]);
   } finally {
     await app.close();
+  }
+});
+
+test('renderer não consegue liberar pasta gravando recentFolders', async () => {
+  const { app, page } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true },
+  });
+  try {
+    const secretDir = tmpDir('agzos-secret-');
+    fs.writeFileSync(path.join(secretDir, 's.txt'), 'segredo');
+    const result = await page.evaluate(async (d) => {
+      const s = await window.agzos.settings.load();
+      await window.agzos.settings.save({ ...s, recentFolders: [d] });
+      const opened = await window.agzos.workspace.open(d);
+      const read = await window.agzos.fs.readFile(d + '/s.txt').then(() => 'leu', (e) => e.message);
+      return { opened, read };
+    }, secretDir);
+    expect(result.opened).toBe(false);
+    expect(result.read).toContain('Acesso negado');
+  } finally {
+    await app.close();
+  }
+});
+
+test('pasta aberta vira recente e reabre após reiniciar', async () => {
+  const root = tmpDir('agzos-recent-');
+  const first = await launchApp({ settings: { welcomeSeen: true, onboardingCompleted: true } });
+  try {
+    await first.app.evaluate((_electron, d) => global.__agzosAllowRoot(d), root);
+    expect(await first.page.evaluate((d) => window.agzos.workspace.open(d), root)).toBe(true);
+    expect(readSettings(first.userData).recentFolders).toContain(root);
+  } finally {
+    await first.app.close();
+  }
+
+  const second = await launchApp({ userData: first.userData });
+  try {
+    expect(await second.page.evaluate((d) => window.agzos.workspace.open(d), root)).toBe(true);
+  } finally {
+    await second.app.close();
   }
 });

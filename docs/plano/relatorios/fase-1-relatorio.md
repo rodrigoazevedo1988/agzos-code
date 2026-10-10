@@ -66,3 +66,29 @@ $ git diff --stat main...HEAD | tail -1
  48 files changed, 3194 insertions(+), 412 deletions(-)
 ```
 Principais: `src/main/main.js`, `src/main/ipc/*.js` (novos), `src/main/lib/*.js` (novos), `src/main/preload.js`, `src/renderer/scripts/{app,onboarding,editor,file-tree,command-palette,labels}.js`, `src/renderer/index.html`, `src/renderer/styles/app.css`, `test/unit/*.test.js`, `test/e2e/*.spec.js`, `test/e2e/helpers.js`, `eslint.config.js`, `playwright.config.js`, `.github/workflows/ci.yml`, `docs/`.
+
+---
+
+## Revisão do sênior (Claude Opus 5.5, 2026-10-10)
+
+**Veredito:** aprovado com 2 correções feitas pelo sênior na própria branch (commit de revisão).
+
+### Corrigido na revisão
+1. **Bypass do path guard (segurança).** O renderer podia gravar `recentFolders: ['/']` via `settings:save` e depois chamar `workspace:open('/')`, liberando o disco inteiro. Agora `recentFolders` é controlado só pelo main:
+   - `settings:save` mantém o `recentFolders` do disco e ignora o valor do renderer;
+   - `workspace:open` adiciona a pasta às recentes quando libera;
+   - `file-tree.js` não grava mais `recentFolders`.
+   Testes novos em `security.spec.js`: bypass bloqueado; pasta aberta reabre após reiniciar.
+2. **E2E instável.** `launchApp` considerava o app pronto ao ver `#topbar` (HTML estático), antes do `boot()` expor `window.AgzosEditor`. Testes que chamam `openFile` falhavam de forma intermitente. O helper agora espera `window.AgzosEditor`. Resultado: 3 execuções seguidas com 11/11.
+
+Também adicionado: teste de regressão "welcome do editor volta ao fechar a última aba" (o comportamento já estava certo).
+
+### Respostas às dúvidas
+1. **Migração com cofre indisponível:** manter a opção (a). Na Fase 2, o wizard de IA deve avisar quando `secrets.isAvailable()` for falso.
+2. **`workspace:open` e `recentFolders`:** era um bypass real. Corrigido (item 1 acima).
+3. **Cofre no Linux sem keyring:** avisar na Fase 2, no wizard de IA. Sem mudança agora.
+4. **Validação manual no Mac:** continua pendente com o Rodrigo (checklist acima).
+
+### Observações menores (sem ação)
+- O relatório cita `refreshStatusPerf`; a função real é `applySettingsToUI` (`app.js`).
+- Merge feito com squash, porque o commit `a069173` quebrava o lint no meio do histórico.

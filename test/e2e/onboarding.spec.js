@@ -71,3 +71,22 @@ test('status bar mostra rótulo de performance em pt-BR', async () => {
     await app.close();
   }
 });
+
+test('welcome do editor volta ao fechar a última aba', async () => {
+  const { app, page, errors } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true },
+  });
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-welcome-'));
+    const file = path.join(dir, 'a.txt');
+    fs.writeFileSync(file, 'x');
+    await app.evaluate((_electron, d) => global.__agzosAllowRoot(d), dir);
+    await page.evaluate((p) => window.AgzosEditor.openFile(p), file);
+    await expect(page.locator('#welcome')).toBeHidden();
+    await page.evaluate((p) => import('./scripts/editor.js').then((m) => m.closeTab(p)), file);
+    await expect(page.locator('#welcome')).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+  }
+});
