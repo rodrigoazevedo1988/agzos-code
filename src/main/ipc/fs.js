@@ -1,14 +1,16 @@
 /**
- * IPC: sistema de arquivos (fs:*). Sem path guard ainda (Fase 1, tarefa 6).
+ * IPC: sistema de arquivos (fs:*). Operações restritas às raízes liberadas pelo guard.
+ * exists/stat/homeDir não passam pelo guard (só checam metadados).
  */
 
 const path = require('path');
 const fsp = require('fs').promises;
 const os = require('os');
 
-function register(ipcMain) {
+function register(ipcMain, { guard }) {
   ipcMain.handle('fs:readDir', async (_evt, dirPath) => {
     if (!dirPath) throw new Error('dirPath required');
+    guard.assertAllowed(dirPath);
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
     return entries
       .filter((e) => !e.name.startsWith('.') || e.name === '.gitignore')
@@ -22,6 +24,7 @@ function register(ipcMain) {
 
   ipcMain.handle('fs:readFile', async (_evt, filePath) => {
     if (!filePath) throw new Error('filePath required');
+    guard.assertAllowed(filePath);
     const stat = await fsp.stat(filePath);
     if (stat.size > 5 * 1024 * 1024) {
       throw new Error('Arquivo muito grande (>5MB). Abra pelo terminal.');
@@ -32,11 +35,13 @@ function register(ipcMain) {
 
   ipcMain.handle('fs:writeFile', async (_evt, filePath, content) => {
     if (!filePath) throw new Error('filePath required');
+    guard.assertAllowed(filePath);
     await fsp.writeFile(filePath, content, 'utf-8');
     return true;
   });
 
   ipcMain.handle('fs:mkdir', async (_evt, dirPath) => {
+    guard.assertAllowed(dirPath);
     await fsp.mkdir(dirPath, { recursive: true });
     return true;
   });
@@ -55,11 +60,14 @@ function register(ipcMain) {
   });
 
   ipcMain.handle('fs:delete', async (_evt, p) => {
+    guard.assertAllowed(p);
     await fsp.rm(p, { recursive: true, force: true });
     return true;
   });
 
   ipcMain.handle('fs:rename', async (_evt, oldP, newP) => {
+    guard.assertAllowed(oldP);
+    guard.assertAllowed(newP);
     await fsp.rename(oldP, newP);
     return true;
   });

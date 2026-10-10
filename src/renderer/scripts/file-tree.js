@@ -210,6 +210,11 @@ function invalidateTree() {
    Public API
    -------------------------------------------------------------------------- */
 export async function openWorkspace(folderPath) {
+  const allowed = await window.agzos.workspace.open(folderPath);
+  if (!allowed) {
+    toast('Abra a pasta pelo diálogo.', 'error');
+    return;
+  }
   State.workspaceRoot = folderPath;
   treeRoot = null;
   document.getElementById('topbar-workspace').textContent = `— ${basename(folderPath)}`;

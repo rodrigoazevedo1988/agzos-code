@@ -59,6 +59,11 @@ contextBridge.exposeInMainWorld('agzos', {
     has: (key) => ipcRenderer.invoke('secrets:has', key),
   },
 
+  // Workspace (libera a pasta no guard de arquivos)
+  workspace: {
+    open: (p) => ipcRenderer.invoke('workspace:open', p),
+  },
+
   // Settings
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),

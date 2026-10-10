@@ -215,10 +215,20 @@ const deps = {
   APP_NAME,
   getMainWindow: () => mainWindow,
 };
-require('./ipc/fs').register(ipcMain);
-require('./ipc/dialog').register(ipcMain, deps);
+const { createPathGuard } = require('./lib/path-guard');
+const guard = createPathGuard();
+require('./ipc/fs').register(ipcMain, { guard });
+require('./ipc/dialog').register(ipcMain, { ...deps, guard });
 require('./ipc/term').register(ipcMain);
 const settingsStore = require('./ipc/settings').register(ipcMain, deps);
+require('./ipc/workspace').register(ipcMain, {
+  guard,
+  getRecentFolders: () => settingsStore.load().recentFolders || [],
+});
+// Só em testes E2E: libera uma pasta temporária sem passar pelo diálogo nativo.
+if (process.env.AGZOS_TEST === '1') {
+  global.__agzosAllowRoot = (p) => guard.allow(p);
+}
 const { createSecretStore } = require('./lib/secrets');
 const { migrateLegacySecrets } = require('./lib/settings');
 // Em testes E2E sem keyring (CI Linux), usa um cofre falso. Inerte fora de AGZOS_TEST=1.
