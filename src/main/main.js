@@ -43,7 +43,7 @@ const APP_ICON = resolveAppIcon();
 const APP_NAME = 'Agzos Code';
 const DATA_DIR = 'agzos-code';
 app.setName(APP_NAME);
-app.setPath('userData', path.join(app.getPath('appData'), DATA_DIR));
+app.setPath('userData', process.env.AGZOS_USER_DATA || path.join(app.getPath('appData'), DATA_DIR));
 
 let mainWindow = null;
 let splashWindow = null;

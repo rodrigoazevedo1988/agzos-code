@@ -69,3 +69,7 @@ release/
 *.AppImage
 *.deb
 *.rpm
+
+# Playwright
+test-results/
+playwright-report/
