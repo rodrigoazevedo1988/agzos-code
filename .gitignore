@@ -1,0 +1,49 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Electron / Builder
+dist/
+out/
+build/output/
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Env / Secrets
+.env
+.env.local
+*.pem
+.clasp.json
+appsscript.json
+
+# OS
+.DS_Store
+desktop.ini
+$RECYCLE.BIN/
+
+# Coverage / Tests
+coverage/
+.nyc_output/
+*.lcov
+
+# Logs
+logs/
+*.log
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Vendor (gerado por tools/setup-vendor.js no postinstall)
+src/renderer/vendor/

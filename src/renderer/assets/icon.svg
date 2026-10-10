@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Fundo preto Agzos -->
+  <rect width="256" height="256" rx="56" fill="#0E0E0E"/>
+  <!-- Letra A estilizada em vermelho Agzos -->
+  <path d="M128 60 L188 200 L168 200 L156 168 L100 168 L88 200 L68 200 Z M108 148 L148 148 L128 92 Z"
+        fill="#D10A11"/>
+  <!-- Pequeno detalhe em branco -->
+  <circle cx="200" cy="56" r="10" fill="#FFFFFF"/>
+</svg>

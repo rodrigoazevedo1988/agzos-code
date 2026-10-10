@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
+  <title>Agzos Code</title>
+  <link rel="stylesheet" href="styles/app.css" />
+</head>
+<body class="theme-agzos-dark">
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">A</div>
+      <span class="topbar-title">Agzos Code</span>
+      <span class="topbar-section" id="topbar-workspace">— Sem pasta aberta</span>
+    </div>
+    <div class="topbar-center">
+      <input type="text" id="search" placeholder="Buscar arquivos (Ctrl+P)…"
+             spellcheck="false" autocomplete="off" />
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-btn" id="btn-toggle-sidebar" title="Alternar Sidebar (Ctrl+B)">▣</button>
+      <button class="topbar-btn" id="btn-toggle-terminal" title="Alternar Terminal (Ctrl+`)">▶_</button>
+      <button class="topbar-btn" id="btn-command-palette" title="Command Palette (Ctrl+Shift+P)">⌘</button>
+      <button class="topbar-btn" id="btn-settings" title="Configurações">⚙</button>
+    </div>
+  </header>
+
+  <!-- MAIN LAYOUT -->
+  <div id="main">
+    <!-- Activity Bar (lateral estreita) -->
+    <nav id="activitybar">
+      <button class="activity-btn active" data-view="explorer" title="Explorer (Ctrl+Shift+E)">📁</button>
+      <button class="activity-btn" data-view="search" title="Buscar (Ctrl+Shift+F)">🔎</button>
+      <button class="activity-btn" data-view="git" title="Controle de Versão (Ctrl+Shift+G)">⎇</button>
+      <button class="activity-btn" data-view="extensions" title="Extensões (Ctrl+Shift+X)">▦</button>
+      <button class="activity-btn" data-view="ai" title="Agzos IA">✦</button>
+      <div class="activity-spacer"></div>
+      <button class="activity-btn" data-view="settings" title="Configurações">⚙</button>
+    </nav>
+
+    <!-- Sidebar (esquerda) -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span id="sidebar-title">EXPLORER</span>
+        <button class="icon-btn" id="btn-new-file" title="Novo Arquivo">＋</button>
+        <button class="icon-btn" id="btn-new-folder" title="Nova Pasta">📁＋</button>
+        <button class="icon-btn" id="btn-open-folder" title="Abrir Pasta">⤴</button>
+      </div>
+      <div class="sidebar-content" id="sidebar-content">
+        <div class="empty-state" id="empty-explorer">
+          <p>Nenhuma pasta aberta.</p>
+          <button class="primary-btn" id="btn-open-folder-2">Abrir Pasta</button>
+        </div>
+        <div class="file-tree" id="file-tree" hidden></div>
+        <div class="panel" id="panel-search" hidden>
+          <input type="text" id="search-text" placeholder="Buscar texto nos arquivos…" />
+          <div id="search-results"></div>
+        </div>
+        <div class="panel" id="panel-git" hidden>
+          <p class="hint">Git UI — wiring com próxima fase.</p>
+        </div>
+        <div class="panel" id="panel-extensions" hidden>
+          <p class="hint">Extensões — Open VSX será plugado na próxima fase.</p>
+        </div>
+        <div class="panel" id="panel-ai" hidden>
+          <p class="hint">Chat de IA — provedor configurável em Settings.</p>
+          <div class="ai-mock" id="ai-mock">
+            <div class="ai-msg ai-system">[Agzos IA] Stub. Configure o provider em Settings → IA para começar.</div>
+          </div>
+        </div>
+        <div class="panel" id="panel-settings" hidden>
+          <h3>Configurações</h3>
+          <div class="setting-row">
+            <label>Tema</label>
+            <select id="setting-theme">
+              <option value="agzos-dark">Agzos Dark</option>
+              <option value="agzos-light">Agzos Light</option>
+              <option value="monokai">Monokai</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>Performance</label>
+            <select id="setting-perf">
+              <option value="economy">Economia</option>
+              <option value="balanced" selected>Balanceado</option>
+              <option value="high">Alta Performance</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>Telemetria</label>
+            <input type="checkbox" id="setting-telemetry" />
+            <span class="hint">Desativada por padrão.</span>
+          </div>
+          <div class="setting-row">
+            <label>Tamanho da fonte</label>
+            <input type="number" id="setting-fontsize" min="10" max="24" value="14" />
+          </div>
+          <h3>IA (em construção)</h3>
+          <div class="setting-row">
+            <label>Provider</label>
+            <select id="setting-ai-provider">
+              <option value="">— Nenhum —</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="groq">Groq</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="ollama">Ollama (local)</option>
+              <option value="custom">Custom endpoint</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>API Key</label>
+            <input type="password" id="setting-ai-key" placeholder="sk-…" />
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Editor + Tabs + Terminal -->
+    <main id="editor-area">
+      <div id="tabs"></div>
+      <div id="editor-host">
+        <div class="welcome" id="welcome">
+          <div class="welcome-logo">A</div>
+          <h1>Agzos Code</h1>
+          <p class="welcome-sub">Editor de código do time Agzos</p>
+          <div class="welcome-actions">
+            <button class="primary-btn" id="welcome-open-folder">📁 Abrir Pasta</button>
+            <button class="primary-btn" id="welcome-open-file">📄 Abrir Arquivo</button>
+            <button class="primary-btn" id="welcome-clone">⎇ Clonar Repo</button>
+          </div>
+          <div class="welcome-shortcuts">
+            <div><kbd>Ctrl+P</kbd> Buscar arquivo</div>
+            <div><kbd>Ctrl+Shift+P</kbd> Command Palette</div>
+            <div><kbd>Ctrl+`</kbd> Terminal</div>
+            <div><kbd>Ctrl+B</kbd> Sidebar</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- BOTTOM PANEL: Terminal -->
+  <section id="bottom-panel" hidden>
+    <div class="bottom-tabs">
+      <button class="bottom-tab active" data-tab="terminal">TERMINAL</button>
+      <button class="bottom-tab" data-tab="output">OUTPUT</button>
+      <button class="bottom-tab" data-tab="problems">PROBLEMAS</button>
+      <div class="bottom-spacer"></div>
+      <button class="icon-btn" id="btn-close-bottom">✕</button>
+    </div>
+    <div class="bottom-content">
+      <div class="bottom-pane active" id="pane-terminal"><div id="terminal-host"></div></div>
+      <div class="bottom-pane" id="pane-output"><pre id="output-pre" class="output-pre">Sem saída ainda.</pre></div>
+      <div class="bottom-pane" id="pane-problems"><div class="empty-state">Sem problemas.</div></div>
+    </div>
+  </section>
+
+  <!-- STATUS BAR -->
+  <footer id="statusbar">
+    <div class="status-left">
+      <span class="status-item" id="status-remote">⎇ main</span>
+      <span class="status-item" id="status-sync">↑0 ↓0</span>
+    </div>
+    <div class="status-right">
+      <span class="status-item" id="status-perf">⚡ balanceado</span>
+      <span class="status-item" id="status-ai">✦ IA: off</span>
+      <span class="status-item" id="status-lang">Texto Simples</span>
+      <span class="status-item" id="status-pos">Ln 1, Col 1</span>
+      <span class="status-item" id="status-encoding">UTF-8</span>
+      <span class="status-item" id="status-eol">LF</span>
+    </div>
+  </footer>
+
+  <!-- COMMAND PALETTE OVERLAY -->
+  <div id="cmd-overlay" class="overlay" hidden>
+    <div class="cmd-palette">
+      <input type="text" id="cmd-input" placeholder="Digite um comando…" autocomplete="off" spellcheck="false" />
+      <ul id="cmd-list"></ul>
+    </div>
+  </div>
+
+  <!-- CONTEXT MENU (file tree) -->
+  <div id="context-menu" class="context-menu" hidden>
+    <ul>
+      <li data-action="rename">Renomear</li>
+      <li data-action="delete">Excluir</li>
+      <li data-action="new-file">Novo Arquivo</li>
+      <li data-action="new-folder">Nova Pasta</li>
+      <li data-action="reveal">Revelar no Explorer do SO</li>
+    </ul>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toast-container"></div>
+
+  <!-- Monaco é carregado dinamicamente pelo app.js (precisa do path do node_modules) -->
+  <script type="module" src="scripts/app.js"></script>
+</body>
+</html>

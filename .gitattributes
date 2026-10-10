@@ -1,0 +1,18 @@
+# Sane defaults
+* text=auto eol=lf
+
+# Windows-friendly line endings
+*.cmd  eol=crlf
+*.bat  eol=crlf
+
+# Binaries
+*.png  binary
+*.ico  binary
+*.icns binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
