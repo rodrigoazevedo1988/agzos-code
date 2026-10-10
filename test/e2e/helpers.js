@@ -17,12 +17,11 @@ async function launchApp({ userData, settings } = {}) {
 
   const args = ['.'];
   if (needsNoSandbox()) args.push('--no-sandbox');
-  if (process.platform === 'linux') args.push('--password-store=basic');
 
   const app = await electron.launch({
     args,
     cwd: ROOT,
-    env: { ...process.env, AGZOS_USER_DATA: dir, AGZOS_TEST: '1' },
+    env: { ...process.env, AGZOS_USER_DATA: dir, AGZOS_TEST: '1', AGZOS_TEST_SAFESTORAGE: 'fake' },
   });
 
   const errors = [];

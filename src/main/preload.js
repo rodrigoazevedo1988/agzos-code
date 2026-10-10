@@ -52,6 +52,13 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Segredos (cofre do SO). Não há get: o valor nunca vai para o renderer.
+  secrets: {
+    set: (key, value) => ipcRenderer.invoke('secrets:set', key, value),
+    delete: (key) => ipcRenderer.invoke('secrets:delete', key),
+    has: (key) => ipcRenderer.invoke('secrets:has', key),
+  },
+
   // Settings
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),

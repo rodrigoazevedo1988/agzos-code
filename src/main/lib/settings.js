@@ -73,4 +73,42 @@ function saveSettings(filePath, settings) {
   }
 }
 
-module.exports = { DEFAULT_SETTINGS, loadSettings, saveSettings };
+/**
+ * Move segredos antigos de settings.json para o cofre.
+ *  - aiApiKey        → store 'ai.legacy'
+ *  - onboardingAnswers.github.token → store 'github.onboarding'
+ * Se o cofre falhar, o segredo permanece no settings (não se perde) e changed = false.
+ */
+function migrateLegacySecrets(settings, store) {
+  const out = { ...settings };
+  let changed = false;
+
+  if (typeof out.aiApiKey === 'string' && out.aiApiKey) {
+    try {
+      store.set('ai.legacy', out.aiApiKey);
+      delete out.aiApiKey;
+      changed = true;
+    } catch (e) {
+      console.error('migração da API key falhou; mantida no settings', e.message);
+      return { settings: out, changed: false };
+    }
+  }
+
+  const token = out.onboardingAnswers?.github?.token;
+  if (typeof token === 'string' && token) {
+    try {
+      store.set('github.onboarding', token);
+      out.onboardingAnswers = {
+        ...out.onboardingAnswers,
+        github: { type: 'pat' },
+      };
+      changed = true;
+    } catch (e) {
+      console.error('migração do token do onboarding falhou; mantido no settings', e.message);
+    }
+  }
+
+  return { settings: out, changed };
+}
+
+module.exports = { DEFAULT_SETTINGS, loadSettings, saveSettings, migrateLegacySecrets };

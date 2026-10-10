@@ -340,10 +340,16 @@ function renderGithubStep(host) {
     answers.github = null;
     goNext();
   });
-  form.querySelector('input').addEventListener('change', (e) => {
-    if (e.target.value.trim()) {
-      answers.github = { type: 'pat', token: e.target.value.trim() };
-      toast('Token salvo. Você pode adicionar mais contas depois.', 'success');
+  form.querySelector('input').addEventListener('change', async (e) => {
+    const token = e.target.value.trim();
+    if (!token) return;
+    e.target.value = '';
+    try {
+      await window.agzos.secrets.set('github.onboarding', token);
+      answers.github = { type: 'pat' };
+      toast('Token salvo no cofre do sistema. Você pode adicionar mais contas depois.', 'success');
+    } catch (err) {
+      toast(`Erro ao salvar o token: ${err.message}`, 'error', 5000);
     }
   });
   host.appendChild(gh);

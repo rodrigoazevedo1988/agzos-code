@@ -212,7 +212,7 @@ function applySettingsToUI() {
   document.getElementById('setting-telemetry').checked = !!s.telemetry;
   document.getElementById('setting-fontsize').value = s.fontSize;
   document.getElementById('setting-ai-provider').value = s.aiProvider || '';
-  document.getElementById('setting-ai-key').value = s.aiApiKey || '';
+  refreshAiKeyPlaceholder();
   document.getElementById('status-perf').textContent = `${s.performanceMode === 'high' ? 'alta performance' : s.performanceMode}`;
 }
 
@@ -250,9 +250,28 @@ function bindSettingsInputs() {
     updateStatusAI();
   });
   document.getElementById('setting-ai-key').addEventListener('change', async (e) => {
-    State.settings.aiApiKey = e.target.value || null;
-    await window.agzos.settings.save(State.settings);
+    const value = e.target.value.trim();
+    e.target.value = '';
+    try {
+      if (value) {
+        await window.agzos.secrets.set('ai.legacy', value);
+        toast('Chave salva no cofre do sistema.', 'success');
+      } else {
+        await window.agzos.secrets.delete('ai.legacy');
+      }
+    } catch (err) {
+      toast(`Erro ao salvar a chave: ${err.message}`, 'error', 5000);
+    }
+    refreshAiKeyPlaceholder();
   });
+}
+
+// Campo de chave nunca mostra o valor: placeholder indica se há chave salva.
+async function refreshAiKeyPlaceholder() {
+  const el = document.getElementById('setting-ai-key');
+  let saved = false;
+  try { saved = await window.agzos.secrets.has('ai.legacy'); } catch {}
+  el.placeholder = saved ? '•••• salva no cofre' : 'sk-…';
 }
 
 function updateStatusAI() {

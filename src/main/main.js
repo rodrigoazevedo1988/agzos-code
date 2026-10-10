@@ -10,7 +10,7 @@
  *  - Configurações persistentes em userData
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -219,12 +219,31 @@ require('./ipc/fs').register(ipcMain);
 require('./ipc/dialog').register(ipcMain, deps);
 require('./ipc/term').register(ipcMain);
 const settingsStore = require('./ipc/settings').register(ipcMain, deps);
+const { createSecretStore } = require('./lib/secrets');
+const { migrateLegacySecrets } = require('./lib/settings');
+// Em testes E2E sem keyring (CI Linux), usa um cofre falso. Inerte fora de AGZOS_TEST=1.
+const secretsBackend = process.env.AGZOS_TEST === '1' && process.env.AGZOS_TEST_SAFESTORAGE === 'fake'
+  ? {
+      isEncryptionAvailable: () => true,
+      encryptString: (v) => Buffer.from(`fake:${v}`, 'utf-8'),
+      decryptString: (b) => b.toString('utf-8').replace(/^fake:/, ''),
+    }
+  : safeStorage;
+const secretStore = createSecretStore({
+  filePath: path.join(app.getPath('userData'), 'secrets.json'),
+  safeStorage: secretsBackend,
+});
+require('./ipc/secrets').register(ipcMain, { store: secretStore });
 require('./ipc/app-info').register(ipcMain, deps);
 
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
+  // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
+  const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);
+  if (migrated.changed) settingsStore.save(migrated.settings);
+
   // macOS: seta o ícone da Dock enquanto o app roda (em dev e empacotado)
   if (process.platform === 'darwin' && app.dock && APP_ICON) {
     const img = nativeImage.createFromPath(APP_ICON);

@@ -28,3 +28,20 @@ test('segunda execução não mostra overlays', async () => {
     await app.close();
   }
 });
+
+test('migra aiApiKey antigo para o cofre', async () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { app, page, userData, errors } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true, aiApiKey: 'sk-teste' },
+  });
+  try {
+    await expect.poll(() => readSettings(userData).aiApiKey, { timeout: 5000 }).toBeUndefined();
+    const secrets = fs.readFileSync(path.join(userData, 'secrets.json'), 'utf-8');
+    expect(secrets).not.toContain('sk-teste');
+    expect(await page.evaluate(() => window.agzos.secrets.has('ai.legacy'))).toBe(true);
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+  }
+});
