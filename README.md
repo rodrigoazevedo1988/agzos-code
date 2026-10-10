@@ -19,9 +19,6 @@
   <img alt="Licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-D10A11">
 </p>
 
-<p align="center">
-  <img alt="Ícone do Agzos Code" src="build/icon-256.png" width="128">
-</p>
 
 ---
 
