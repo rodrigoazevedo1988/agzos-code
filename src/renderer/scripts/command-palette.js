@@ -1,3 +1,4 @@
+import { perfLabel } from './labels.js';
 /**
  * Command Palette — abre overlay com busca fuzzy simples de comandos.
  */
@@ -129,7 +130,7 @@ async function setPerf(mode) {
   document.body.classList.remove('perf-economy', 'perf-high');
   if (mode === 'economy') document.body.classList.add('perf-economy');
   if (mode === 'high') document.body.classList.add('perf-high');
-  document.getElementById('status-perf').textContent = `⚡ ${mode === 'high' ? 'alta performance' : mode}`;
+  document.getElementById('status-perf').textContent = perfLabel(mode);
   const sel = document.getElementById('setting-perf');
   if (sel) sel.value = mode;
   const State = window.AgzosState;

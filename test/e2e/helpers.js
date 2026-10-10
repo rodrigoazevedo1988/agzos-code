@@ -49,8 +49,10 @@ function readSettings(userData) {
 }
 
 async function completeOnboarding(page) {
-  const welcomeBtn = page.locator('.welcome-primary');
-  if (await welcomeBtn.isVisible().catch(() => false)) {
+  // welcome.js abre o pop-up com setTimeout(400ms): espera ele (ou o onboarding) aparecer
+  await page.locator('#welcome-popup.active, #onboarding-overlay.active').first().waitFor({ timeout: 5000 });
+  const welcomeBtn = page.locator('#welcome-popup.active .welcome-primary');
+  if (await welcomeBtn.count()) {
     await welcomeBtn.click();
     // welcome.js abre o onboarding com setTimeout(200ms)
     await page.locator('#onboarding-overlay.active').waitFor({ timeout: 5000 });

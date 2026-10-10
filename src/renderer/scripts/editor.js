@@ -98,7 +98,8 @@ function loadMonaco() {
 export async function setupEditor() {
   monaco = await loadMonaco();
   const host = document.getElementById('editor-host');
-  host.innerHTML = '';
+  // Mantém o #welcome (estado vazio) ao recriar o editor
+  [...host.children].filter((el) => el.id !== 'welcome').forEach((el) => el.remove());
   activeEditor = monaco.editor.create(host, {
     value: '',
     language: 'plaintext',
@@ -171,6 +172,7 @@ export async function openFile(filePath, contentOverride) {
   State.activePath = filePath;
   setModel(file);
   renderTabs();
+  syncEditorWelcome();
   focusTab(filePath);
   document.getElementById('welcome').style.display = 'none';
   // Atualiza título da janela
@@ -213,6 +215,7 @@ export async function closeTab(filePath) {
     currentModel = null;
   }
   State.files.delete(filePath);
+  syncEditorWelcome();
   if (State.activePath === filePath) {
     State.activePath = null;
     const remaining = [...State.files.keys()];
@@ -225,6 +228,12 @@ export async function closeTab(filePath) {
     }
   }
   renderTabs();
+}
+
+// Welcome do editor só aparece sem arquivos abertos
+function syncEditorWelcome() {
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.hidden = State.files.size > 0;
 }
 
 export function getActiveEditor() { return activeEditor; }

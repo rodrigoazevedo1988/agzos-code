@@ -59,6 +59,11 @@ export function exitOnboarding(opts = {}) {
   if (opts.completed) {
     State.settings.onboardingCompleted = true;
     State.settings.onboardingAnswers = answers;
+    if (answers.theme) {
+      State.settings.theme = answers.theme;
+      document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${answers.theme}`;
+      import('./editor.js').then((m) => m.applyTheme(answers.theme));
+    }
     window.agzos.settings.save(State.settings);
     toast('Onboarding concluído! 🚀', 'success', 3000);
   } else {
@@ -231,6 +236,8 @@ function renderThemeStep(host) {
     { id: 'auto', name: 'Seguir sistema', desc: 'Muda junto com seu OS', icon: 'monitor' },
   ];
   const current = answers.theme || State.settings.theme || 'agzos-dark';
+  // Tema pré-selecionado também é a escolha do usuário se ele não clicar em outro
+  if (!answers.theme) answers.theme = current;
   const grid = document.createElement('div');
   grid.className = 'onb-theme-grid';
   themes.forEach((t) => {

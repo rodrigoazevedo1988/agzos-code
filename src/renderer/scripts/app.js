@@ -12,6 +12,7 @@ import { setupSearch } from './search.js';
 import { initTerminal, toggleTerminal, focusTerminal } from './terminal.js';
 import { openWorkspace } from './file-tree.js';
 import { lucideIcon } from './lucide.js';
+import { perfLabel } from './labels.js';
 import { showWelcome, hideWelcome, showEditorWelcome } from './welcome.js';
 import { startOnboarding, exitOnboarding } from './onboarding.js';
 
@@ -213,7 +214,7 @@ function applySettingsToUI() {
   document.getElementById('setting-fontsize').value = s.fontSize;
   document.getElementById('setting-ai-provider').value = s.aiProvider || '';
   refreshAiKeyPlaceholder();
-  document.getElementById('status-perf').textContent = `${s.performanceMode === 'high' ? 'alta performance' : s.performanceMode}`;
+  document.getElementById('status-perf').textContent = perfLabel(s.performanceMode);
 }
 
 function bindSettingsInputs() {
@@ -231,7 +232,7 @@ function bindSettingsInputs() {
     document.body.classList.remove('perf-economy', 'perf-high');
     if (mode === 'economy') document.body.classList.add('perf-economy');
     if (mode === 'high') document.body.classList.add('perf-high');
-    document.getElementById('status-perf').textContent = mode === 'high' ? 'alta performance' : mode;
+    document.getElementById('status-perf').textContent = perfLabel(mode);
     await window.agzos.settings.save(State.settings);
   });
   document.getElementById('setting-telemetry').addEventListener('change', async (e) => {

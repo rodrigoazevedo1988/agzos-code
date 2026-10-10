@@ -29,10 +29,13 @@ function register(ipcMain) {
 
     shells.set(id, proc);
 
-    proc.stdout.on('data', (data) => evt.sender.send('term:data', id, data.toString()));
-    proc.stderr.on('data', (data) => evt.sender.send('term:data', id, data.toString()));
+    const send = (channel, ...args) => {
+      if (!evt.sender.isDestroyed()) evt.sender.send(channel, ...args);
+    };
+    proc.stdout.on('data', (data) => send('term:data', id, data.toString()));
+    proc.stderr.on('data', (data) => send('term:data', id, data.toString()));
     proc.on('exit', (code) => {
-      evt.sender.send('term:exit', id, code);
+      send('term:exit', id, code);
       shells.delete(id);
     });
 
