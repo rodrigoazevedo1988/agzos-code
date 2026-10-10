@@ -197,6 +197,9 @@
 
   <!-- Sprite do Lucide (deve vir ANTES do app.js pra estar no body quando o boot rodar) -->
   <script src="vendor/lucide/inline.js"></script>
+  <!-- State global (window.AgzosState) — script clássico, roda antes dos módulos ESM.
+       Sem ele todo módulo lê State = undefined e o boot quebra (tela preta). -->
+  <script src="scripts/state.js"></script>
   <!-- App principal (ESM) -->
   <script type="module" src="scripts/app.js"></script>
 </body>

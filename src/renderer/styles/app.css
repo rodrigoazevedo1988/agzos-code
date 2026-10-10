@@ -408,6 +408,10 @@ kbd {
 }
 /* *** BUG FIX *** — o atributo [hidden] estava sendo sobrescrito por display:flex */
 [hidden] { display: none !important; }
+/* Welcome e onboarding só aparecem com .active (welcome.js / onboarding.js).
+   Sem isso os dois overlays vazios cobrem a UI com backdrop escuro. */
+#welcome-popup.overlay:not(.active),
+#onboarding-overlay.overlay:not(.active) { display: none; }
 
 .cmd-palette {
   width: 600px; max-width: 90vw;

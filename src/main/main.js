@@ -10,7 +10,7 @@
  *  - Configurações persistentes em userData
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
@@ -21,10 +21,12 @@ const isDev = process.argv.includes('--dev') || process.env.AGZOS_DEV === '1' ||
 // DevTools só abre se AGZOS_DEV=1 ou flag --devtools explícita
 const openDevToolsOnStart = process.argv.includes('--devtools') || process.env.AGZOS_DEV === '1';
 
-// Resolve ícone do app em ordem de preferência (por plataforma e por tipo)
+// Resolve ícone do app em ordem de preferência (por plataforma e por tipo).
+// macOS: nativeImage NÃO lê .icns — app.dock.setIcon('icon.icns') resulta em
+// imagem vazia e o Dock continua com o ícone do Electron. Usar PNG.
 function resolveAppIcon() {
   const candidates = process.platform === 'darwin'
-    ? ['build/icon.icns', 'build/icon-1024.png', 'build/icon-512.png', 'build/icon-256.png', 'build/icon.png']
+    ? ['build/icon-1024.png', 'build/icon-512.png', 'build/icon.png']
     : process.platform === 'win32'
     ? ['build/icon.ico', 'build/icon-256.png', 'build/icon.png']
     : ['build/icon-512.png', 'build/icon-256.png', 'build/icon.png'];
@@ -410,7 +412,9 @@ ipcMain.handle('app:openExternal', (_evt, url) => {
 app.whenReady().then(() => {
   // macOS: seta o ícone da Dock enquanto o app roda (em dev e empacotado)
   if (process.platform === 'darwin' && app.dock && APP_ICON) {
-    try { app.dock.setIcon(APP_ICON); } catch (e) { /* ignora */ }
+    const img = nativeImage.createFromPath(APP_ICON);
+    if (img.isEmpty()) console.warn(`[Agzos Code] ícone do Dock vazio: ${APP_ICON}`);
+    else app.dock.setIcon(img);
   }
   // Windows: pin to taskbar / jump list com ícone correto
   if (process.platform === 'win32' && APP_ICON) {
