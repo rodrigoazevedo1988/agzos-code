@@ -1,8 +1,29 @@
-# Agzos Code
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logos/SVG/2.svg">
+    <source media="(prefers-color-scheme: light)" srcset="logos/SVG/1.svg">
+    <img alt="Agzos" src="logos/PNG/1.png" width="360">
+  </picture>
+</p>
 
-> **O VS Code do time Agzos** — editor de código com Electron + Monaco, branding Agzos (#0E0E0E / #D10A11), IA nativa, terminal integrado e multi-plataforma.
+<h1 align="center">Agzos Code</h1>
 
-![Agzos Code — preview](build/icon-256.png)
+<p align="center">
+  <strong>O VS Code do time Agzos</strong> — editor de código com Electron + Monaco, IA nativa, terminal integrado e multiplataforma.
+</p>
+
+<p align="center">
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-desktop-0E0E0E?logo=electron&logoColor=white">
+  <img alt="Monaco" src="https://img.shields.io/badge/Monaco-editor-D10A11">
+  <img alt="Plataformas" src="https://img.shields.io/badge/Win%20%7C%20macOS%20%7C%20Linux-0E0E0E">
+  <img alt="Licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-D10A11">
+</p>
+
+<p align="center">
+  <img alt="Ícone do Agzos Code" src="build/icon-256.png" width="128">
+</p>
+
+---
 
 ## ✨ O que é
 
@@ -208,3 +229,19 @@ Baseado no trabalho de [Microsoft Corporation](https://github.com/microsoft/mona
 ---
 
 **Agzos Code** — feito com 🖤 e 🔴 pelo time Agzos.
+
+## 🎨 Identidade visual
+
+Os logos oficiais da Agzos ficam em [`logos/`](logos/), em **SVG**, **PNG** e **PDF**:
+
+| Arquivo | Versão | Uso indicado |
+|---|---|---|
+| `1` | Logo completo, preto com "s" vermelho | Fundos claros |
+| `2` | Logo completo, branco com "s" vermelho | Fundos escuros |
+| `3` | Logo completo, preto | Impressão monocromática em fundo claro |
+| `4` | Logo completo, branco | Monocromático em fundo escuro |
+| `5` | Símbolo, branco | Ícones e avatares em fundo escuro |
+| `6` | Símbolo, vermelho (#D10A11) | Destaque, favicon, splash |
+| `7` | Símbolo, preto | Ícones em fundo claro |
+
+Paleta: preto `#0E0E0E` e vermelho `#D10A11`.

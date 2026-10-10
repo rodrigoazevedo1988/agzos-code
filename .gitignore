@@ -47,3 +47,25 @@ pids/
 
 # Vendor (gerado por tools/setup-vendor.js no postinstall)
 src/renderer/vendor/
+
+# macOS
+**/.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Ambiente e segredos
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+
+# Builds locais do electron-builder
+release/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.rpm
