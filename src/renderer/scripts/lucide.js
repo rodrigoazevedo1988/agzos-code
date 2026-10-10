@@ -63,12 +63,13 @@ function icon(name, opts = {}) {
 
 function replace(el, name, opts) {
   if (!el) return;
-  el.innerHTML = '';
-  el.appendChild(icon(name, opts));
+  el.replaceChildren(icon(name, opts));
 }
 
 export const lucideIcon = Object.assign(icon, {
   replace,
   ready: waitForSprite,
 });
-window.lucideIcon = lucideIcon;
+if (typeof window !== 'undefined') {
+  window.lucideIcon = lucideIcon;
+}

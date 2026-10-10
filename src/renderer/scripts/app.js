@@ -209,6 +209,8 @@ function applySettingsToUI() {
   if (s.performanceMode === 'economy') document.body.classList.add('perf-economy');
   if (s.performanceMode === 'high') document.body.classList.add('perf-high');
   document.getElementById('setting-theme').value = s.theme;
+  const iconThemeEl = document.getElementById('setting-icon-theme');
+  if (iconThemeEl) iconThemeEl.value = s.iconTheme || 'lucide-color';
   document.getElementById('setting-perf').value = s.performanceMode;
   document.getElementById('setting-telemetry').checked = !!s.telemetry;
   document.getElementById('setting-fontsize').value = s.fontSize;
@@ -226,6 +228,19 @@ function bindSettingsInputs() {
     // Re-renderiza welcome com novo logo
     if (!State.workspaceRoot || !State.activePath) showEditorWelcome();
   });
+  const iconThemeSelect = document.getElementById('setting-icon-theme');
+  if (iconThemeSelect) {
+    iconThemeSelect.addEventListener('change', async (e) => {
+      const theme = e.target.value;
+      State.settings.iconTheme = theme;
+      await window.agzos.settings.save(State.settings);
+      const fileTreeMod = await import('./file-tree.js');
+      fileTreeMod.refreshTree(true);
+      const tabsMod = await import('./tabs.js');
+      tabsMod.renderTabs();
+      toast('Tema de ícones atualizado.', 'info', 1500);
+    });
+  }
   document.getElementById('setting-perf').addEventListener('change', async (e) => {
     const mode = e.target.value;
     State.settings.performanceMode = mode;

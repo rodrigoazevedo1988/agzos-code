@@ -3,16 +3,21 @@
  */
 
 import { openFile, closeTab } from './editor.js';
+import { renderTabIcon } from './icon-theme.js';
 
 const State = window.AgzosState;
 
 export function renderTabs() {
   const host = document.getElementById('tabs');
-  host.innerHTML = '';
+  if (!host) return;
+  host.replaceChildren();
   for (const [path, file] of State.files) {
     const tab = document.createElement('div');
     tab.className = 'tab' + (file.dirty ? ' dirty' : '') + (State.activePath === path ? ' active' : '');
     tab.dataset.path = path;
+
+    const icon = renderTabIcon(basename(path), State.settings?.iconTheme);
+    tab.appendChild(icon);
 
     const label = document.createElement('span');
     label.className = 'label';
