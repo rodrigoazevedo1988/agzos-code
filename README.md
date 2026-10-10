@@ -77,9 +77,18 @@ O `postinstall` roda `tools/setup-vendor.js`, que copia os assets do Monaco e do
 
 ### Rodar em dev
 ```bash
-npm run dev
-# abre a janela com DevTools anexado
+npm run dev         # abre o app
+npm run dev:tools   # abre o app com DevTools
 ```
+
+### Regenerar ícones
+```bash
+npm run build:icons
+```
+Gera PNG/ICO/ICNS a partir de `logos/SVG/6.svg` usando o próprio Electron (sem dependências externas). No macOS também aplica nome e ícone Agzos no `Electron.app` de dev.
+
+### Documentação
+Veja [`docs/`](docs/README.md): PRD, decisões de arquitetura, troubleshooting e roadmap.
 
 ### Buildar instalador
 ```bash
@@ -130,8 +139,9 @@ agzos-code/
 │       │   ├── command-palette.js  # Overlay de comandos
 │       │   ├── ai-chat.js          # UI stub do chat IA
 │       │   ├── search.js           # Busca textual
-│       │   ├── settings.js         # (legado, mesclado em app.js)
-│       │   ├── state.js            # Singleton de estado
+│       │   ├── state.js            # Singleton de estado (script clássico, carregado antes do app.js)
+│       │   ├── welcome.js          # Pop-up de boas-vindas
+│       │   ├── onboarding.js       # Wizard de onboarding
 │       │   └── toast.js            # Notificações efêmeras
 │       ├── vendor/          # Gerado por tools/setup-vendor.js (gitignored)
 │       │   ├── monaco/      # Monaco AMD loader + min/vs/
@@ -142,8 +152,11 @@ agzos-code/
 │   ├── icon-1024.png       # Master
 │   ├── icon.ico            # Windows
 │   └── ...
+├── docs/                    # PRD, ADRs, arquitetura, roadmap
 ├── tools/
-│   └── setup-vendor.js     # Copia Monaco/xterm pra vendor/
+│   ├── setup-vendor.js     # Copia Monaco/xterm/Lucide pra vendor/
+│   ├── build-icons.js      # Gera PNG/ICO/ICNS (roda no Electron)
+│   └── patch-electron-dev-mac.js  # Nome/ícone Agzos no Electron.app de dev (macOS)
 ├── README.md
 ├── LICENSE                  # MIT
 └── .gitignore

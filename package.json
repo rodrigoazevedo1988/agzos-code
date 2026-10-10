@@ -12,8 +12,8 @@
   "private": false,
   "scripts": {
     "setup:vendor": "node tools/setup-vendor.js",
-    "postinstall": "node tools/setup-vendor.js",
-    "build:icons": "node tools/build-pngs-from-svg.js && node tools/build-icons.js",
+    "postinstall": "node tools/setup-vendor.js && node tools/patch-electron-dev-mac.js",
+    "build:icons": "electron tools/build-icons.js && node tools/patch-electron-dev-mac.js",
     "start": "electron .",
     "dev": "electron .",
     "dev:tools": "AGZOS_DEV=1 electron .",
