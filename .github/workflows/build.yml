@@ -1,0 +1,78 @@
+name: Build
+
+# Builds dos três "ports" (Windows, Linux, macOS) sem publicar release.
+# Roda manualmente e em tags; a publicação/auto-update é a Fase 5.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (arm64 + x64)
+            os: macos-14
+            script: dist:mac
+          - name: Windows (x64 + arm64)
+            os: windows-latest
+            script: dist:win
+          - name: Linux (x64)
+            os: ubuntu-22.04
+            script: dist:linux
+    env:
+      # Sem certificado no CI: não tenta assinar/notarizar.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependências Linux para DEB/RPM
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run ${{ matrix.script }}
+
+      # Garante que sujeira do macOS (._*, .DS_Store, .AppleDouble) não vai
+      # para o instalador. O hook afterPack e o build.files já removem; este
+      # passo falha o build se algo escapar.
+      - name: Verificar ausência de arquivos ._* (AppleDouble)
+        shell: bash
+        run: |
+          if find dist \( -name '._*' -o -name '.AppleDouble' \) -print -quit | grep -q .; then
+            echo "::error::Arquivos AppleDouble (._*) encontrados no pacote:"
+            find dist \( -name '._*' -o -name '.AppleDouble' \) -print | head -50
+            exit 1
+          fi
+          echo "OK: nenhum arquivo ._* no pacote."
+
+      - name: Artefatos
+        uses: actions/upload-artifact@v4
+        with:
+          name: agzos-code-${{ runner.os }}-${{ github.sha }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.yml
+          if-no-files-found: error
+          retention-days: 14

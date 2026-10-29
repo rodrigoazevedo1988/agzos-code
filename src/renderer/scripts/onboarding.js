@@ -5,8 +5,7 @@
  *  1. Boas-vindas + escolha de tema (dark/light)
  *  2. Migrar de outro editor (VS Code, Cursor, Sublime, Atom)
  *  3. Conectar GitHub (multi-conta)
- *  4. Escolher layout (sidebar position, terminal position, density)
- *  5. Done — atalhos + dica
+ *  4. Done — atalhos + dica
  *
  * Persiste em settings.onboardingCompleted.
  */
@@ -21,7 +20,6 @@ const STEPS = [
   { id: 'theme', title: 'Escolha um tema', subtitle: 'Você pode mudar depois em Settings → Tema.' },
   { id: 'migrate', title: 'Migrar de outro editor?', subtitle: 'Importa configurações, extensões e keybindings.' },
   { id: 'github', title: 'Conectar GitHub', subtitle: 'Suporte multi-conta com switcher na status bar.' },
-  { id: 'layout', title: 'Layout e densidade', subtitle: 'Posição da sidebar, terminal e tamanho dos elementos.' },
   { id: 'done', title: 'Tudo pronto!', subtitle: 'Aqui estão seus atalhos principais.' },
 ];
 
@@ -115,9 +113,6 @@ function renderStep(overlay) {
       break;
     case 'github':
       renderGithubStep(content);
-      break;
-    case 'layout':
-      renderLayoutStep(content);
       break;
     case 'done':
       renderDoneStep(content);
@@ -293,8 +288,8 @@ function renderMigrateStep(host) {
         // Stub: a integração real é Fase 1 do roadmap
         const mod = await import('./migrate.js');
         const ok = await mod.migrateFrom(e.id);
-        if (ok) toast(`Configurações de ${e.name} importadas (stub).`, 'success');
-        else toast(`Importação de ${e.name} será implementada em breve.`, 'info');
+        if (ok) toast(`Configurações de ${e.name} detectadas. A importação chega na Fase 4.`, 'info', 5000);
+        else toast(`Importação de ${e.name} será implementada na Fase 4.`, 'info');
       }
     });
     grid.appendChild(card);
@@ -302,7 +297,7 @@ function renderMigrateStep(host) {
   host.appendChild(grid);
   const note = document.createElement('p');
   note.className = 'onb-note';
-  note.innerHTML = `<strong>${iconsInline('info')} Nota:</strong> a importação completa das <em>extensões</em> será integrada na próxima release com Open VSX como fonte.`;
+  note.innerHTML = `<strong>${iconsInline('info')} Nota:</strong> extensões do VS Code não são suportadas (ADR-0001). As integrações Agzos chegam depois da v1.0.`;
   note.querySelector('strong').prepend(lucideIcon('info', { size: 14, strokeWidth: 2 }));
   host.appendChild(note);
 }
@@ -340,8 +335,8 @@ function renderGithubStep(host) {
     form.hidden = !form.hidden;
   });
   gh.querySelector('.onb-github-primary').addEventListener('click', () => {
-    // OAuth flow stub — implementação real é Fase 1
-    toast('OAuth GitHub será implementado na próxima release. Use PAT por enquanto.', 'info', 4000);
+    // OAuth real fica na Fase 3; o PAT já funciona.
+    toast('OAuth GitHub chega na Fase 3. Use Personal Access Token por enquanto.', 'info', 4000);
   });
   gh.querySelector('.onb-github-tertiary').addEventListener('click', () => {
     answers.github = null;
@@ -360,58 +355,6 @@ function renderGithubStep(host) {
     }
   });
   host.appendChild(gh);
-}
-
-function renderLayoutStep(host) {
-  const layouts = [
-    { id: 'standard', name: 'Padrão', desc: 'Sidebar à esquerda, terminal embaixo', icon: 'layout' },
-    { id: 'sidebar-right', name: 'Sidebar à direita', desc: 'Mais espaço pro editor', icon: 'panel-right' },
-    { id: 'terminal-right', name: 'Terminal à direita', desc: 'Linha vertical, estilo Vim', icon: 'panel-right-open' },
-    { id: 'zen', name: 'Zen', desc: 'Mínimo: só o editor', icon: 'focus' },
-  ];
-  const densities = [
-    { id: 'compact', name: 'Compacto', desc: 'Mais conteúdo na tela' },
-    { id: 'comfortable', name: 'Confortável', desc: 'Equilíbrio (recomendado)' },
-    { id: 'spacious', name: 'Espaçoso', desc: 'Mais respiro' },
-  ];
-
-  const grid = document.createElement('div');
-  grid.className = 'onb-layout-grid';
-  layouts.forEach((l) => {
-    const card = document.createElement('button');
-    card.className = `onb-layout-card ${answers.layout === l.id ? 'selected' : ''}`;
-    card.innerHTML = `
-      <div class="onb-layout-icon"></div>
-      <div class="onb-layout-name">${l.name}</div>
-      <div class="onb-layout-desc">${l.desc}</div>
-    `;
-    card.querySelector('.onb-layout-icon').appendChild(lucideIcon(l.icon, { size: 22, strokeWidth: 1.8 }));
-    card.addEventListener('click', () => {
-      answers.layout = l.id;
-      grid.querySelectorAll('.onb-layout-card').forEach((c) => c.classList.remove('selected'));
-      card.classList.add('selected');
-    });
-    grid.appendChild(card);
-  });
-  host.appendChild(grid);
-
-  // Density
-  const densityHost = document.createElement('div');
-  densityHost.className = 'onb-density';
-  densityHost.innerHTML = `<label>Densidade da interface</label><div class="onb-density-row"></div>`;
-  const row = densityHost.querySelector('.onb-density-row');
-  densities.forEach((d) => {
-    const btn = document.createElement('button');
-    btn.className = `onb-density-btn ${answers.density === d.id ? 'selected' : ''}`;
-    btn.innerHTML = `<strong>${d.name}</strong><small>${d.desc}</small>`;
-    btn.addEventListener('click', () => {
-      answers.density = d.id;
-      row.querySelectorAll('.onb-density-btn').forEach((c) => c.classList.remove('selected'));
-      btn.classList.add('selected');
-    });
-    row.appendChild(btn);
-  });
-  host.appendChild(densityHost);
 }
 
 function renderDoneStep(host) {
@@ -451,6 +394,6 @@ function goNext() {
   const overlay = document.getElementById('onboarding-overlay');
   renderStep(overlay);
 }
-function iconsInline(name) {
+function iconsInline(_name) {
   return ''; // usa prepend em vez disso
 }

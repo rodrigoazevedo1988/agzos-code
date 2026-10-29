@@ -46,7 +46,7 @@ test('árvore de pastas expande verticalmente e suporta troca de tema de ícones
 
     // Testa troca de tema de ícones nas configurações
     await page.locator('.activity-btn[data-view="settings"]').click();
-    await expect(page.locator('#panel-settings')).toBeVisible();
+    await expect(page.locator('#settings-page')).toBeVisible();
 
     const iconSelect = page.locator('#setting-icon-theme');
     await expect(iconSelect).toHaveValue('lucide-color');
@@ -56,16 +56,25 @@ test('árvore de pastas expande verticalmente e suporta troca de tema de ícones
     await expect.poll(() => readSettings(userData).iconTheme).toBe('emoji');
 
     // Volta ao Explorer e verifica se emoji foi renderizado
+    await page.locator('#btn-settings-back').click();
     await page.locator('.activity-btn[data-view="explorer"]').click();
     await expect(page.locator('#file-tree .emoji-icon').first()).toBeVisible();
 
     // Altera para 'badges'
     await page.locator('.activity-btn[data-view="settings"]').click();
+    await expect(page.locator('#settings-page')).toBeVisible();
     await iconSelect.selectOption('badges');
     await expect.poll(() => readSettings(userData).iconTheme).toBe('badges');
 
+    await page.locator('#btn-settings-back').click();
     await page.locator('.activity-btn[data-view="explorer"]').click();
     await expect(page.locator('#file-tree .tree-badge').first()).toBeVisible();
+
+    // Configurações abrem em página cheia; Esc volta.
+    await page.locator('#btn-settings').click();
+    await expect(page.locator('#settings-page')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#settings-page')).toBeHidden();
 
     expect(errors).toEqual([]);
   } finally {

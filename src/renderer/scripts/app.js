@@ -5,18 +5,36 @@
  */
 
 import { toast } from './toast.js';
-import { setupEditor, openFile, saveActive } from './editor.js';
+import {
+  setupEditor,
+  openFile,
+  saveActive,
+  saveAll,
+  getDirtyFiles,
+  getActiveEditor,
+  revealLocation,
+  closeActiveTab,
+} from './editor.js';
+import { setupCloseGuard } from './close-guard.js';
+import { showInputDialog } from './dialog.js';
+import { setupErrorBoundary } from './error-boundary.js';
 import { setupCommandPalette, showCommandPalette, hideCommandPalette } from './command-palette.js';
 import { setupAI } from './ai-chat.js';
 import { setupSearch } from './search.js';
-import { initTerminal, toggleTerminal, focusTerminal } from './terminal.js';
+import { initTerminal, toggleTerminal } from './terminal.js';
 import { openWorkspace } from './file-tree.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
-import { showWelcome, hideWelcome, showEditorWelcome } from './welcome.js';
+import { showWelcome, showEditorWelcome } from './welcome.js';
 import { startOnboarding, exitOnboarding } from './onboarding.js';
 
 const State = window.AgzosState;
+
+setupErrorBoundary();
+
+const HIDDEN_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'out', 'build', '.cache', 'coverage', '.next', '.nuxt',
+]);
 
 /* --------------------------------------------------------------------------
    Boot
@@ -56,6 +74,9 @@ async function boot() {
   // 7) Setup command palette
   setupCommandPalette();
 
+  // 7.1) Guard de fechamento com arquivos dirty
+  setupCloseGuard({ getDirtyFiles, saveAll });
+
   // 8) Setup panels
   setupAI();
   setupSearch();
@@ -79,7 +100,8 @@ async function boot() {
     document.body.classList.toggle('sidebar-hidden');
     State.sidebarHidden = document.body.classList.contains('sidebar-hidden');
   });
-  document.getElementById('btn-settings').addEventListener('click', () => switchSidebarView('settings'));
+  document.getElementById('btn-settings').addEventListener('click', openSettingsPage);
+  document.getElementById('btn-settings-back').addEventListener('click', closeSettingsPage);
 
   // 12) Botões do header da sidebar
   document.getElementById('btn-open-folder').addEventListener('click', openFolderDialog);
@@ -93,7 +115,10 @@ async function boot() {
 
   // 13) Activity bar
   document.querySelectorAll('.activity-btn').forEach((btn) => {
-    btn.addEventListener('click', () => switchSidebarView(btn.dataset.view));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.view === 'settings') openSettingsPage();
+      else switchSidebarView(btn.dataset.view);
+    });
   });
 
   // 14) Bottom tabs
@@ -119,6 +144,9 @@ async function boot() {
     else if (channel === 'menu:command-palette') showCommandPalette();
     else if (channel === 'menu:toggle-terminal') toggleTerminal();
     else if (channel === 'menu:toggle-sidebar') document.body.classList.toggle('sidebar-hidden');
+    else if (channel === 'menu:close-tab') closeActiveTab();
+    else if (channel === 'menu:close-window') window.close();
+    else if (channel === 'menu:settings') openSettingsPage();
   });
 
   // 18) Init terminal (lazy no primeiro toggle)
@@ -132,8 +160,8 @@ async function boot() {
   });
   observer.observe(document.getElementById('bottom-panel'), { attributes: true, attributeFilter: ['hidden'] });
 
-  // 19) Expor para debug
-  window.AgzosEditor = { openFile, saveActive };
+  // 19) Expor para debug/testes
+  window.AgzosEditor = { openFile, saveActive, getActiveEditor, revealLocation, closeActiveTab };
   window.AgzosOnboarding = { start: startOnboarding, exit: exitOnboarding };
 
   // 20) Atalho no menu: Help → Onboarding
@@ -150,9 +178,9 @@ async function boot() {
   // - Se viu welcome mas não completou onboarding → onboarding
   // - Se completou → só o editor welcome normal
   if (!State.settings.welcomeSeen) {
-    setTimeout(() => showWelcome(), 400);
+    showWelcome();
   } else if (!State.settings.onboardingCompleted && !State.settings.onboardingSkipped) {
-    setTimeout(() => startOnboarding(), 400);
+    startOnboarding();
   }
 
   console.log(`[Agzos Code] v${info.version} • Electron ${info.electron} • ${info.platform}/${info.arch}`);
@@ -212,11 +240,13 @@ function applySettingsToUI() {
   const iconThemeEl = document.getElementById('setting-icon-theme');
   if (iconThemeEl) iconThemeEl.value = s.iconTheme || 'lucide-color';
   document.getElementById('setting-perf').value = s.performanceMode;
-  document.getElementById('setting-telemetry').checked = !!s.telemetry;
+  const showHidden = document.getElementById('setting-show-hidden');
+  if (showHidden) showHidden.checked = s.showHiddenFiles !== false;
   document.getElementById('setting-fontsize').value = s.fontSize;
   document.getElementById('setting-ai-provider').value = s.aiProvider || '';
   refreshAiKeyPlaceholder();
-  document.getElementById('status-perf').textContent = perfLabel(s.performanceMode);
+  const perfLabelEl = document.getElementById('status-perf-label');
+  if (perfLabelEl) perfLabelEl.textContent = perfLabel(s.performanceMode);
 }
 
 function bindSettingsInputs() {
@@ -247,14 +277,19 @@ function bindSettingsInputs() {
     document.body.classList.remove('perf-economy', 'perf-high');
     if (mode === 'economy') document.body.classList.add('perf-economy');
     if (mode === 'high') document.body.classList.add('perf-high');
-    document.getElementById('status-perf').textContent = perfLabel(mode);
+    const perfLabelEl = document.getElementById('status-perf-label');
+    if (perfLabelEl) perfLabelEl.textContent = perfLabel(mode);
     await window.agzos.settings.save(State.settings);
   });
-  document.getElementById('setting-telemetry').addEventListener('change', async (e) => {
-    State.settings.telemetry = e.target.checked;
-    await window.agzos.settings.save(State.settings);
-    toast(`Telemetria ${e.target.checked ? 'ativada' : 'desativada'}.`, 'info');
-  });
+  const showHidden = document.getElementById('setting-show-hidden');
+  if (showHidden) {
+    showHidden.addEventListener('change', async (e) => {
+      State.settings.showHiddenFiles = e.target.checked;
+      await window.agzos.settings.save(State.settings);
+      const fileTreeMod = await import('./file-tree.js');
+      fileTreeMod.refreshTree(false);
+    });
+  }
   document.getElementById('setting-fontsize').addEventListener('change', async (e) => {
     const size = parseInt(e.target.value, 10) || 14;
     const mod = await import('./editor.js');
@@ -285,18 +320,17 @@ function bindSettingsInputs() {
 // Campo de chave nunca mostra o valor: placeholder indica se há chave salva.
 async function refreshAiKeyPlaceholder() {
   const el = document.getElementById('setting-ai-key');
+  if (!el) return;
   let saved = false;
   try { saved = await window.agzos.secrets.has('ai.legacy'); } catch {}
-  el.placeholder = saved ? '•••• salva no cofre' : 'sk-…';
+  if (el.disabled) el.placeholder = 'em breve';
+  else el.placeholder = saved ? '•••• salva no cofre' : 'sk-…';
 }
 
 function updateStatusAI() {
-  const el = document.getElementById('status-ai');
-  if (State.settings.aiProvider) {
-    el.textContent = `IA: ${State.settings.aiProvider}`;
-  } else {
-    el.textContent = `IA: off`;
-  }
+  const el = document.getElementById('status-ai-label');
+  if (!el) return;
+  el.textContent = State.settings.aiProvider ? `IA: ${State.settings.aiProvider}` : 'IA: off';
 }
 
 /* --------------------------------------------------------------------------
@@ -305,6 +339,14 @@ function updateStatusAI() {
 function bindShortcuts() {
   document.addEventListener('keydown', (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
+    const settingsPage = document.getElementById('settings-page');
+    if (settingsPage && !settingsPage.hidden) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSettingsPage();
+      }
+      return;
+    }
     if (State.onboardingActive || State.welcomeOpen) {
       // Bloqueia atalhos durante onboarding/welcome
       if (e.key === 'Escape') {
@@ -316,7 +358,13 @@ function bindShortcuts() {
       }
       return;
     }
-    if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
+    if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      closeActiveTab();
+    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      window.close();
+    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       showCommandPalette();
     } else if (ctrl && e.key.toLowerCase() === 'p') {
@@ -325,6 +373,12 @@ function bindShortcuts() {
     } else if (ctrl && e.key === '`') {
       e.preventDefault();
       toggleTerminal();
+    } else if (ctrl && (e.key === ',' || e.code === 'Comma')) {
+      // Ctrl+, (Windows/Linux) e Cmd+, (macOS). Não confiamos só no acelerador
+      // do menu nativo: ele não dispara de forma confiável no Windows com
+      // frame:false + autoHideMenuBar.
+      e.preventDefault();
+      openSettingsPage();
     } else if (ctrl && e.key.toLowerCase() === 'b') {
       e.preventDefault();
       document.body.classList.toggle('sidebar-hidden');
@@ -347,19 +401,32 @@ function bindShortcuts() {
   });
 }
 
+function openSettingsPage() {
+  const page = document.getElementById('settings-page');
+  if (!page) return;
+  page.hidden = false;
+  document.getElementById('btn-settings-back')?.focus();
+}
+
+function closeSettingsPage() {
+  const page = document.getElementById('settings-page');
+  if (!page) return;
+  page.hidden = true;
+  document.getElementById('btn-settings')?.focus();
+}
+
 function switchSidebarView(view) {
   const map = {
     explorer: { panel: 'file-tree', title: 'EXPLORER' },
     search:   { panel: 'panel-search', title: 'BUSCAR' },
     git:      { panel: 'panel-git', title: 'GIT' },
-    extensions: { panel: 'panel-extensions', title: 'EXTENSÕES' },
+    extensions: { panel: 'panel-extensions', title: 'INTEGRAÇÕES' },
     ai:       { panel: 'panel-ai', title: 'AGZOS IA' },
-    settings: { panel: 'panel-settings', title: 'CONFIGURAÇÕES' },
   };
   const cfg = map[view];
   if (!cfg) return;
   document.getElementById('sidebar-title').textContent = cfg.title;
-  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai','panel-settings'].forEach((id) => {
+  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
@@ -384,27 +451,57 @@ async function openFolderDialog() {
 }
 async function newFileInRoot() {
   if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
-  const name = prompt('Nome do arquivo:');
+  const name = await showInputDialog({
+    title: 'Novo arquivo',
+    label: 'Nome do arquivo na raiz da pasta aberta',
+    placeholder: 'ex.: notas.md',
+    confirmLabel: 'Criar arquivo',
+    validate: validateEntryName,
+  });
   if (!name) return;
-  const newPath = State.workspaceRoot + sep() + name;
+  const newPath = joinPath(State.workspaceRoot, name);
   try {
+    if (await window.agzos.fs.exists(newPath)) {
+      toast('Já existe um arquivo ou pasta com esse nome.', 'error');
+      return;
+    }
     await window.agzos.fs.writeFile(newPath, '');
     const mod = await import('./file-tree.js');
-    mod.refreshTree();
+    mod.refreshTree(false);
     await openFile(newPath);
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
+
 async function newFolderInRoot() {
   if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
-  const name = prompt('Nome da pasta:');
+  const name = await showInputDialog({
+    title: 'Nova pasta',
+    label: 'Nome da pasta na raiz da pasta aberta',
+    placeholder: 'ex.: componentes',
+    confirmLabel: 'Criar pasta',
+    validate: validateEntryName,
+  });
   if (!name) return;
-  const newPath = State.workspaceRoot + sep() + name;
+  const newPath = joinPath(State.workspaceRoot, name);
   try {
+    if (await window.agzos.fs.exists(newPath)) {
+      toast('Já existe um arquivo ou pasta com esse nome.', 'error');
+      return;
+    }
     await window.agzos.fs.mkdir(newPath);
     const mod = await import('./file-tree.js');
-    mod.refreshTree();
+    mod.refreshTree(false);
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
+
+function validateEntryName(name) {
+  if (!name) return 'Informe um nome.';
+  if (name === '.' || name === '..') return 'Nome inválido.';
+  if (/[\\/]/.test(name)) return 'Use apenas o nome, sem barras.';
+  if (name.includes('\0')) return 'Nome inválido.';
+  return null;
+}
+
 async function quickOpen(query) {
   if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
   const lower = query.toLowerCase();
@@ -419,17 +516,32 @@ async function walkForQuickOpen(dir, q, results, depth = 0) {
   let entries;
   try { entries = await window.agzos.fs.readDir(dir); } catch { return; }
   for (const e of entries) {
-    if (e.name.startsWith('.') && e.name !== '.gitignore') continue;
-    if (['node_modules','dist','out','build','.git'].includes(e.name)) continue;
+    if (isIgnoredEntry(e.name)) continue;
     if (e.isDirectory) await walkForQuickOpen(e.path, q, results, depth + 1);
     else if (e.name.toLowerCase().includes(q)) results.push(e.path);
   }
 }
 
+function isIgnoredEntry(name) {
+  if (HIDDEN_DIRS.has(name)) return true;
+  if (name === '.DS_Store') return true;
+  if (State.settings.showHiddenFiles === false && name.startsWith('.')) return true;
+  return false;
+}
+
+function joinPath(a, b) { return a.replace(/[\\/]+$/, '') + sep() + b.replace(/^[\\/]+/, ''); }
+
 function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }
 
+function start() {
+  boot().catch((e) => {
+    console.error(e);
+    import('./error-boundary.js').then((m) => m.showFatal(e.message));
+  });
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', boot);
+  document.addEventListener('DOMContentLoaded', start);
 } else {
-  boot();
+  start();
 }

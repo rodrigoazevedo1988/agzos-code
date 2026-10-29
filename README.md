@@ -24,46 +24,50 @@
 
 ## ✨ O que é
 
-**Agzos Code** é um editor de código desktop construído com [Electron](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/) (o mesmo engine que o VS Code usa de verdade — não é imitação). Este repositório é a **Fase 0 do roadmap** descrita no PRD: um editor funcional com a cara Agzos, pronto pra evoluir pro fork completo do Code-OSS.
+**Agzos Code** é um editor de código desktop construído com [Electron 44](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/) (o mesmo engine que o VS Code usa de verdade — não é imitação). A base é Electron + Monaco próprio, **sem fork do Code-OSS** — decisão registrada no [ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md).
 
-**Diferencial intencional:** o editor foi desenhado desde o dia 1 com o ecossistema Agzos em mente (IA, ferramentas internas, identidade visual) e com privacidade por padrão (telemetria desligada até opt-in explícito).
+**Estado atual (28/10/2026):** Fase 1.5 — Confiança e integridade em finalização. Próxima: Fase 2 — IA. O roadmap vivo fica em [`docs/plano/ROADMAP.md`](docs/plano/ROADMAP.md).
 
-## 🎯 Features atuais (v0.1)
+**Diferencial intencional:** o editor foi desenhado desde o dia 1 com o ecossistema Agzos em mente (IA, ferramentas internas, identidade visual) e com privacidade por padrão — **não há telemetria**.
 
-- **Editor Monaco completo** com syntax highlight, IntelliSense, multi-cursor, bracket pair colorization, minimap, line numbers.
-- **3 temas Agzos:** `Agzos Dark` (preto + vermelho), `Agzos Light`, `Monokai` (compatibilidade).
-- **Sidebar com 5 views:** Explorer, Buscar, Git, Extensões, Agzos IA.
-- **Activity Bar lateral** estilo VS Code.
-- **File tree** com expansão lazy, ícones por extensão, context menu (renomear, excluir, novo arquivo/pasta, revelar no SO).
-- **Tabs com indicador de dirty** (●) e close on middle-click.
-- **Quick Open** (`Ctrl+P`): busca fuzzy por nome de arquivo na workspace.
-- **Buscar em arquivos** (`Ctrl+Shift+F`): varre texto nos arquivos da pasta aberta (com skip em `node_modules`, `.git`, `dist`, etc).
-- **Terminal integrado** (`Ctrl+`): xterm.js conectado ao shell do sistema (bash/powershell).
-- **Command Palette** (`Ctrl+Shift+P`): fuzzy matcher de comandos.
-- **Status bar** com Ln/Col, linguagem, encoding, EOL, branch mock e modo de performance.
-- **Top bar** com busca rápida e botões de atalho.
-- **Settings persistentes** em JSON (tema, performance, telemetria, IA provider/key, fonte).
-- **3 modos de performance:** Economia (animações off), Balanceado (padrão), Alta Performance.
-- **Atalhos globais** estilo VS Code: `Ctrl+S`, `Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+B`, `Ctrl+` `, `Ctrl+Shift+E/F/G/X`.
-- **Branding Agzos:** splash screen, logo, paleta de cores em todos os elementos.
-- **Builds multiplataforma** via electron-builder: NSIS (Win) + AppImage/DEB/RPM (Linux) + DMG/ZIP (macOS).
+## 🎯 Features atuais (v0.2)
 
-## 🧠 Roadmap (do PRD)
+- **Editor Monaco** com syntax highlight, IntelliSense TS/JS, multi-cursor, bracket pair colorization, minimap e line numbers.
+- **3 temas reais:** `Agzos Dark` (preto + vermelho), `Agzos Light` e `Monokai`.
+- **Sidebar:** Explorer, Buscar, Git (Fase 3), Integrações Agzos e Agzos IA (Fase 2).
+- **File tree** com expansão vertical, ícones por extensão, temas de ícones, context menu (renomear, excluir, novo arquivo/pasta, revelar no SO) e dotfiles (`.env`, `.github` etc.).
+- **Tabs** com indicador de dirty (●), fechar com clique do meio e proteção de alterações não salvas ao fechar a janela.
+- **Quick Open** (`Ctrl+P`): busca por nome de arquivo na workspace (versão MVP; ripgrep na Fase 4).
+- **Buscar em arquivos** (`Ctrl+Shift+F`): inclui dotfiles, ignora `node_modules`/`.git` e leva à linha/coluna do resultado.
+- **Terminal integrado** (`Ctrl+`): xterm.js ligado ao shell do sistema (pty real na Fase 4).
+- **Command Palette** (`Ctrl+Shift+P`).
+- **Status bar** com Ln/Col, linguagem, encoding/EOL reais e modo de performance; branch real chega na Fase 3.
+- **Configurações em página cheia** (fora da sidebar, `Cmd+,`): tema, ícones, performance, fonte, arquivos ocultos. A configuração de IA fica desabilitada até a Fase 2.
+- **3 modos de performance:** Economia, Balanceado e Alta Performance.
+- **Atalhos** estilo VS Code: `Ctrl+S`, `Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+B`, `Ctrl+W`, `Ctrl+` `, `Ctrl+Shift+E/F/G/X`.
+- **Encoding/EOL/binário:** arquivos Latin-1/UTF-16 são preservados; binários abrem somente leitura; escrita atômica.
+- **Assinatura local no macOS** para testes (identidade `Rodrigo Dev Local`, bundle id `com.agzos.code`), sem repetir prompts de pasta a cada rebuild.
+- **Builds multiplataforma** via electron-builder: NSIS/portable (Windows x64/arm64), AppImage/DEB/RPM (Linux x64), DMG/ZIP (macOS arm64/x64).
+- **Robustez:** logs em `userData/logs`, fallback de erro no renderer, `sandbox: true`, permissões negadas por padrão e instância única.
+
+## 🧠 Roadmap
 
 | Fase | Status | Foco |
 |------|--------|------|
-| **0 — Setup + Branding** | ✅ Concluída (este repo) | Editor funcional com identidade Agzos |
-| **1 — MVP Core** | ⏳ Próxima | Wizard de IA, Chat Agent real, Multi-GitHub, Auto-update |
-| **2 — Polimento** | ⏳ | Temas Agzos extras, testes de extensões (top 50 do Open VSX) |
-| **3 — Integrações Agzos** | ⏳ | Agzos Key (SSO), Browser, Project, Hub |
-| **4 — Freemium** | ⏳ | Billing + recursos premium |
+| **0 — Protótipo** | ✅ | Editor, branding, welcome/onboarding |
+| **1 — Fundação** | ✅ | Lint/testes, IPC modular, cofre, path guard, CI |
+| **1.5 — Confiança** | 🚧 | Electron 44, assinatura local, dirty close, encoding, arquivos, busca, status, logs |
+| **2 — IA** | ⏳ | SSE, providers, wizard, chat com streaming, contexto e aplicar diff |
+| **3 — Git/GitHub** | ⏳ | Status/diff/commit/push/pull, multi-conta |
+| **4 — Editor completo** | ⏳ | pty, ripgrep, sessão, performance, importar VS Code |
+| **5 — Distribuição/v1.0** | ⏳ | Release 3 SO, auto-update, privacidade, assinatura |
 
-> **Decisão consciente de arquitetura:** em vez de fazer fork 1:1 do `microsoft/vscode` (que exigiria semanas só pra configurar o build system do Code-OSS e mais semanas pra cada build multi-plataforma), começamos com um **editor Electron enxuto que já usa o mesmo Monaco** que o VS Code. Migrar para um fork Code-OSS no futuro é viável — o `product.json` e a maior parte do código de aplicação pode ser reaproveitada.
+Detalhes, critérios de saída e planos por tarefa: [`docs/plano/`](docs/plano/ROADMAP.md). Decisão de base: [ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md) (sem fork) e [ADR-0002](docs/decisoes/ADR-0002-electron-e-codigo-nativo.md) (Electron 44 + política de código nativo).
 
 ## 🚀 Quick start
 
 ### Pré-requisitos
-- Node.js 20.x ou 22.x
+- Node.js 22.x (o Electron 44 embute Node 24 no main)
 - npm 10+
 
 ### Instalação
@@ -74,6 +78,15 @@ npm install
 ```
 
 O `postinstall` roda `tools/setup-vendor.js`, que copia os assets do Monaco e do xterm para `src/renderer/vendor/` (necessário por causa da CSP restritiva do renderer).
+
+**macOS — assinatura local para testes:** se existir a identidade `Rodrigo Dev Local` no Keychain, o `postinstall` assina o `Electron.app` de dev com bundle id `com.agzos.code`. Isso dá uma identidade estável ao TCC e evita pedir permissão de Área de Trabalho/Documentos/Downloads a cada rebuild. Para reassinar manualmente:
+
+```bash
+npm run sign:mac        # Electron.app de dev
+npm run sign:mac:dist   # .app empacotado em dist/
+```
+
+Sem o certificado (CI/outra máquina), o script apenas avisa e segue. A assinatura local **não** é notarizada; distribuição exige Developer ID (Fase 5).
 
 ### Rodar em dev
 ```bash
@@ -94,11 +107,11 @@ Veja [`docs/`](docs/README.md): PRD, decisões de arquitetura, troubleshooting e
 ```bash
 npm run dist          # todas as plataformas (precisa de toolchain)
 npm run dist:linux    # só Linux (AppImage + DEB + RPM)
-npm run dist:win      # só Windows (NSIS + portable)
-npm run dist:mac      # só macOS (DMG + ZIP, precisa de host macOS)
+npm run dist:win      # só Windows (NSIS + portable, x64 + arm64)
+npm run dist:mac      # só macOS (DMG + ZIP, arm64 + x64, precisa de host macOS)
 ```
 
-Saída vai para `dist/`.
+Saída vai para `dist/`. No macOS, o `.app` local é assinado com a identidade `Rodrigo Dev Local` (quando disponível) via hook `afterPack`; isso serve para teste, não para distribuição. O workflow de build dos três sistemas está em `.github/workflows/build.yml`.
 
 ## ⌨️ Atalhos
 
@@ -106,13 +119,16 @@ Saída vai para `dist/`.
 |--------|------|
 | `Ctrl+P` | Quick open (buscar arquivo) |
 | `Ctrl+Shift+P` | Command Palette |
+| `Ctrl+,` | Abrir Configurações (página cheia) |
 | `Ctrl+Shift+F` | Buscar texto nos arquivos |
 | `Ctrl+S` | Salvar arquivo ativo |
+| `Ctrl+W` | Fechar aba (pede confirmação se houver dirty) |
+| `Ctrl+Shift+W` | Fechar janela (pede confirmação se houver dirty) |
 | `Ctrl+B` | Alternar sidebar |
 | `` Ctrl+` `` | Alternar terminal |
 | `Ctrl+Shift+E` | Ir para Explorer |
 | `Ctrl+Shift+G` | Ir para Git |
-| `Ctrl+Shift+X` | Ir para Extensões |
+| `Ctrl+Shift+X` | Ir para Integrações |
 | `Esc` | Fechar command palette |
 | `Enter` (em campo de busca) | Abrir primeiro resultado |
 | Middle-click em tab | Fechar tab |
@@ -193,10 +209,11 @@ agzos.onMenu(cb)                          // eventos do menu nativo
 
 - `contextIsolation: true` (renderer não tem acesso direto a `require`/`fs`)
 - `nodeIntegration: false`
-- `sandbox: false` (necessário pro preload usar `fs`; isolado via contextBridge)
+- `sandbox: true` na janela principal
 - CSP restritiva no `index.html` (default-src 'self')
-- `will-navigate` bloqueado (links externos vão pro `shell.openExternal`)
-- API key de IA guardada em `userData/settings.json` (em produção: mover para `keytar`)
+- `will-navigate` bloqueado (links externos vão pro `shell.openExternal`); webviews bloqueadas; permissões negadas por padrão
+- API keys e tokens no cofre do SO (`safeStorage`), nunca no `settings.json`; o renderer não lê o valor
+- Acesso a arquivos restrito às raízes liberadas (path guard com `realpath`)
 
 ## 🎨 Tema
 
@@ -218,17 +235,13 @@ Customizar o tema: edite as CSS variables em `app.css` ou crie um novo bloco `bo
 3. `npm run check` (lint + testes unitários) e `npm run test:e2e` (Playwright; no Linux sem display use `xvfb-run -a npm run test:e2e`)
 4. PR descrevendo o que mudou e por quê
 
-## 📋 TODOs próximos
+## 📋 Próximas fases
 
-- [ ] Integrar Monaco language workers (TS, JSON, CSS, HTML)
-- [ ] Implementar salvamento de API key com `keytar` (cofre do SO)
-- [ ] Wizard de primeira execução
-- [ ] Chat Agent real (OpenAI / Anthropic / Groq / OpenRouter / Ollama)
-- [ ] Multi-conta GitHub (PAT + OAuth)
-- [ ] Auto-update via `electron-updater`
-- [ ] CI com GitHub Actions (build 3 plataformas)
-- [ ] Marketplace Open VSX
-- [ ] Temas extras (Agzos High Contrast, Solarized Agzos)
+- [ ] **Fase 2 — IA:** wizard, chat com streaming, contexto e aplicar diff
+- [ ] **Fase 3 — Git/GitHub:** status/diff/commit/push/pull e multi-conta
+- [ ] **Fase 4 — Editor completo:** pty, ripgrep/Quick Open, sessão e importar VS Code
+- [ ] **Fase 5 — Distribuição:** release 3 SO, auto-update, privacidade e assinatura Developer ID
+- [ ] Pós-v1.0: integrações Agzos (Key/Browser/Project/Hub), LSP, agent e freemium
 
 ## 📄 Licença
 

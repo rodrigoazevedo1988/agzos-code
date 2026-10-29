@@ -16,7 +16,10 @@ async function launchApp({ userData, settings } = {}) {
   }
 
   const args = ['.'];
-  if (needsNoSandbox()) args.push('--no-sandbox');
+  if (needsNoSandbox() || process.env.AGZOS_NO_SANDBOX === '1') args.push('--no-sandbox');
+  // Ambientes restritos (sandbox de CI/agente) não deixam o Electron subir o
+  // processo de GPU: sem isso o app morre com "GPU process isn't usable".
+  if (process.env.AGZOS_NO_GPU === '1') args.push('--disable-gpu', '--disable-software-rasterizer');
 
   const app = await electron.launch({
     args,
@@ -47,7 +50,9 @@ async function waitForMainWindow(app, timeout = 15000) {
 }
 
 function readSettings(userData) {
-  return JSON.parse(fs.readFileSync(path.join(userData, 'settings.json'), 'utf-8'));
+  const raw = fs.readFileSync(path.join(userData, 'settings.json'), 'utf-8');
+  // settings.json pode ter sido gravado com BOM (PowerShell/Windows).
+  return JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
 }
 
 async function completeOnboarding(page) {

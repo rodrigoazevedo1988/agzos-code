@@ -1,6 +1,6 @@
 # Arquitetura — Agzos Code v0.1
 
-App Electron (sem bundler, sem TypeScript) com Monaco, xterm.js e Lucide servidos de `src/renderer/vendor/`.
+App Electron 44 (sem bundler, sem TypeScript) com Monaco, xterm.js e Lucide servidos de `src/renderer/vendor/`.
 
 ## Processos
 
@@ -57,11 +57,13 @@ Para rever o fluxo: apague o `settings.json` ou use Configurações → "Refazer
 ## API do preload (`window.agzos`)
 
 ```ts
-agzos.app.info() / openExternal(url)
-agzos.fs.readDir / readFile / writeFile / mkdir / exists / stat / delete / rename / homeDir
+agzos.app.info() / openExternal(url) / reveal(path) / log(level, msg)
+agzos.fs.readDir / readFile(path, opts?) / writeFile(path, content, opts?) / mkdir / exists / stat / delete / rename / homeDir
 agzos.dialog.openFolder / openFile / saveFile(path?)
 agzos.term.create(cols, rows) / write / resize / kill / onData(cb) / onExit(cb)
 agzos.settings.load() / save(s)
+agzos.windowState.setDirty(n) / respondClose(action) / onRequestClose(cb)
+agzos.logs.open()
 agzos.onMenu(cb)
 ```
 
@@ -87,7 +89,10 @@ Depois roda `tools/patch-electron-dev-mac.js` (só macOS), que aplica nome e íc
 | `src/main/ipc/term.js` | `term:*` — shell via `spawn` (sem pty) |
 | `src/main/ipc/settings.js` | `settings:*` — `settings.json` em `userData` |
 | `src/main/ipc/secrets.js` | `secrets:set/delete/has` — **sem get**: valor nunca sai do main |
-| `src/main/ipc/app-info.js` | `app:info`, `app:openExternal` |
+| `src/main/ipc/app-info.js` | `app:info`, `app:openExternal`, `app:reveal` |
+| `src/main/ipc/logs.js` | `logs:open` e `log:write` (renderer → main) |
+| `src/main/lib/logger.js` | Log em arquivo com rotação e redação de segredos (sem Electron) |
+| `src/main/lib/file-encoding.js` | Detecção/conversão de encoding, EOL e binário (sem Electron) |
 | `src/main/lib/settings.js` | Defaults, leitura tolerante, escrita atômica, `migrateLegacySecrets` (sem Electron) |
 | `src/main/lib/secrets.js` | Cofre sobre `safeStorage`; arquivo `secrets.json` cifrado (sem Electron) |
 | `src/main/lib/path-guard.js` | Raízes liberadas, `realpath`, prefixo seguro (sem Electron) |
@@ -108,20 +113,33 @@ Módulos em `lib/` recebem dependências por parâmetro, então os testes unitá
 - Raízes: pasta escolhida em `dialog:openFolder` (ou `workspace:open` para pastas já conhecidas) e arquivo escolhido em `dialog:openFile`/`saveFile`.
 - Comparação usa `realpath`: symlink para fora da raiz é bloqueado. Caminho inexistente (arquivo novo) é resolvido pelo pai.
 - `fs:exists`, `fs:stat` e `fs:homeDir` não passam pelo guard (só leitura de metadados).
+- `fs:readFile` devolve `{ content, encoding, eol, binary, readOnly, bom }`; `fs:writeFile` recebe `{ encoding, eol, bom }` e grava em tmp + rename preservando modo.
+- `fs:delete` recusa apagar a raiz liberada.
 - Em `AGZOS_TEST=1`, `global.__agzosAllowRoot(p)` libera uma raiz para os testes E2E.
+
+## Assinatura e builds
+
+- **Electron 44.x** (`electron-builder` 26.x), conforme [ADR-0002](../decisoes/ADR-0002-electron-e-codigo-nativo.md). O Node do main é o 24 embutido no Electron.
+- **macOS dev:** `tools/sign-mac-dev.js` fixa `CFBundleIdentifier = com.agzos.code`, adiciona descrições de uso de pastas e assina o `Electron.app` com `Rodrigo Dev Local` (ou `AGZOS_MAC_SIGN_IDENTITY`). Roda no `postinstall` e no `build:icons`.
+- **macOS empacotado:** `build.afterPack` chama `tools/after-pack-mac.js`, que assina o `.app` em `dist/` com a mesma identidade local. O electron-builder também tenta assinar; sem identidade (CI), ambos pulam.
+- **Artefatos:** macOS DMG/ZIP arm64+x64; Windows NSIS/portable x64+arm64; Linux AppImage/DEB/RPM x64. O workflow `.github/workflows/build.yml` monta a matriz dos três sistemas.
+- **Limite:** assinatura local self-signed não é notarizada. Developer ID + notarização continuam na Fase 5.
+- **Código nativo:** C#/.NET e Swift são permitidos apenas como helper opcional para integração de SO sem equivalente no Electron, com ADR e fallback — nunca como reescrita do app ([ADR-0002](../decisoes/ADR-0002-electron-e-codigo-nativo.md)).
 
 ## Testes
 
-- `npm run test:unit` — `node --test` em `test/unit/`, sobre `src/main/lib/`.
-- `npm run test:e2e` — Playwright (`_electron`) em `test/e2e/`. Cada teste usa um `userData` temporário (`AGZOS_USER_DATA`).
+- `npm run test:unit` — `node --test` em `test/unit/`, sobre `src/main/lib/` (39 testes na v0.2).
+- `npm run test:e2e` — Playwright (`_electron`) em `test/e2e/` (20 testes na v0.2). Cada teste usa um `userData` temporário (`AGZOS_USER_DATA`).
   - `AGZOS_TEST=1` ativa ganchos de teste.
   - `AGZOS_TEST_SAFESTORAGE=fake` troca o `safeStorage` por um cofre falso, porque o CI Linux não tem keyring. Validar o cofre real é tarefa manual no macOS.
 - `npm run check` — lint + unitários. É o que o CI roda antes do E2E.
 
 ## Segurança — estado atual
 
-- `contextIsolation: true`, `nodeIntegration: false`
-- `sandbox: false` na janela principal (preload usa `ipcRenderer`; mover para `sandbox: true` está no roadmap)
+- `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
 - CSP com `'unsafe-eval'` (exigido pelo loader AMD do Monaco)
 - Acesso a arquivos restrito às raízes liberadas; chaves no cofre do SO
-- Pendências: ver [roadmap](../plano/ROADMAP.md) (Fase 1 e Fase 5)
+- `setPermissionRequestHandler` nega tudo; `will-attach-webview` bloqueado; `will-navigate` externo abre no browser
+- Instância única (`requestSingleInstanceLock`); dirty close confirmado via IPC
+- Logs em `userData/logs/main.log` com rotação e redação de segredos
+- Pendências: ver [roadmap](../plano/ROADMAP.md) (Fase 2 em diante)
