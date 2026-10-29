@@ -1,5 +1,27 @@
 # Changelog — Agzos Code
 
+## [0.2.1] — 2026-10-29
+
+Correções vindas do teste do build Windows 0.2.0 no Windows 11 Pro 26H2
+(build 26300.9711). O build testado era anterior ao PR #4; esta versão é o
+primeiro build Windows com todas as correções.
+
+### Corrigido
+
+- **Terminal não carregava no Windows** (`Can only have one anonymous define call per script file`): o UMD do xterm conflitava com o loader AMD do Monaco. O `define` global agora é desativado só durante o carregamento de `xterm.js` + `fit.js` e restaurado em seguida.
+- **Enter no terminal era ignorado**: sem pty, o shell não traduz `\r`; o `term:write` normaliza `\r\n`/`\r` para `\n`.
+- **“Copiar diagnóstico” com clipboard negado**: `copy()` devolvia a promise de `writeText` direto, então a rejeição não caía no fallback. Agora é `try/await` com `catch` → `execCommand` → textarea selecionada, e o texto aparece no diálogo se os dois falharem.
+- **Configurações abriam no painel lateral antigo**: agora são página cheia, com engrenagem da topbar, botão da activity bar, `Ctrl+,`/`Cmd+,`, `Esc` e botão voltar.
+- **`Ctrl+,` não fazia nada no Windows**: o atalho dependia só do acelerador do menu nativo, instável com `frame:false` + `autoHideMenuBar`. O renderer trata `Ctrl+,`/`Cmd+,` localmente.
+- **`settings.json` com BOM era tratado como corrompido**: o arquivo era renomeado para `.corrupt-*` e as configurações voltavam ao padrão (reabrindo welcome/onboarding). O BOM é removido antes do `JSON.parse`, aceitando UTF-8, UTF-16 LE e UTF-16 BE — o que o PowerShell 5.1 grava por padrão.
+- **Pacote vinha com arquivos `._*` do macOS** (`._Agzos Code.exe`, `._app.asar`): novo hook `afterPack` multiplataforma (`tools/after-pack.js`) varre a saída e remove `._*`, `.DS_Store`, `.LSOverride` e `.AppleDouble/`; `build.files` também exclui. O workflow Build falha se algo escapar para `dist/`.
+
+### Adicionado
+
+- Testes unitários de BOM (UTF-8/UTF-16 LE/BE, BOM que não esconde JSON inválido), do removedor de lixo do macOS e do contrato do `package.json` de empacotamento.
+- Testes E2E da página cheia de Configurações (engrenagem, activity bar, `Ctrl+,`, `Esc`, voltar) e de `settings.json` com BOM de ponta a ponta.
+- `AGZOS_NO_GPU=1` nos helpers de E2E para rodar em ambientes sem processo de GPU.
+
 ## [0.2.0] — 2026-10-28
 
 Fase 1.5 — Confiança e integridade.
