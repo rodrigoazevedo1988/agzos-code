@@ -12,9 +12,15 @@
 const path = require('path');
 const { signApp } = require('./sign-mac-app');
 
-module.exports = async function afterPack(context) {
+function signMacApp(context) {
   if (context.electronPlatformName !== 'darwin') return;
   const product = context.packager.appInfo.productFilename;
   const appPath = path.join(context.appOutDir, `${product}.app`);
   signApp(appPath);
+}
+
+module.exports = async function afterPack(context) {
+  signMacApp(context);
 };
+
+module.exports.signMacApp = signMacApp;

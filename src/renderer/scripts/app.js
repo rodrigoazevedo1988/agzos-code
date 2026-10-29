@@ -373,6 +373,12 @@ function bindShortcuts() {
     } else if (ctrl && e.key === '`') {
       e.preventDefault();
       toggleTerminal();
+    } else if (ctrl && (e.key === ',' || e.code === 'Comma')) {
+      // Ctrl+, (Windows/Linux) e Cmd+, (macOS). Não confiamos só no acelerador
+      // do menu nativo: ele não dispara de forma confiável no Windows com
+      // frame:false + autoHideMenuBar.
+      e.preventDefault();
+      openSettingsPage();
     } else if (ctrl && e.key.toLowerCase() === 'b') {
       e.preventDefault();
       document.body.classList.toggle('sidebar-hidden');

@@ -49,6 +49,19 @@ jobs:
       - name: Build
         run: npm run ${{ matrix.script }}
 
+      # Garante que sujeira do macOS (._*, .DS_Store, .AppleDouble) não vai
+      # para o instalador. O hook afterPack e o build.files já removem; este
+      # passo falha o build se algo escapar.
+      - name: Verificar ausência de arquivos ._* (AppleDouble)
+        shell: bash
+        run: |
+          if find dist \( -name '._*' -o -name '.AppleDouble' \) -print -quit | grep -q .; then
+            echo "::error::Arquivos AppleDouble (._*) encontrados no pacote:"
+            find dist \( -name '._*' -o -name '.AppleDouble' \) -print | head -50
+            exit 1
+          fi
+          echo "OK: nenhum arquivo ._* no pacote."
+
       - name: Artefatos
         uses: actions/upload-artifact@v4
         with:

@@ -29,14 +29,42 @@ function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
+// BOMs aceitos. `JSON.parse` não tolera BOM, então ele é removido antes.
+const BOM_UTF8 = Buffer.from([0xef, 0xbb, 0xbf]);
+const BOM_UTF16LE = Buffer.from([0xff, 0xfe]);
+const BOM_UTF16BE = Buffer.from([0xfe, 0xff]);
+
+/**
+ * Decodifica o conteúdo de settings.json tolerando BOM.
+ * PowerShell (5.1) grava UTF-16 LE com BOM em `>`/`Out-File`, e editores
+ * Windows gravam UTF-8 com BOM; nos dois casos o arquivo é JSON válido.
+ */
+function decodeText(buffer) {
+  if (buffer.subarray(0, 3).equals(BOM_UTF8)) {
+    return buffer.subarray(3).toString('utf-8');
+  }
+  if (buffer.subarray(0, 2).equals(BOM_UTF16LE)) {
+    return buffer.subarray(2).toString('utf16le');
+  }
+  if (buffer.subarray(0, 2).equals(BOM_UTF16BE)) {
+    const body = Buffer.from(buffer.subarray(2));
+    body.swap16(); // utf16le lendo bytes trocados = utf16be
+    return body.toString('utf16le');
+  }
+  const text = buffer.toString('utf-8');
+  // Cinto e suspensório: BOM pode sobrar como U+FEFF se decodificado antes.
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 /**
  * Lê as settings. Arquivo ausente → defaults. JSON inválido → move o arquivo
  * para `settings.json.corrupt-<timestamp>` e retorna defaults.
+ * BOM (UTF-8 ou UTF-16) não torna o arquivo inválido.
  */
 function loadSettings(filePath) {
   let raw;
   try {
-    raw = fs.readFileSync(filePath, 'utf-8');
+    raw = decodeText(fs.readFileSync(filePath));
   } catch (e) {
     if (e.code !== 'ENOENT') console.error('settings read error', e);
     return defaults();

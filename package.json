@@ -54,7 +54,7 @@
     "appId": "com.agzos.code",
     "productName": "Agzos Code",
     "copyright": "Copyright © 2026 Agzos",
-    "afterPack": "tools/after-pack-mac.js",
+    "afterPack": "tools/after-pack.js",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -70,7 +70,11 @@
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
       "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
       "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
+      "!**/._*",
+      "!**/.AppleDouble",
+      "!**/.AppleDouble/**",
+      "!**/.LSOverride"
     ],
     "win": {
       "target": [
