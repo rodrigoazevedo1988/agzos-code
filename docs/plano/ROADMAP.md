@@ -1,9 +1,10 @@
 # Roadmap — Agzos Code
 
-**Atualizado:** 09/10/2026
-**Base:** Electron + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md).
-**Estado atual:** Fase 1 concluída (aguardando revisão e merge). Próxima: Fase 2.
+**Atualizado:** 28/10/2026
+**Base:** Electron 44 + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md) e [ADR-0002](../decisoes/ADR-0002-electron-e-codigo-nativo.md).
+**Estado atual:** Fase 1.5 (confiança) concluída em código e testes; falta o teste manual no Mac e o PR. Próxima: Fase 2.
 
+Backlog aprovado e diagnóstico completo: [`BACKLOG-MELHORIAS.md`](BACKLOG-MELHORIAS.md).
 Planos detalhados, tarefa a tarefa, para o executor: [`execucao/`](execucao/00-guia-do-executor.md).
 Relatórios de cada fase: [`relatorios/`](relatorios/).
 
@@ -14,7 +15,7 @@ Relatórios de cada fase: [`relatorios/`](relatorios/).
 3. Rodrigo envia o relatório para revisão do sênior (Opus) e testa no Mac.
 4. Ajustes, se houver → merge → próxima fase.
 
-Estimativa total até a v1.0: ~9–12 semanas.
+Estimativa total até a v1.0: **~12–14,5 semanas** de execução + 1,5–2 semanas de revisão/teste.
 
 ---
 
@@ -37,7 +38,21 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [x] T8 CI no GitHub Actions
 - [x] T9 Docs
 
-## Fase 2 — IA (3 semanas) · [plano](execucao/fase-2-ia.md)
+## Fase 1.5 — Confiança e integridade (2–2,5 semanas) · [plano](execucao/fase-1-5-confianca.md)
+
+> Inserida em 28/10/2026, antes da Fase 2. Corrige os P0/P1 de perda de dados e as promessas de UI que não funcionavam.
+
+- [x] T1.1 Base: PR #3, Electron 44 + `electron-builder` 26, assinatura local do `.app` no macOS
+- [x] T1.2 Proteção de alterações não salvas ao fechar
+- [x] T1.3 Encoding/EOL/binário com escrita atômica
+- [x] T1.4 Diálogos internos e operações de arquivo
+- [x] T1.5 Explorer e busca (dotfiles, salto para linha)
+- [x] T1.6 Status bar, temas e honestidade da UI
+- [x] T1.7 Robustez, logs e hardening
+- [x] T1.8 Docs, versão 0.2.0 e changelog
+- [x] T1.9 Workflow de build Windows/Linux/macOS (matriz)
+
+## Fase 2 — IA (3–3,5 semanas) · [plano](execucao/fase-2-ia.md)
 
 - [ ] T1 Parser de SSE
 - [ ] T2 Provider compatível com OpenAI (OpenAI, Groq, OpenRouter, Gemini, Ollama, custom)
@@ -51,7 +66,7 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [ ] T10 Comandos rápidos e aplicar código com diff
 - [ ] T11 Docs + relatório
 
-## Fase 3 — Git e GitHub multi-conta (2 semanas) · [plano](execucao/fase-3-git-github.md)
+## Fase 3 — Git e GitHub multi-conta (2–2,5 semanas) · [plano](execucao/fase-3-git-github.md)
 
 - [ ] T1 Runner de git e parser de status
 - [ ] T2 Operações git e IPC
@@ -60,7 +75,7 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [ ] T5 (opcional) Login GitHub via Device Flow — precisa de OAuth App da Agzos
 - [ ] T6 Docs + relatório
 
-## Fase 4 — Editor completo (2 semanas) · [plano](execucao/fase-4-editor.md)
+## Fase 4 — Editor completo (3–3,5 semanas) · [plano](execucao/fase-4-editor.md)
 
 - [ ] T1 IntelliSense TS/JS/JSON/CSS/HTML (workers do Monaco)
 - [ ] T2 Terminal com node-pty
@@ -70,7 +85,7 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [ ] T6 Importar configurações do VS Code / Cursor
 - [ ] T7 Docs + relatório
 
-## Fase 5 — Distribuição e v1.0 (1–1,5 semana) · [plano](execucao/fase-5-distribuicao.md)
+## Fase 5 — Distribuição e v1.0 (2–2,5 semanas) · [plano](execucao/fase-5-distribuicao.md)
 
 - [ ] T1 Release multiplataforma por tag
 - [ ] T2 Auto-update (Windows/Linux; macOS só aviso até ter assinatura)

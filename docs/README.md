@@ -3,9 +3,10 @@
 | Pasta | Conteúdo |
 |---|---|
 | [`produto/`](produto/) | [PRD](produto/PRD.md): visão, escopo do MVP, features, métricas |
-| [`decisoes/`](decisoes/) | ADRs (Architecture Decision Records). [ADR-0001](decisoes/ADR-0001-base-do-editor.md): base do editor |
+| [`decisoes/`](decisoes/) | ADRs (Architecture Decision Records). [ADR-0001](decisoes/ADR-0001-base-do-editor.md): base do editor; [ADR-0002](decisoes/ADR-0002-electron-e-codigo-nativo.md): Electron 44, builds e política de código nativo |
 | [`tecnico/`](tecnico/) | [Arquitetura](tecnico/arquitetura.md) e [Troubleshooting](tecnico/troubleshooting.md) |
 | [`plano/`](plano/) | [Roadmap](plano/ROADMAP.md) com fases e critérios de saída |
+| [`plano/BACKLOG-MELHORIAS.md`](plano/BACKLOG-MELHORIAS.md) | Proposta de backlog por fases, com diagnóstico e decisões pendentes (aguardando aprovação) |
 | [`plano/execucao/`](plano/execucao/) | Planos tarefa a tarefa para o executor. Comece pelo [guia do executor](plano/execucao/00-guia-do-executor.md) |
 | [`plano/relatorios/`](plano/relatorios/) | Relatório de cada fase, gerado pelo executor para revisão |
 

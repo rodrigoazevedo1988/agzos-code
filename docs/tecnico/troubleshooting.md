@@ -38,6 +38,38 @@ npm run build:icons
 killall Dock
 ```
 
+## macOS pede permissão de Área de Trabalho/Documentos/Downloads toda hora
+
+**Causa:** o app de dev era ad-hoc e com bundle id `com.github.Electron` (`Electron.app` do npm). Cada rebuild parecia um app diferente para o TCC.
+
+**Correção (28/10/2026):**
+- `tools/sign-mac-dev.js` fixa `CFBundleIdentifier = com.agzos.code`, adiciona as descrições de uso e assina o `Electron.app` de dev com a identidade `Rodrigo Dev Local`.
+- `tools/sign-mac-app.js` e o hook `afterPack` fazem o mesmo no `.app` empacotado.
+- Roda no `postinstall` e no `build:icons`; para reassinar:
+```bash
+npm run sign:mac        # app de dev
+npm run sign:mac:dist   # app empacotado
+```
+- Confira a identidade e a assinatura:
+```bash
+security find-identity -v -p codesigning
+codesign -dv --verbose=4 node_modules/electron/dist/Electron.app | grep -E 'Identifier|Authority'
+```
+- Se a permissão antiga ficou presa, redefina só o que precisa (isto apaga a concessão anterior):
+```bash
+tccutil reset SystemPolicyDesktopFolder com.agzos.code
+tccutil reset SystemPolicyDocumentsFolder com.agzos.code
+tccutil reset SystemPolicyDownloadsFolder com.agzos.code
+```
+- Sem o certificado (CI/outra máquina), o script avisa e segue sem assinar. Para usar outro nome: `AGZOS_MAC_SIGN_IDENTITY="Meu Certificado" npm run sign:mac`.
+- **Limite:** assinatura local com certificado self-signed **não** é notarizada e não substitui Developer ID. Em outra máquina, o Gatekeeper ainda pode pedir “Abrir mesmo assim”. Distribuição é Fase 5.
+
+## App empacotado não abre no macOS
+
+1. Confira a assinatura: `codesign --verify --deep --strict "dist/mac-arm64/Agzos Code.app"`.
+2. Se o Gatekeeper bloquear por não ser notarizado, use Ajustes do Sistema → Privacidade e Segurança → “Abrir mesmo assim” (só para builds locais).
+3. Em CI, o build sai sem assinatura; isso é esperado até a Fase 5.
+
 ## Depurar o renderer
 
 ```bash
