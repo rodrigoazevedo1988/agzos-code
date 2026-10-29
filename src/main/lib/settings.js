@@ -7,6 +7,7 @@ const fs = require('fs');
 
 const DEFAULT_SETTINGS = {
   theme: 'agzos-dark',
+  iconTheme: 'lucide-color', // lucide-color | lucide-minimal | badges | emoji
   performanceMode: 'balanced', // economy | balanced | high
   telemetry: false,
   fontSize: 14,

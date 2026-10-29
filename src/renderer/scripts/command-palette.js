@@ -12,6 +12,10 @@ const COMMANDS = [
   { id: 'view.theme.dark',    label: 'Preferências: Tema Agzos Dark',   hint: '',        run: () => setTheme('agzos-dark') },
   { id: 'view.theme.light',   label: 'Preferências: Tema Agzos Light',  hint: '',        run: () => setTheme('agzos-light') },
   { id: 'view.theme.monokai', label: 'Preferências: Tema Monokai',      hint: '',        run: () => setTheme('monokai') },
+  { id: 'view.iconTheme.lucideColor',   label: 'Preferências: Ícones Lucide Colorido', hint: '', run: () => setIconTheme('lucide-color') },
+  { id: 'view.iconTheme.lucideMinimal', label: 'Preferências: Ícones Lucide Minimalista', hint: '', run: () => setIconTheme('lucide-minimal') },
+  { id: 'view.iconTheme.badges',        label: 'Preferências: Ícones Badges (Seti)', hint: '', run: () => setIconTheme('badges') },
+  { id: 'view.iconTheme.emoji',         label: 'Preferências: Ícones Emojis Clássicos', hint: '', run: () => setIconTheme('emoji') },
   { id: 'view.perf.economy',  label: 'Performance: Modo Economia',      hint: '',        run: () => setPerf('economy') },
   { id: 'view.perf.balanced', label: 'Performance: Modo Balanceado',    hint: '',        run: () => setPerf('balanced') },
   { id: 'view.perf.high',     label: 'Performance: Modo Alta',          hint: '',        run: () => setPerf('high') },
@@ -137,6 +141,20 @@ async function setPerf(mode) {
   State.settings.performanceMode = mode;
   await window.agzos.settings.save(State.settings);
 }
+async function setIconTheme(theme) {
+  const State = window.AgzosState;
+  State.settings.iconTheme = theme;
+  await window.agzos.settings.save(State.settings);
+  const sel = document.getElementById('setting-icon-theme');
+  if (sel) sel.value = theme;
+  const fileTreeMod = await import('./file-tree.js');
+  fileTreeMod.refreshTree(true);
+  const tabsMod = await import('./tabs.js');
+  tabsMod.renderTabs();
+  const toastMod = await import('./toast.js');
+  toastMod.toast(`Tema de ícones alterado para ${theme}.`, 'info', 1500);
+}
+
 async function showAbout() {
   const info = await window.agzos.app.info();
   alert(`Agzos Code ${info.version}\nElectron ${info.electron}\nNode ${info.node}\nPlatform: ${info.platform}/${info.arch}`);
