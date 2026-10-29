@@ -456,13 +456,24 @@ function dirtyCount() {
   return count;
 }
 
+let lastDirtyCount = -1;
+let lastTitle = '';
+
 function updateWindowState() {
   const active = State.activePath ? State.files.get(State.activePath) : null;
   const prefix = active?.dirty ? '● ' : '';
-  document.title = active ? `${prefix}${basename(active.path)} — Agzos Code` : 'Agzos Code';
-  try {
-    window.agzos.windowState?.setDirty(dirtyCount());
-  } catch {}
+  const title = active ? `${prefix}${basename(active.path)} — Agzos Code` : 'Agzos Code';
+  if (title !== lastTitle) {
+    document.title = title;
+    lastTitle = title;
+  }
+  const count = dirtyCount();
+  if (count !== lastDirtyCount) {
+    lastDirtyCount = count;
+    try {
+      window.agzos.windowState?.setDirty(count);
+    } catch {}
+  }
 }
 
 /* --------------------------------------------------------------------------
