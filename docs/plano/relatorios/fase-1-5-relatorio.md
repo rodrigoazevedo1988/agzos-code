@@ -25,7 +25,7 @@ Fase 1.5 entregue em código e testes: PR #3 mergeado, Electron 44 com builds pa
 - **Onboarding:** o passo de layout/densidade foi **removido** em vez de aplicado. Ele não tinha efeito e aplicar sidebar/terminal à direita exigiria CSS e estado que não cabiam na 1.5. Fica para a Fase 4, se o time quiser.
 - **Migração de editor:** continua apenas detectando configurações; a importação real (JSONC, tema, keybindings) é a Fase 4. A UI agora diz isso, em vez de “importadas (stub)”.
 - **Assinatura local:** usa certificado self-signed `Rodrigo Dev Local`, não Developer ID. O `.app` de dev e o empacotado ficam assinados e com bundle id `com.agzos.code`; não é notarizado e o Gatekeeper ainda pode pedir “Abrir mesmo assim” em outra máquina.
-- **DMG/ZIP locais:** o `electron-builder --dir` gera o `.app` assinado; a criação de DMG/ZIP foi interrompida depois de >15 min sem saída no ambiente do agente. O workflow de build cobre os artefatos no CI. O `.app` empacotado foi aberto e validado (inclusive depois da redução do pacote).
+- **DMG/ZIP/AppImage locais:** o `.app` assinado foi validado e o ZIP local (128 MB) foi gerado. O DMG falhou no ambiente do agente (`hdiutil`/`diskutil` OSStatus) e o AppImage x64 não roda o tool x64 num host arm64 (`Unknown system error -86`). O workflow de build fará os três no CI. O `.app` empacotado abriu após a redução do pacote.
 - **E2E local:** o helper ganhou `AGZOS_NO_SANDBOX=1` para rodar no ambiente do agente (o Chromium não inicia sandbox aqui). O CI mantém a regra antiga (`--no-sandbox` só em Linux root).
 - **Electron/`sandbox`:** a janela principal passou de `sandbox: false` para `sandbox: true`; o preload só usa `contextBridge`/`ipcRenderer`, então não houve regressão.
 - **Menu:** “Nova Janela” foi removida (decisão aprovada). Entraram “Fechar Aba” (`Cmd+W`), “Fechar Janela” (`Cmd+Shift+W`) e “Abrir logs”.
@@ -40,7 +40,7 @@ Fase 1.5 entregue em código e testes: PR #3 mergeado, Electron 44 com builds pa
 - App empacotado `0.2.0` abriu via Playwright (`Agzos Code.app`).
 - Electron 44.10.0; electron-builder 26.18.0; Monaco 0.50.0; `xterm` 5.3.0 (troca para `@xterm/xterm` na Fase 4).
 - CI GitHub Actions: PR #4 verde (run 40806449448); workflow de build novo aguarda execução a partir da branch padrão.
-- Bundles `--dir` com Electron 44: macOS 322 MB, Linux 298 MB, Windows 388 MB. As deps de build (Monaco/Lucide/xterm) foram movidas para `devDependencies`; o renderer usa as cópias de `src/renderer/vendor/`.
+- Bundles `--dir` com Electron 44: macOS 322 MB, Linux 298 MB, Windows 388 MB; `linux.syncDesktopName` configurado para associar a janela ao `.desktop`. As deps de build (Monaco/Lucide/xterm) foram movidas para `devDependencies`; o renderer usa as cópias de `src/renderer/vendor/`.
 
 ## Problemas encontrados
 

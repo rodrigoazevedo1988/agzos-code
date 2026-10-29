@@ -17,6 +17,7 @@
   "engines": {
     "node": ">=22"
   },
+  "desktopName": "com.agzos.code.desktop",
   "scripts": {
     "setup:vendor": "node tools/setup-vendor.js",
     "postinstall": "node tools/setup-vendor.js && node tools/patch-electron-dev-mac.js && node tools/sign-mac-dev.js",
@@ -99,7 +100,8 @@
       ],
       "category": "Development",
       "icon": "build/icon.png",
-      "vendor": "Agzos"
+      "vendor": "Agzos",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
