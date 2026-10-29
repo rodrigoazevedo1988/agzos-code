@@ -146,3 +146,33 @@ test('novo arquivo e renomear arquivo aberto mantêm abas consistentes', async (
     await app.close().catch(() => {});
   }
 });
+
+test('sair do app com dirty pede confirmação e Cancelar mantém a janela', async () => {
+  const root = tmpRoot('agzos-quit-');
+  const file = path.join(root, 'a.txt');
+  fs.writeFileSync(file, 'x\n');
+  const { app, page } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true },
+  });
+  try {
+    await openWorkspace(app, page, root);
+    await page.evaluate(async (p) => {
+      const ed = await import('./scripts/editor.js');
+      await ed.openFile(p);
+      ed.getActiveEditor().setValue('editado\n');
+    }, file);
+    await page.waitForTimeout(150);
+
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    await expect(page.locator('#close-guard-overlay')).toBeVisible();
+    await page.locator('#close-guard-overlay .cg-cancel').click();
+    await page.waitForTimeout(300);
+    expect(app.windows().length).toBeGreaterThan(0);
+
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    await page.locator('#close-guard-overlay .cg-discard').click();
+    await expect.poll(() => app.windows().length).toBe(0);
+  } finally {
+    await app.close().catch(() => {});
+  }
+});

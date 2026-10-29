@@ -129,7 +129,7 @@ Módulos em `lib/` recebem dependências por parâmetro, então os testes unitá
 ## Testes
 
 - `npm run test:unit` — `node --test` em `test/unit/`, sobre `src/main/lib/` (39 testes na v0.2).
-- `npm run test:e2e` — Playwright (`_electron`) em `test/e2e/` (17 testes na v0.2). Cada teste usa um `userData` temporário (`AGZOS_USER_DATA`).
+- `npm run test:e2e` — Playwright (`_electron`) em `test/e2e/` (18 testes na v0.2). Cada teste usa um `userData` temporário (`AGZOS_USER_DATA`).
   - `AGZOS_TEST=1` ativa ganchos de teste.
   - `AGZOS_TEST_SAFESTORAGE=fake` troca o `safeStorage` por um cofre falso, porque o CI Linux não tem keyring. Validar o cofre real é tarefa manual no macOS.
 - `npm run check` — lint + unitários. É o que o CI roda antes do E2E.
