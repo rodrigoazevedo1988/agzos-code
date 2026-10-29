@@ -84,7 +84,7 @@ export async function initTerminal() {
     try {
       fitAddon.fit();
       spawnShell();
-    } catch (e) {
+    } catch {
       // ignore — fit em host invisível pode falhar
     }
   }, 60);

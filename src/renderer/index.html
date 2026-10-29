@@ -59,15 +59,15 @@
           <div id="search-results"></div>
         </div>
         <div class="panel" id="panel-git" hidden>
-          <p class="hint">Git UI — wiring com próxima fase.</p>
+          <p class="hint">O painel Git chega na Fase 3.</p>
         </div>
         <div class="panel" id="panel-extensions" hidden>
-          <p class="hint">Extensões — Open VSX será plugado na próxima fase.</p>
+          <p class="hint">Integrações Agzos (Key, Browser, Project e Hub) chegam depois da v1.0. Extensões do VS Code não são suportadas — ver ADR-0001.</p>
         </div>
         <div class="panel" id="panel-ai" hidden>
-          <p class="hint">Chat de IA — provedor configurável em Settings.</p>
+          <p class="hint">O chat de IA chega na Fase 2. Até lá, este painel fica apenas como prévia.</p>
           <div class="ai-mock" id="ai-mock">
-            <div class="ai-msg ai-system">[Agzos IA] Stub. Configure o provider em Settings → IA para começar.</div>
+            <div class="ai-msg ai-system">Agzos IA — em breve. A configuração de providers será feita por um wizard na Fase 2.</div>
           </div>
         </div>
         <div class="panel" id="panel-settings" hidden>
@@ -98,18 +98,19 @@
             </select>
           </div>
           <div class="setting-row">
-            <label>Telemetria</label>
-            <input type="checkbox" id="setting-telemetry" />
-            <span class="hint">Desativada por padrão.</span>
+            <label>Arquivos ocultos</label>
+            <input type="checkbox" id="setting-show-hidden" />
+            <span class="hint">Mostra `.env`, `.github` etc. `node_modules` e `.git` ficam sempre ocultos.</span>
           </div>
           <div class="setting-row">
             <label>Tamanho da fonte</label>
             <input type="number" id="setting-fontsize" min="10" max="24" value="14" />
           </div>
-          <h3>IA (em construção)</h3>
+          <h3>IA (em breve)</h3>
+          <p class="hint">A configuração real de provider e chave chega na Fase 2. Os campos abaixo ficam desabilitados até lá.</p>
           <div class="setting-row">
             <label>Provider</label>
-            <select id="setting-ai-provider">
+            <select id="setting-ai-provider" disabled>
               <option value="">— Nenhum —</option>
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
@@ -121,7 +122,7 @@
           </div>
           <div class="setting-row">
             <label>API Key</label>
-            <input type="password" id="setting-ai-key" placeholder="sk-…" />
+            <input type="password" id="setting-ai-key" placeholder="em breve" disabled />
           </div>
           <h3>Ajuda</h3>
           <div class="setting-row">
@@ -134,6 +135,7 @@
     <!-- Editor + Tabs + Terminal -->
     <main id="editor-area">
       <div id="tabs"></div>
+      <div id="editor-banner" class="editor-banner" hidden></div>
       <div id="editor-host">
         <!-- Welcome screen do editor (preenchido por welcome.js) -->
         <div class="welcome" id="welcome"></div>
@@ -145,8 +147,8 @@
   <section id="bottom-panel" hidden>
     <div class="bottom-tabs">
       <button class="bottom-tab active" data-tab="terminal">TERMINAL</button>
-      <button class="bottom-tab" data-tab="output">OUTPUT</button>
-      <button class="bottom-tab" data-tab="problems">PROBLEMAS</button>
+      <button class="bottom-tab" data-tab="output" hidden>OUTPUT</button>
+      <button class="bottom-tab" data-tab="problems" hidden>PROBLEMAS</button>
       <div class="bottom-spacer"></div>
       <button class="icon-btn icon-host" id="btn-close-bottom"></button>
     </div>
@@ -160,12 +162,11 @@
   <!-- STATUS BAR -->
   <footer id="statusbar">
     <div class="status-left">
-      <span class="status-item icon-host" id="status-remote"></span>
-      <span class="status-item" id="status-sync">↑0 ↓0</span>
+      <span class="status-item"><span class="icon-host status-icon" id="status-remote"></span><span id="status-branch">—</span></span>
     </div>
     <div class="status-right">
-      <span class="status-item icon-host" id="status-perf"></span>
-      <span class="status-item icon-host" id="status-ai"></span>
+      <span class="status-item"><span class="icon-host status-icon" id="status-perf"></span><span id="status-perf-label">Balanceado</span></span>
+      <span class="status-item"><span class="icon-host status-icon" id="status-ai"></span><span id="status-ai-label">IA: off</span></span>
       <span class="status-item" id="status-lang">Texto Simples</span>
       <span class="status-item" id="status-pos">Ln 1, Col 1</span>
       <span class="status-item" id="status-encoding">UTF-8</span>

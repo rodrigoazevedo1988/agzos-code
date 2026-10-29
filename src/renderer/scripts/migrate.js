@@ -1,13 +1,11 @@
 /**
  * Migração de outros editores (VS Code, Cursor, Sublime, Atom).
  *
- * Stub: a implementação real é Fase 1 do roadmap.
- * Hoje detecta os paths de configuração e copia o que dá.
+ * Fase 1.5: detecta os caminhos e informa o que existe. A importação real
+ * de settings/keybindings é a Fase 4 (import-vscode.js).
  */
 
 import { toast } from './toast.js';
-
-const HOME = window.agzos?.fs?.homeDir ? null : null; // preenchido em runtime
 
 async function getHome() {
   return await window.agzos.fs.homeDir();
@@ -49,7 +47,7 @@ function getEditorPath(editor, platform, home) {
 
 export async function migrateFrom(editor) {
   const home = await getHome();
-  const platform = window.agzos?.app?.info?.()?.platform || 'linux';
+  const platform = window.AgzosState?.platform || 'linux';
   const source = getEditorPath(editor, platform, home);
   if (!source) return false;
   try {
@@ -58,8 +56,8 @@ export async function migrateFrom(editor) {
       toast(`Configurações de ${editor} não encontradas em ${source}.`, 'info');
       return false;
     }
-    // Stub: apenas confirma que achou. Cópia real fica pra Fase 1.
-    toast(`Encontramos configs de ${editor} em ${source}. A importação completa virá na próxima release.`, 'info', 5000);
+    // A importação real (JSONC, tema, keybindings) é a Fase 4.
+    toast(`Encontramos configs de ${editor} em ${source}. A importação completa chega na Fase 4.`, 'info', 5000);
     return true;
   } catch (e) {
     console.error('migrate error', e);

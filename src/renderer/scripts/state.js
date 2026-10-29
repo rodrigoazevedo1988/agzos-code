@@ -14,6 +14,7 @@ const State = {
     aiProvider: null,
     telemetry: false,
     fontSize: 14,
+    showHiddenFiles: true,
     recentFolders: [],
     welcomeSeen: false,
     onboardingCompleted: false,

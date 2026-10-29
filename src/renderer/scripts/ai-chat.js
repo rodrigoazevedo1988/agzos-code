@@ -1,52 +1,17 @@
 /**
- * AI Chat — UI stub.
+ * AI Chat — prévia até a Fase 2.
  *
- * Este painel é onde o chat de IA vai morar. Hoje ele só mostra
- * mensagens mockadas e oferece um campo de input que não faz nada.
- *
- * A integração real com providers (OpenAI, Anthropic, Groq, OpenRouter,
- * Ollama) é a Fase 1 do roadmap.
+ * O painel não finge responder: mostra o estado real e explica quando o chat
+ * e o wizard de providers chegam. A implementação real é a Fase 2 do roadmap.
  */
-
-import { toast } from './toast.js';
 
 export function setupAI() {
   const host = document.getElementById('ai-mock');
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'Pergunte algo ao Agzos IA…';
-  input.id = 'ai-input';
-  input.style.cssText = 'width: 100%; margin-top: 10px; padding: 6px 8px; background: var(--bg-soft3); border: 1px solid var(--line); color: var(--fg); border-radius: 3px; font-size: 12px; outline: none;';
+  if (!host) return;
 
-  const send = document.createElement('button');
-  send.textContent = 'Enviar';
-  send.className = 'primary-btn';
-  send.style.cssText = 'margin-top: 6px; font-size: 12px; padding: 6px 12px;';
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') doSend();
-  });
-  send.addEventListener('click', doSend);
-
-  host.appendChild(input);
-  host.appendChild(send);
-
-  function doSend() {
-    const txt = input.value.trim();
-    if (!txt) return;
-    addMsg(txt, 'user');
-    input.value = '';
-    // Resposta mock
-    setTimeout(() => {
-      addMsg(`(stub) Recebido: "${txt.slice(0, 80)}". Para respostas reais, configure um provider em Settings → IA.`, 'assistant');
-    }, 400);
-  }
-
-  function addMsg(text, who) {
-    const el = document.createElement('div');
-    el.className = `ai-msg ai-${who}`;
-    el.textContent = (who === 'user' ? '👤 ' : '✦ ') + text;
-    host.appendChild(el);
-    host.scrollTop = host.scrollHeight;
-  }
+  host.replaceChildren();
+  const msg = document.createElement('div');
+  msg.className = 'ai-msg ai-system';
+  msg.textContent = 'Agzos IA chega na Fase 2: wizard de provider, streaming, contexto do editor e aplicar código com diff.';
+  host.appendChild(msg);
 }

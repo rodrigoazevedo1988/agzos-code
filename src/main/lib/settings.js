@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   performanceMode: 'balanced', // economy | balanced | high
   telemetry: false,
   fontSize: 14,
+  showHiddenFiles: true,
   recentFolders: [],
   welcomeSeen: false,
   onboardingCompleted: false,

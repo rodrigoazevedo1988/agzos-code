@@ -43,7 +43,6 @@ export function hideCommandPalette() {
 export function setupCommandPalette() {
   const overlay = document.getElementById('cmd-overlay');
   const input = document.getElementById('cmd-input');
-  const list = document.getElementById('cmd-list');
 
   input.addEventListener('input', () => {
     const q = input.value.toLowerCase().trim();
@@ -134,7 +133,8 @@ async function setPerf(mode) {
   document.body.classList.remove('perf-economy', 'perf-high');
   if (mode === 'economy') document.body.classList.add('perf-economy');
   if (mode === 'high') document.body.classList.add('perf-high');
-  document.getElementById('status-perf').textContent = perfLabel(mode);
+  const perfLabelEl = document.getElementById('status-perf-label');
+  if (perfLabelEl) perfLabelEl.textContent = perfLabel(mode);
   const sel = document.getElementById('setting-perf');
   if (sel) sel.value = mode;
   const State = window.AgzosState;

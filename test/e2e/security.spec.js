@@ -72,3 +72,22 @@ test('pasta aberta vira recente e reabre após reiniciar', async () => {
     await second.app.close();
   }
 });
+
+test('fs:delete não apaga a raiz liberada da workspace', async () => {
+  const root = tmpDir('agzos-root-delete-');
+  fs.writeFileSync(path.join(root, 'a.txt'), 'x');
+  const { app, page } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true },
+  });
+  try {
+    await app.evaluate((_electron, dir) => global.__agzosAllowRoot(dir), root);
+    const message = await page.evaluate(
+      (dir) => window.agzos.fs.delete(dir).then(() => 'apagou', (e) => e.message),
+      root,
+    );
+    expect(message).toContain('raiz');
+    expect(fs.existsSync(root)).toBe(true);
+  } finally {
+    await app.close();
+  }
+});

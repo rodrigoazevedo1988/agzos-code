@@ -12,13 +12,15 @@ contextBridge.exposeInMainWorld('agzos', {
   app: {
     info: () => ipcRenderer.invoke('app:info'),
     openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+    reveal: (p) => ipcRenderer.invoke('app:reveal', p),
+    log: (level, message) => ipcRenderer.send('log:write', level, message),
   },
 
   // File system
   fs: {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
-    readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
-    writeFile: (p, c) => ipcRenderer.invoke('fs:writeFile', p, c),
+    readFile: (p, opts) => ipcRenderer.invoke('fs:readFile', p, opts),
+    writeFile: (p, c, opts) => ipcRenderer.invoke('fs:writeFile', p, c, opts),
     mkdir: (p) => ipcRenderer.invoke('fs:mkdir', p),
     exists: (p) => ipcRenderer.invoke('fs:exists', p),
     stat: (p) => ipcRenderer.invoke('fs:stat', p),
@@ -64,15 +66,39 @@ contextBridge.exposeInMainWorld('agzos', {
     open: (p) => ipcRenderer.invoke('workspace:open', p),
   },
 
+  // Logs/diagnóstico
+  logs: {
+    open: () => ipcRenderer.invoke('logs:open'),
+  },
+
   // Settings
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (s) => ipcRenderer.invoke('settings:save', s),
   },
 
+  // Estado da janela: dirty + confirmação de fechamento
+  windowState: {
+    setDirty: (count) => ipcRenderer.send('window:set-dirty', count),
+    respondClose: (action) => ipcRenderer.send('window:close-response', action),
+    onRequestClose: (cb) => {
+      const handler = () => cb();
+      ipcRenderer.on('window:request-close', handler);
+      return () => ipcRenderer.removeListener('window:request-close', handler);
+    },
+  },
+
   // Menu events (main → renderer)
   onMenu: (cb) => {
-    const channels = ['menu:open-folder', 'menu:save', 'menu:command-palette', 'menu:toggle-terminal', 'menu:toggle-sidebar'];
+    const channels = [
+      'menu:open-folder',
+      'menu:save',
+      'menu:command-palette',
+      'menu:toggle-terminal',
+      'menu:toggle-sidebar',
+      'menu:close-tab',
+      'menu:close-window',
+    ];
     const handler = (channel) => (_e, ...args) => cb(channel, ...args);
     const handlers = channels.map((ch) => {
       const h = handler(ch);

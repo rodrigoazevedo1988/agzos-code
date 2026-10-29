@@ -11,25 +11,10 @@
 
 import { lucideIcon } from './lucide.js';
 import { startOnboarding } from './onboarding.js';
+import { openFile } from './editor.js';
 import { toast } from './toast.js';
 
 const State = window.AgzosState;
-
-let currentSlide = 0;
-let slides = [];
-
-const WELCOME_SLIDES = [
-  {
-    id: 'main',
-    title: 'Bem-vindo ao Agzos Code',
-    body: 'O editor de código do time Agzos — IA nativa, terminal integrado e pronto pra multi-plataforma.',
-    primary: 'Iniciar Onboarding',
-    primaryAction: 'onboarding',
-    secondary: 'Pular por enquanto',
-    secondaryAction: 'close',
-    logo: 'full-light', // ou 'full-dark' pra tema claro
-  },
-];
 
 export function showWelcome(opts = {}) {
   const overlay = document.getElementById('welcome-popup');
@@ -134,10 +119,6 @@ export function showEditorWelcome() {
         <span class="welcome-action-icon"></span>
         Abrir Arquivo
       </button>
-      <button class="primary-btn welcome-action" data-action="clone">
-        <span class="welcome-action-icon"></span>
-        Clonar Repo
-      </button>
     </div>
     <div class="welcome-shortcuts">
       <div><kbd>Ctrl+P</kbd> Buscar arquivo</div>
@@ -152,21 +133,16 @@ export function showEditorWelcome() {
   actions.forEach((btn) => {
     const iconHost = btn.querySelector('.welcome-action-icon');
     const action = btn.dataset.action;
-    const iconName = action === 'open-folder' ? 'folder-open'
-                   : action === 'open-file' ? 'file-plus'
-                   : 'git-branch';
+    const iconName = action === 'open-folder' ? 'folder-open' : 'file-plus';
     iconHost.appendChild(lucideIcon(iconName, { size: 16, strokeWidth: 2 }));
   });
 
   // Handlers
   welcome.querySelector('[data-action="open-folder"]').addEventListener('click', () => {
-    document.getElementById('welcome-open-folder')?.click() ||
     document.querySelector('#btn-open-folder')?.click();
   });
-  welcome.querySelector('[data-action="open-file"]').addEventListener('click', () => {
-    document.querySelector('#welcome-open-file')?.click();
-  });
-  welcome.querySelector('[data-action="clone"]').addEventListener('click', () => {
-    document.querySelector('#welcome-clone')?.click();
+  welcome.querySelector('[data-action="open-file"]').addEventListener('click', async () => {
+    const p = await window.agzos.dialog.openFile();
+    if (p) await openFile(p);
   });
 }

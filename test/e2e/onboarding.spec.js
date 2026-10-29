@@ -65,7 +65,7 @@ test('status bar mostra rótulo de performance em pt-BR', async () => {
     settings: { welcomeSeen: true, onboardingCompleted: true },
   });
   try {
-    await expect(page.locator('#status-perf')).toContainText('Balanceado');
+    await expect(page.locator('#status-perf-label')).toContainText('Balanceado');
     expect(errors).toEqual([]);
   } finally {
     await app.close();

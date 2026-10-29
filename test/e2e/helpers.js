@@ -16,7 +16,7 @@ async function launchApp({ userData, settings } = {}) {
   }
 
   const args = ['.'];
-  if (needsNoSandbox()) args.push('--no-sandbox');
+  if (needsNoSandbox() || process.env.AGZOS_NO_SANDBOX === '1') args.push('--no-sandbox');
 
   const app = await electron.launch({
     args,
