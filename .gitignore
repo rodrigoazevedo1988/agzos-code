@@ -5,6 +5,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Caches locais (npm/Electron)
+.npm-cache/
+.cache/
+
 # Electron / Builder
 dist/
 out/

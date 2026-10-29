@@ -1,6 +1,6 @@
 {
   "name": "agzos-code",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agzos Code — editor de código baseado em Electron com Monaco, feito para o time Agzos.",
   "main": "src/main/main.js",
   "author": {
@@ -9,11 +9,20 @@
   },
   "license": "MIT",
   "homepage": "https://github.com/rodrigoazevedo1988/agzos-code",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rodrigoazevedo1988/agzos-code.git"
+  },
   "private": false,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "setup:vendor": "node tools/setup-vendor.js",
-    "postinstall": "node tools/setup-vendor.js && node tools/patch-electron-dev-mac.js",
-    "build:icons": "electron tools/build-icons.js && node tools/patch-electron-dev-mac.js",
+    "postinstall": "node tools/setup-vendor.js && node tools/patch-electron-dev-mac.js && node tools/sign-mac-dev.js",
+    "build:icons": "electron tools/build-icons.js && node tools/patch-electron-dev-mac.js && node tools/sign-mac-dev.js",
+    "sign:mac": "node tools/sign-mac-dev.js",
+    "sign:mac:dist": "node tools/sign-mac-app.js",
     "start": "electron .",
     "dev": "electron .",
     "dev:tools": "AGZOS_DEV=1 electron .",
@@ -30,8 +39,8 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.64.0",
-    "electron": "^32.0.0",
-    "electron-builder": "^25.0.0",
+    "electron": "^44.10.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^9.39.5",
     "globals": "^15.15.0"
   },
@@ -45,6 +54,7 @@
     "appId": "com.agzos.code",
     "productName": "Agzos Code",
     "copyright": "Copyright © 2026 Agzos",
+    "afterPack": "tools/after-pack-mac.js",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -94,11 +104,33 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": false,
+      "extendInfo": {
+        "NSDesktopFolderUsageDescription": "O Agzos Code acessa a Área de Trabalho apenas para abrir a pasta que você escolher.",
+        "NSDocumentsFolderUsageDescription": "O Agzos Code acessa seus Documentos apenas para abrir a pasta que você escolher.",
+        "NSDownloadsFolderUsageDescription": "O Agzos Code acessa seus Downloads apenas para abrir a pasta que você escolher."
+      }
     }
   }
 }
