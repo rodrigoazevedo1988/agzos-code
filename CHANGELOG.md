@@ -6,6 +6,8 @@ Fase 1.5 — Confiança e integridade.
 
 ### Adicionado
 
+- Bundles enxutos: Monaco, Lucide e xterm saíram de `dependencies` para `devDependencies`; macOS 322 MB, Linux 298 MB e Windows 388 MB no `--dir`.
+
 - Assinatura local do `.app` no macOS com identidade estável (`Rodrigo Dev Local`), bundle id `com.agzos.code`, via `tools/sign-mac-dev.js`, `tools/sign-mac-app.js` e hook `afterPack`.
 - Electron 44.10.0 e electron-builder 26.18.0; builds macOS arm64/x64, Windows x64/arm64 e Linux x64.
 - Workflow `.github/workflows/build.yml` para gerar artefatos dos três sistemas.
