@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('agzos', {
       'menu:toggle-sidebar',
       'menu:close-tab',
       'menu:close-window',
+      'menu:settings',
     ];
     const handler = (channel) => (_e, ...args) => cb(channel, ...args);
     const handlers = channels.map((ch) => {

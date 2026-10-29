@@ -1051,6 +1051,19 @@ body.perf-high .welcome-actions button { transition: all 0.1s; }
 }
 .dialog-card input[type="text"]:focus { border-color: var(--accent); }
 .dialog-error { color: #ff6b6b; font-size: 11px; min-height: 14px; margin-top: 6px; }
+.fatal-diagnostic {
+  width: 100%;
+  min-height: 120px;
+  box-sizing: border-box;
+  margin-top: 8px;
+  background: var(--bg);
+  color: var(--fg-dim);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+}
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .dialog-actions button {
   padding: 6px 12px;
@@ -1073,3 +1086,72 @@ body.perf-high .welcome-actions button { transition: all 0.1s; }
   overflow: auto;
 }
 .close-guard-list li { margin: 3px 0; }
+
+/* -------------------------------------------------------------------------
+   Página de Configurações (tela cheia, fora da sidebar)
+   ------------------------------------------------------------------------- */
+#settings-page {
+  position: fixed;
+  top: 40px;
+  bottom: 22px;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  background: var(--bg);
+  overflow: auto;
+}
+.settings-page-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 26px 32px 60px;
+}
+.settings-page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.settings-page-header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.settings-page-header p {
+  margin: 3px 0 0;
+  color: var(--fg-mute);
+  font-size: 12px;
+}
+.settings-page-content {
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 20px 20px;
+}
+.settings-page-content h2 {
+  margin: 18px 0 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--fg-mute);
+}
+.settings-page-content h3 {
+  margin: 22px 0 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--fg-mute);
+}
+.settings-page-content .setting-row {
+  margin-bottom: 12px;
+}
+.settings-page-content .setting-row label {
+  width: 180px;
+}
+.settings-page-content .setting-row select,
+.settings-page-content .setting-row input[type="text"],
+.settings-page-content .setting-row input[type="password"],
+.settings-page-content .setting-row input[type="number"] {
+  max-width: 380px;
+}

@@ -82,3 +82,32 @@ npm run dev:tools   # abre DevTools destacado
 xvfb-run -a npx electron . --no-sandbox
 ```
 `--no-sandbox` só é necessário rodando como root.
+
+## Terminal: `Can only have one anonymous define call per script file`
+
+**Corrigido em 29/10/2026.**
+
+O xterm.js e o addon de fit são UMD e chamam `define([], factory)` quando encontram o AMD loader do Monaco. Como o xterm era carregado depois do Monaco, o loader quebrava ao abrir o terminal.
+
+Correção em `src/renderer/scripts/terminal.js`:
+- guarda o `window.define` do Monaco;
+- coloca `window.define = undefined` só durante o carregamento de `xterm.js` e `fit.js`;
+- restaura o `define` ao terminar (inclusive em erro);
+- aguarda o CSS e os dois scripts antes de resolver a promise.
+
+O terminal também normaliza `\r` para `\n` no `term:write`, porque sem pty o shell não traduz o Enter do xterm. Teste: `npm run test:e2e -- test/e2e/terminal.spec.js`.
+
+## “Copiar diagnóstico” falha com `Write permission denied`
+
+**Corrigido em 29/10/2026.**
+
+O app nega permissões por padrão (`setPermissionRequestHandler`), inclusive clipboard. O botão do error boundary agora:
+1. tenta `navigator.clipboard.writeText`;
+2. em caso de falha, usa `document.execCommand('copy')`;
+3. se o fallback também falhar, mostra uma textarea com o diagnóstico selecionado para copiar manualmente.
+
+Nenhuma dessas falhas gera `unhandledrejection` ou novo overlay.
+
+## Configurações
+
+A página de Configurações abre em tela cheia, fora da sidebar: `Cmd/Ctrl+,`, botão de engrenagem na topbar ou botão de configurações na activity bar. Volta pelo botão `←` ou `Esc`.

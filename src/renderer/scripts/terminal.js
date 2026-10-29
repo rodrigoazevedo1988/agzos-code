@@ -3,6 +3,11 @@
  *
  * Carrega xterm como UMD via <script> injetado em runtime
  * (CSP não permite file:// imports diretos de node_modules).
+ *
+ * Importante: o Monaco instala um `define` AMD global. O UMD do xterm chama
+ * `define([], factory)` e o loader do Monaco quebra com "Can only have one
+ * anonymous define call per script file". Desativamos o `define` só durante
+ * o carregamento dos scripts do xterm e restauramos depois.
  */
 
 import { toast } from './toast.js';
@@ -14,36 +19,64 @@ let fitAddon = null;
 let termId = null;
 let xtermLoaded = null;
 
-function loadXterm() {
-  if (xtermLoaded) return xtermLoaded;
-  xtermLoaded = new Promise((resolve, reject) => {
-    // CSS
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = 'vendor/xterm/xterm.css';
-    css.onload = resolve;
-    css.onerror = () => reject(new Error('Falha ao carregar xterm.css'));
-    document.head.appendChild(css);
-
-    // JS principal
-    const s = document.createElement('script');
-    s.src = 'vendor/xterm/xterm.js';
-    s.onload = () => {
-      // Fit addon (deve ser carregado após o xterm)
-      const f = document.createElement('script');
-      f.src = 'vendor/xterm/addon/fit.js';
-      f.onload = resolve;
-      f.onerror = () => reject(new Error('Falha ao carregar xterm fit addon'));
-      document.head.appendChild(f);
-    };
-    s.onerror = () => reject(new Error('Falha ao carregar xterm.js'));
-    document.head.appendChild(s);
+function loadStylesheet(href) {
+  return new Promise((resolve, reject) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.onload = resolve;
+    link.onerror = () => reject(new Error(`Falha ao carregar ${href}`));
+    document.head.appendChild(link);
   });
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Falha ao carregar ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function loadXterm() {
+  if (xtermLoaded) return xtermLoaded;
+
+  xtermLoaded = (async () => {
+    await loadStylesheet('vendor/xterm/xterm.css');
+
+    const amdDefine = window.define;
+    window.define = undefined;
+    try {
+      await loadScript('vendor/xterm/xterm.js');
+      await loadScript('vendor/xterm/addon/fit.js');
+    } finally {
+      window.define = amdDefine;
+    }
+
+    if (!window.Terminal || !window.FitAddon) {
+      throw new Error('xterm.js carregou, mas Terminal/FitAddon não estão disponíveis.');
+    }
+  })();
+
   return xtermLoaded;
 }
 
 export async function initTerminal() {
-  await loadXterm();
+  if (term) {
+    if (fitAddon) { try { fitAddon.fit(); } catch {} }
+    term.focus();
+    return;
+  }
+
+  try {
+    await loadXterm();
+  } catch (e) {
+    toast(`Terminal indisponível: ${e.message}`, 'error', 6000);
+    return;
+  }
+
   const Terminal = window.Terminal;
   const FitAddon = window.FitAddon?.FitAddon || window.FitAddon;
   if (!Terminal || !FitAddon) {
@@ -99,7 +132,6 @@ export async function initTerminal() {
     }
   });
 
-  // Cleanup on exit
   window.agzos.term.onData((id, data) => {
     if (id === termId) term.write(data);
   });

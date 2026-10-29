@@ -32,6 +32,9 @@ function register(ipcMain) {
     const send = (channel, ...args) => {
       if (!evt.sender.isDestroyed()) evt.sender.send(channel, ...args);
     };
+    proc.on('error', (err) => {
+      send('term:data', id, `\r\n[Falha ao iniciar ${shellPath}: ${err.message}]\r\n`);
+    });
     proc.stdout.on('data', (data) => send('term:data', id, data.toString()));
     proc.stderr.on('data', (data) => send('term:data', id, data.toString()));
     proc.on('exit', (code) => {
@@ -39,13 +42,20 @@ function register(ipcMain) {
       shells.delete(id);
     });
 
-    return { id, cwd };
+    return { id, cwd, shell: shellPath, pid: proc.pid ?? null };
   });
 
   ipcMain.handle('term:write', (_evt, id, data) => {
     const proc = shells.get(id);
-    if (proc) proc.stdin.write(data);
-    return true;
+    if (!proc) return false;
+    try {
+      // Sem pty, o shell não traduz CR do xterm em NL; normalizamos aqui.
+      const payload = String(data).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      proc.stdin.write(payload);
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   ipcMain.handle('term:resize', (_evt, _id, _cols, _rows) => {

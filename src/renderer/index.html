@@ -70,8 +70,32 @@
             <div class="ai-msg ai-system">Agzos IA — em breve. A configuração de providers será feita por um wizard na Fase 2.</div>
           </div>
         </div>
-        <div class="panel" id="panel-settings" hidden>
-          <h3>Configurações</h3>
+      </div>
+    </aside>
+
+    <!-- Editor + Tabs + Terminal -->
+    <main id="editor-area">
+      <div id="tabs"></div>
+      <div id="editor-banner" class="editor-banner" hidden></div>
+      <div id="editor-host">
+        <!-- Welcome screen do editor (preenchido por welcome.js) -->
+        <div class="welcome" id="welcome"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- SETTINGS PAGE (tela cheia, fora da sidebar) -->
+  <section id="settings-page" hidden>
+    <div class="settings-page-inner">
+      <header class="settings-page-header">
+        <button class="icon-btn" id="btn-settings-back" title="Voltar (Esc)">←</button>
+        <div>
+          <h1>Configurações</h1>
+          <p>Preferências do Agzos Code</p>
+        </div>
+      </header>
+      <div class="settings-page-content">
+          <h2>Geral</h2>
           <div class="setting-row">
             <label>Tema</label>
             <select id="setting-theme">
@@ -128,20 +152,9 @@
           <div class="setting-row">
             <button class="primary-btn" id="btn-restart-onboarding">↻ Refazer Onboarding</button>
           </div>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Editor + Tabs + Terminal -->
-    <main id="editor-area">
-      <div id="tabs"></div>
-      <div id="editor-banner" class="editor-banner" hidden></div>
-      <div id="editor-host">
-        <!-- Welcome screen do editor (preenchido por welcome.js) -->
-        <div class="welcome" id="welcome"></div>
-      </div>
-    </main>
-  </div>
+             </div>
+    </div>
+  </section>
 
   <!-- BOTTOM PANEL: Terminal -->
   <section id="bottom-panel" hidden>

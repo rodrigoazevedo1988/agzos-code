@@ -19,16 +19,28 @@ function diagnosticText() {
   ].join('\n');
 }
 
-function copy(text) {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text);
-  }
+function legacyCopy(text) {
   const area = document.createElement('textarea');
   area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.cssText = 'position:fixed;left:-9999px;top:0;';
   document.body.appendChild(area);
   area.select();
-  try { document.execCommand('copy'); } finally { area.remove(); }
-  return Promise.resolve();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; } finally { area.remove(); }
+  return ok;
+}
+
+async function copy(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // O permission handler do app nega clipboard por padrão; cai no fallback.
+  }
+  return legacyCopy(text);
 }
 
 function showFatal(message) {
@@ -43,6 +55,7 @@ function showFatal(message) {
       <div class="dialog-card">
         <h3>O Agzos Code encontrou um erro</h3>
         <p class="fatal-message"></p>
+        <textarea class="fatal-diagnostic" readonly hidden></textarea>
         <div class="dialog-actions">
           <button type="button" class="fatal-logs">Abrir logs</button>
           <button type="button" class="fatal-copy">Copiar diagnóstico</button>
@@ -52,9 +65,22 @@ function showFatal(message) {
     `;
     document.body.appendChild(overlay);
     overlay.querySelector('.fatal-reload').addEventListener('click', () => location.reload());
-    overlay.querySelector('.fatal-copy').addEventListener('click', () => copy(diagnosticText()));
+    overlay.querySelector('.fatal-copy').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      const text = diagnosticText();
+      const ok = await copy(text);
+      button.textContent = ok ? 'Copiado' : 'Selecione o texto';
+      if (!ok) {
+        const area = overlay.querySelector('.fatal-diagnostic');
+        area.hidden = false;
+        area.value = text;
+        area.focus();
+        area.select();
+      }
+    });
     overlay.querySelector('.fatal-logs').addEventListener('click', () => {
-      window.agzos?.logs?.open?.().catch(() => {});
+      const result = window.agzos?.logs?.open?.();
+      if (result?.catch) result.catch(() => {});
     });
   }
   overlay.hidden = false;

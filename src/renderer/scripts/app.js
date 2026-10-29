@@ -100,7 +100,8 @@ async function boot() {
     document.body.classList.toggle('sidebar-hidden');
     State.sidebarHidden = document.body.classList.contains('sidebar-hidden');
   });
-  document.getElementById('btn-settings').addEventListener('click', () => switchSidebarView('settings'));
+  document.getElementById('btn-settings').addEventListener('click', openSettingsPage);
+  document.getElementById('btn-settings-back').addEventListener('click', closeSettingsPage);
 
   // 12) Botões do header da sidebar
   document.getElementById('btn-open-folder').addEventListener('click', openFolderDialog);
@@ -114,7 +115,10 @@ async function boot() {
 
   // 13) Activity bar
   document.querySelectorAll('.activity-btn').forEach((btn) => {
-    btn.addEventListener('click', () => switchSidebarView(btn.dataset.view));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.view === 'settings') openSettingsPage();
+      else switchSidebarView(btn.dataset.view);
+    });
   });
 
   // 14) Bottom tabs
@@ -142,6 +146,7 @@ async function boot() {
     else if (channel === 'menu:toggle-sidebar') document.body.classList.toggle('sidebar-hidden');
     else if (channel === 'menu:close-tab') closeActiveTab();
     else if (channel === 'menu:close-window') window.close();
+    else if (channel === 'menu:settings') openSettingsPage();
   });
 
   // 18) Init terminal (lazy no primeiro toggle)
@@ -334,6 +339,14 @@ function updateStatusAI() {
 function bindShortcuts() {
   document.addEventListener('keydown', (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
+    const settingsPage = document.getElementById('settings-page');
+    if (settingsPage && !settingsPage.hidden) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSettingsPage();
+      }
+      return;
+    }
     if (State.onboardingActive || State.welcomeOpen) {
       // Bloqueia atalhos durante onboarding/welcome
       if (e.key === 'Escape') {
@@ -382,6 +395,20 @@ function bindShortcuts() {
   });
 }
 
+function openSettingsPage() {
+  const page = document.getElementById('settings-page');
+  if (!page) return;
+  page.hidden = false;
+  document.getElementById('btn-settings-back')?.focus();
+}
+
+function closeSettingsPage() {
+  const page = document.getElementById('settings-page');
+  if (!page) return;
+  page.hidden = true;
+  document.getElementById('btn-settings')?.focus();
+}
+
 function switchSidebarView(view) {
   const map = {
     explorer: { panel: 'file-tree', title: 'EXPLORER' },
@@ -389,12 +416,11 @@ function switchSidebarView(view) {
     git:      { panel: 'panel-git', title: 'GIT' },
     extensions: { panel: 'panel-extensions', title: 'INTEGRAÇÕES' },
     ai:       { panel: 'panel-ai', title: 'AGZOS IA' },
-    settings: { panel: 'panel-settings', title: 'CONFIGURAÇÕES' },
   };
   const cfg = map[view];
   if (!cfg) return;
   document.getElementById('sidebar-title').textContent = cfg.title;
-  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai','panel-settings'].forEach((id) => {
+  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });

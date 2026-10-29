@@ -4,7 +4,7 @@
 
 ## Resumo
 
-Fase 1.5 entregue em código e testes: PR #3 mergeado, Electron 44 com builds para os três sistemas, assinatura local do macOS, proteção de dirty ao fechar, encoding/EOL/binário, diálogos internos, Explorer/busca, status bar/temas honestos, logs/error boundary e hardening. `npm run check` está com 0 erros e 0 warnings; 39 testes unitários e 18 E2E passam localmente. Falta o teste manual no Mac do Rodrigo e o merge.
+Fase 1.5 entregue em código e testes: PR #3 mergeado, Electron 44 com builds para os três sistemas, assinatura local do macOS, proteção de dirty ao fechar, encoding/EOL/binário, diálogos internos, Explorer/busca, status bar/temas honestos, logs/error boundary e hardening. `npm run check` está com 0 erros e 0 warnings; 39 testes unitários e 20 E2E passam localmente. Falta o teste manual no Mac do Rodrigo e o merge.
 
 ## Tarefas
 
@@ -34,7 +34,7 @@ Fase 1.5 entregue em código e testes: PR #3 mergeado, Electron 44 com builds pa
 ## Verificação
 
 - `npm run check`: **0 errors, 0 warnings; 39 tests, 39 pass, 0 fail**.
-- `npm run test:e2e` (macOS, `AGZOS_NO_SANDBOX=1`): **18 passed**. Inclui dirty-close (janela e `app.quit()`), encoding Latin-1, dotfiles/busca, novo/renomear e proteção de raiz do `fs:delete`.
+- `npm run test:e2e` (macOS, `AGZOS_NO_SANDBOX=1`): **20 passed**. Inclui dirty-close (janela e `app.quit()`), encoding Latin-1, dotfiles/busca, novo/renomear e proteção de raiz do `fs:delete`.
 - `npm audit --omit=dev`: `found 0 vulnerabilities`.
 - `codesign -dv` no app de dev e no empacotado: `Identifier=com.agzos.code`, `Authority=Rodrigo Dev Local`; `codesign --verify --deep --strict` válido.
 - App empacotado `0.2.0` abriu via Playwright (`Agzos Code.app`).

@@ -217,6 +217,11 @@ function buildAppMenu() {
           accelerator: 'CmdOrCtrl+O',
           click: () => mainWindow?.webContents.send('menu:open-folder'),
         },
+        {
+          label: 'Preferências…',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => mainWindow?.webContents.send('menu:settings'),
+        },
         { type: 'separator' },
         {
           label: 'Salvar',

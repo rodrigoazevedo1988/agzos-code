@@ -42,7 +42,7 @@
 - **Terminal integrado** (`Ctrl+`): xterm.js ligado ao shell do sistema (pty real na Fase 4).
 - **Command Palette** (`Ctrl+Shift+P`).
 - **Status bar** com Ln/Col, linguagem, encoding/EOL reais e modo de performance; branch real chega na Fase 3.
-- **Settings persistentes** em JSON: tema, ícones, performance, fonte, arquivos ocultos. A configuração de IA fica desabilitada até a Fase 2.
+- **Configurações em página cheia** (fora da sidebar, `Cmd+,`): tema, ícones, performance, fonte, arquivos ocultos. A configuração de IA fica desabilitada até a Fase 2.
 - **3 modos de performance:** Economia, Balanceado e Alta Performance.
 - **Atalhos** estilo VS Code: `Ctrl+S`, `Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+B`, `Ctrl+W`, `Ctrl+` `, `Ctrl+Shift+E/F/G/X`.
 - **Encoding/EOL/binário:** arquivos Latin-1/UTF-16 são preservados; binários abrem somente leitura; escrita atômica.
@@ -119,6 +119,7 @@ Saída vai para `dist/`. No macOS, o `.app` local é assinado com a identidade `
 |--------|------|
 | `Ctrl+P` | Quick open (buscar arquivo) |
 | `Ctrl+Shift+P` | Command Palette |
+| `Ctrl+,` | Abrir Configurações (página cheia) |
 | `Ctrl+Shift+F` | Buscar texto nos arquivos |
 | `Ctrl+S` | Salvar arquivo ativo |
 | `Ctrl+W` | Fechar aba (pede confirmação se houver dirty) |

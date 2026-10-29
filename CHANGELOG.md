@@ -26,6 +26,11 @@ Fase 1.5 — Confiança e integridade.
 
 ### Corrigido
 
+- Terminal abria com `Can only have one anonymous define call per script file`: o UMD do xterm conflitava com o loader AMD do Monaco. O `define` é desativado só durante o carregamento do xterm/fit e restaurado depois.
+- Terminal sem pty ignorava Enter (`\r`): o main normaliza CR para LF no `term:write`.
+- “Copiar diagnóstico” falhava com permissão de clipboard negada; agora há fallback por `execCommand` e textarea de diagnóstico.
+- Configurações deixaram de abrir na sidebar e viraram página cheia, com voltar/Esc.
+
 - Renomear arquivo aberto deixava aba órfã/duplicada e podia salvar no caminho antigo.
 - Novo arquivo/pasta e renomear não funcionavam por causa de `window.prompt`.
 - Arquivos Latin-1/UTF-16/binários eram corrompidos ao salvar (U+FFFD e troca de EOL).
