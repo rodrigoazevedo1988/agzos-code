@@ -129,6 +129,7 @@ export async function initTerminal() {
   window.addEventListener('resize', () => {
     if (fitAddon && !document.getElementById('bottom-panel').hidden) {
       try { fitAddon.fit(); } catch {}
+      syncPtySize();
     }
   });
 
@@ -142,13 +143,34 @@ export async function initTerminal() {
   });
 }
 
+/**
+ * Com pty real, o tamanho importa: é ele que faz o shell quebrar linhas e
+ * desenhar o prompt corretamente. Sem pty (modo degradado) o handler devolve
+ * false e não há nada a fazer.
+ */
+function syncPtySize() {
+  if (!termId || !term) return;
+  try {
+    window.agzos.term.resize(termId, term.cols, term.rows);
+  } catch {}
+}
+
 async function spawnShell() {
   try {
     const cols = term.cols || 80;
     const rows = term.rows || 24;
-    const { id } = await window.agzos.term.create(cols, rows);
+    const { id, mode } = await window.agzos.term.create(cols, rows);
     termId = id;
-    State.term = { id, term, fitAddon };
+    State.term = { id, term, fitAddon, mode };
+    if (mode === 'pty') {
+      syncPtySize();
+    } else {
+      // Sem pty: avisa uma vez, no próprio terminal, que o modo é reduzido.
+      term.write(
+        '\x1b[33m[Modo reduzido: pty indisponível — sem eco de digitação, ' +
+        'cores ou cls. O shell ainda funciona.]\x1b[0m\r\n',
+      );
+    }
     term.focus();
   } catch (e) {
     toast(`Não foi possível iniciar o terminal: ${e.message}`, 'error');
