@@ -20,8 +20,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macos-14 está sendo desativado (brownout do runner image em 2026-11).
+          # macos-15 continua x64 e cross-compila arm64 no mesmo runner.
           - name: macOS (arm64 + x64)
-            os: macos-14
+            os: macos-15
             script: dist:mac
           - name: Windows (x64 + arm64)
             os: windows-latest
@@ -110,12 +112,17 @@ jobs:
           done
 
           # spawn-helper precisa do bit de execução (é argv[0] do posix_spawn).
-          while read -r helper; do
-            if [ -n "$helper" ] && [ ! -x "$helper" ]; then
-              echo "::error::spawn-helper sem permissão de execução: $helper"
-              exit 1
-            fi
-          done <<< "$(find "$PTY_DIR" -name 'spawn-helper' -type f)"
+          # Só vale para macOS/Linux: o pacote Windows carrega junto os prebuilds
+          # do darwin (inofensivos, não são usados) e o NTFS não tem bit de
+          # execução, então checar lá daria falso negativo.
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            while read -r helper; do
+              if [ -n "$helper" ] && [ ! -x "$helper" ]; then
+                echo "::error::spawn-helper sem permissão de execução: $helper"
+                exit 1
+              fi
+            done <<< "$(find "$PTY_DIR" -name 'spawn-helper' -type f)"
+          fi
 
           echo "OK: node-pty empacotado fora do asar com os binários da plataforma."
           find "$PTY_DIR" -type f | sed 's|^|  |' | head -20

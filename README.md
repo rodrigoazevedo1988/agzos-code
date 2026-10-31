@@ -39,7 +39,7 @@
 - **Tabs** com indicador de dirty (●), fechar com clique do meio e proteção de alterações não salvas ao fechar a janela.
 - **Quick Open** (`Ctrl+P`): busca por nome de arquivo na workspace (versão MVP; ripgrep na Fase 4).
 - **Buscar em arquivos** (`Ctrl+Shift+F`): inclui dotfiles, ignora `node_modules`/`.git` e leva à linha/coluna do resultado.
-- **Terminal integrado** (`Ctrl+`): xterm.js ligado ao shell do sistema (pty real na Fase 4).
+- **Terminal integrado** (`Ctrl+`): xterm.js ligado ao shell do sistema por pty real (`node-pty`). `cls`/`clear`, cores, `Tab` e `Ctrl+C` funcionam; se o módulo nativo não carregar, cai para um modo reduzido que avisa na primeira linha.
 - **Command Palette** (`Ctrl+Shift+P`).
 - **Status bar** com Ln/Col, linguagem, encoding/EOL reais e modo de performance; branch real chega na Fase 3.
 - **Configurações em página cheia** (fora da sidebar, `Cmd+,`): tema, ícones, performance, fonte, arquivos ocultos. A configuração de IA fica desabilitada até a Fase 2.
