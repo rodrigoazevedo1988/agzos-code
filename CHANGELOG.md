@@ -1,5 +1,28 @@
 # Changelog — Agzos Code
 
+## [0.2.2] — 2026-10-31
+
+Correções vindas do teste do build Windows 0.2.1 no Windows 11 Pro 26H2
+(build 26300.9711), que passou no checklist. Fecha os detalhes que sobraram.
+
+### Corrigido
+
+- **`cls` não limpava o terminal**: o terminal rodava com `child_process.spawn` e canos, sem pty. Sem um terminal de verdade o PowerShell/bash não emitem a sequência de limpeza (e o PowerShell ignora `Clear-Host` quando a saída é redirecionada), então `cls` só aparecia como erro/ruído. Agora o terminal usa **`node-pty`** (pty real): `cls`/`clear` limpam, o que você digita aparece na tela, há cores, `Tab` e `Ctrl+C`.
+- **Eco de digitação ausente**: consequência do mesmo problema — sem pty o shell não ecoa o que é digitado, então só o resultado dos comandos aparecia. Corrigido junto com o pty.
+- **`spawn-helper` do node-pty sem bit de execução no pacote**: o tarball do npm entrega o binário como `-rw-r--r--`, mas no macOS ele é passado como `argv[0]` do `posix_spawn`; sem o bit o terminal não abriria em builds macOS. O hook `afterPack` agora marca o binário como executável.
+- **`term:resize` era um no-op**: o handler devolvia `true` sem fazer nada. Com pty ele repassa `cols`/`rows` de verdade, então o shell quebra linha no lugar certo.
+
+### Adicionado
+
+- `src/main/lib/terminal-session.js`: sessão de terminal com pty real e **fallback automático para canos** quando o módulo nativo não carrega ou o ambiente bloqueia `/dev/ptmx`. No modo degradado o terminal avisa na primeira linha que está reduzido, em vez de falhar silenciosamente.
+- `node-pty` como dependência de runtime (o app deixou de ter zero dependências) com prebuilds N-API para win32-x64/arm64 e darwin-x64/arm64; empacotado fora do `app.asar` via `asarUnpack` e sem `npmRebuild` (os prebuilds são ABI-stable).
+- Testes unitários da sessão de terminal (pty e canos, normalização de CR só no modo cano, resize, fallback quando o pty falha) e da permissão do `spawn-helper`.
+- Testes E2E do terminal (execução de comando, modo pty/reduzido, `cls` limpando, Enter sem linha duplicada) e do shell: **segunda instância** focando/restaurando a janela existente sem abrir outra, e **“Revelar no Explorer”** por IPC, incluindo o guard que recusa caminho fora da workspace.
+
+### Notas
+
+- Assinatura de código do `.exe` (Windows) e Developer ID + notarização (macOS) seguem pendentes — exigem certificado, previstas para a Fase 5.
+
 ## [0.2.1] — 2026-10-29
 
 Correções vindas do teste do build Windows 0.2.0 no Windows 11 Pro 26H2

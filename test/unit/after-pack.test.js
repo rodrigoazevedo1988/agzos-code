@@ -72,3 +72,66 @@ test('package.json aponta afterPack para o hook multiplataforma', () => {
   assert.ok(files.includes('!**/._*'), 'build.files deve excluir ._*');
   assert.ok(files.includes('!**/.AppleDouble/**'), 'build.files deve excluir .AppleDouble/');
 });
+
+test('marca spawn-helper no layout macOS (.app/Contents/Resources)', () => {
+  // Layout real do electron-builder no macOS: appOutDir é dist/mac-arm64 e o
+  // código fica dentro do .app. Este teste existe porque a primeira versão do
+  // hook procurava <appOutDir>/resources/... e não fazia nada no macOS.
+  const { fixPtyHelperPermissions } = require('../../tools/after-pack');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-mac-layout-'));
+  const helperDir = path.join(
+    outDir, 'Agzos Code.app', 'Contents', 'Resources', 'app.asar.unpacked',
+    'node_modules', 'node-pty', 'prebuilds', 'darwin-arm64',
+  );
+  fs.mkdirSync(helperDir, { recursive: true });
+  const helper = path.join(helperDir, 'spawn-helper');
+  fs.writeFileSync(helper, 'binario');
+  fs.chmodSync(helper, 0o644);
+
+  const adjusted = fixPtyHelperPermissions(outDir);
+  assert.equal(adjusted.length, 1, 'deve encontrar o helper dentro do .app');
+  assert.equal(fs.statSync(helper).mode & 0o777, 0o755);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test('marca spawn-helper no layout win/linux (<appOutDir>/resources)', () => {
+  const { fixPtyHelperPermissions } = require('../../tools/after-pack');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-win-layout-'));
+  const helperDir = path.join(
+    outDir, 'resources', 'app.asar.unpacked',
+    'node_modules', 'node-pty', 'build', 'Release',
+  );
+  fs.mkdirSync(helperDir, { recursive: true });
+  const helper = path.join(helperDir, 'spawn-helper');
+  fs.writeFileSync(helper, 'binario');
+  fs.chmodSync(helper, 0o644);
+
+  assert.equal(fixPtyHelperPermissions(outDir).length, 1);
+  assert.equal(fs.statSync(helper).mode & 0o777, 0o755);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test('marca spawn-helper do node-pty como executável', () => {
+  const { fixPtyHelperPermissions } = require('../../tools/after-pack');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-helper-'));
+  const helperDir = path.join(outDir, 'resources', 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds', 'darwin-arm64');
+  fs.mkdirSync(helperDir, { recursive: true });
+  const helper = path.join(helperDir, 'spawn-helper');
+  fs.writeFileSync(helper, 'binario');
+  fs.chmodSync(helper, 0o644);
+
+  const adjusted = fixPtyHelperPermissions(outDir);
+  assert.equal(adjusted.length, 1);
+  assert.equal(fs.statSync(helper).mode & 0o777, 0o755);
+
+  // idempotente: já executável não entra na lista
+  assert.deepEqual(fixPtyHelperPermissions(outDir), []);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test('sem node-pty no pacote, não quebra', () => {
+  const { fixPtyHelperPermissions } = require('../../tools/after-pack');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-no-pty-'));
+  assert.deepEqual(fixPtyHelperPermissions(outDir), []);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});

@@ -1,73 +1,71 @@
 /**
- * IPC: terminal (term:*). Spawna o shell do sistema, sem pty (Fase 4 troca por node-pty).
+ * IPC: terminal (term:*).
+ *
+ * Usa pty real (node-pty) quando disponível, com fallback para pipes — ver
+ * src/main/lib/terminal-session.js. Com pty, `cls`/`clear`, o eco do que é
+ * digitado, cores e Ctrl+C funcionam como num terminal de verdade.
  */
 
-const os = require('os');
-const { spawn } = require('child_process');
+const { createTerminalSession } = require('../lib/terminal-session');
 
-// Processos de shell vivos, por id. Exportado para encerrar tudo ao fechar o app.
-const shells = new Map();
+// Sessões vivas por id. Exportado para encerrar tudo ao fechar o app.
+const sessions = new Map();
 
 function killAll() {
-  for (const proc of shells.values()) {
-    try { proc.kill(); } catch {}
+  for (const session of sessions.values()) {
+    session.kill();
   }
-  shells.clear();
+  sessions.clear();
 }
 
 function register(ipcMain) {
-  ipcMain.handle('term:create', (evt, _cols = 80, _rows = 24) => {
+  ipcMain.handle('term:create', (evt, cols = 80, rows = 24) => {
     const id = `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const shellPath = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
-    const cwd = os.homedir();
-
-    const proc = spawn(shellPath, [], {
-      cwd,
-      env: { ...process.env, TERM: 'xterm-256color' },
-      shell: false,
-    });
-
-    shells.set(id, proc);
 
     const send = (channel, ...args) => {
       if (!evt.sender.isDestroyed()) evt.sender.send(channel, ...args);
     };
-    proc.on('error', (err) => {
-      send('term:data', id, `\r\n[Falha ao iniciar ${shellPath}: ${err.message}]\r\n`);
-    });
-    proc.stdout.on('data', (data) => send('term:data', id, data.toString()));
-    proc.stderr.on('data', (data) => send('term:data', id, data.toString()));
-    proc.on('exit', (code) => {
-      send('term:exit', id, code);
-      shells.delete(id);
+
+    const session = createTerminalSession({
+      id,
+      cols,
+      rows,
+      onData: (data) => send('term:data', id, data),
+      onExit: (code) => {
+        send('term:exit', id, code);
+        sessions.delete(id);
+      },
     });
 
-    return { id, cwd, shell: shellPath, pid: proc.pid ?? null };
+    sessions.set(id, session);
+
+    return {
+      id,
+      cwd: session.cwd,
+      shell: session.shell,
+      pid: session.pid,
+      // 'pty' = terminal completo; 'pipe' = modo degradado (sem echo/cores).
+      mode: session.mode,
+    };
   });
 
   ipcMain.handle('term:write', (_evt, id, data) => {
-    const proc = shells.get(id);
-    if (!proc) return false;
-    try {
-      // Sem pty, o shell não traduz CR do xterm em NL; normalizamos aqui.
-      const payload = String(data).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      proc.stdin.write(payload);
-      return true;
-    } catch {
-      return false;
-    }
+    const session = sessions.get(id);
+    if (!session) return false;
+    return session.write(data);
   });
 
-  ipcMain.handle('term:resize', (_evt, _id, _cols, _rows) => {
-    // xterm fit addon cuida do resize no renderer; manter handler pra API
-    return true;
+  ipcMain.handle('term:resize', (_evt, id, cols, rows) => {
+    const session = sessions.get(id);
+    if (!session) return false;
+    return session.resize(cols, rows);
   });
 
   ipcMain.handle('term:kill', (_evt, id) => {
-    const proc = shells.get(id);
-    if (proc) {
-      proc.kill();
-      shells.delete(id);
+    const session = sessions.get(id);
+    if (session) {
+      session.kill();
+      sessions.delete(id);
     }
     return true;
   });
