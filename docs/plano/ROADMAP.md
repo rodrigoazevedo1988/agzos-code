@@ -1,8 +1,8 @@
 # Roadmap — Agzos Code
 
-**Atualizado:** 28/10/2026
+**Atualizado:** 31/10/2026
 **Base:** Electron 44 + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md) e [ADR-0002](../decisoes/ADR-0002-electron-e-codigo-nativo.md).
-**Estado atual:** Fase 1.5 (confiança) concluída em código e testes; falta o teste manual no Mac e o PR. Próxima: Fase 2.
+**Estado atual:** Fase 1.5 mergeada (PR #4) e publicada na `v0.2.2`, com os nove artefatos dos três sistemas no release. O pty real do terminal, previsto para a Fase 4, foi antecipado na 0.2.2. Próxima: Fase 2 — IA.
 
 Backlog aprovado e diagnóstico completo: [`BACKLOG-MELHORIAS.md`](BACKLOG-MELHORIAS.md).
 Planos detalhados, tarefa a tarefa, para o executor: [`execucao/`](execucao/00-guia-do-executor.md).
@@ -78,7 +78,7 @@ Estimativa total até a v1.0: **~12–14,5 semanas** de execução + 1,5–2 sem
 ## Fase 4 — Editor completo (3–3,5 semanas) · [plano](execucao/fase-4-editor.md)
 
 - [ ] T1 IntelliSense TS/JS/JSON/CSS/HTML (workers do Monaco)
-- [ ] T2 Terminal com node-pty
+- [x] T2 Terminal com node-pty — **antecipado na 0.2.2** (commit `7c9f602`)
 - [ ] T3 Busca e Quick Open com ripgrep
 - [ ] T4 Recarregar arquivos alterados fora + restaurar sessão
 - [ ] T5 Modos de performance com efeito

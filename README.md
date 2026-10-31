@@ -26,7 +26,7 @@
 
 **Agzos Code** é um editor de código desktop construído com [Electron 44](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/) (o mesmo engine que o VS Code usa de verdade — não é imitação). A base é Electron + Monaco próprio, **sem fork do Code-OSS** — decisão registrada no [ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md).
 
-**Estado atual (28/10/2026):** Fase 1.5 — Confiança e integridade em finalização. Próxima: Fase 2 — IA. O roadmap vivo fica em [`docs/plano/ROADMAP.md`](docs/plano/ROADMAP.md).
+**Estado atual (31/10/2026):** Fase 1.5 — Confiança e integridade mergeada (PR #4) e publicada na `v0.2.2`, já com o terminal em pty real. Próxima: Fase 2 — IA. O roadmap vivo fica em [`docs/plano/ROADMAP.md`](docs/plano/ROADMAP.md).
 
 **Diferencial intencional:** o editor foi desenhado desde o dia 1 com o ecossistema Agzos em mente (IA, ferramentas internas, identidade visual) e com privacidade por padrão — **não há telemetria**.
 
@@ -56,7 +56,7 @@
 |------|--------|------|
 | **0 — Protótipo** | ✅ | Editor, branding, welcome/onboarding |
 | **1 — Fundação** | ✅ | Lint/testes, IPC modular, cofre, path guard, CI |
-| **1.5 — Confiança** | 🚧 | Electron 44, assinatura local, dirty close, encoding, arquivos, busca, status, logs |
+| **1.5 — Confiança** | ✅ | Electron 44, assinatura local, dirty close, encoding, arquivos, busca, status, logs |
 | **2 — IA** | ⏳ | SSE, providers, wizard, chat com streaming, contexto e aplicar diff |
 | **3 — Git/GitHub** | ⏳ | Status/diff/commit/push/pull, multi-conta |
 | **4 — Editor completo** | ⏳ | pty, ripgrep, sessão, performance, importar VS Code |
