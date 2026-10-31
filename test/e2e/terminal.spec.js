@@ -59,7 +59,7 @@ test('a sessão informa o modo (pty real ou reduzido)', async () => {
   }
 });
 
-test('com pty: o que se digita aparece na tela e `cls` limpa', async () => {
+test('com pty: o que se digita aparece na tela e limpar a tela funciona', async () => {
   const { app, page } = await launchApp({
     settings: { welcomeSeen: true, onboardingCompleted: true },
   });
@@ -73,9 +73,15 @@ test('com pty: o que se digita aparece na tela e `cls` limpa', async () => {
     await page.keyboard.press('Enter');
     await expect.poll(() => bufferText(page)).toContain('eco-visivel-7');
 
-    await page.keyboard.type('cls');
+    // `cls` só existe no PowerShell; nos shells POSIX o comando é `clear`.
+    // Usar o errado aqui daria "Command 'cls' not found" e o teste mediria a
+    // mensagem de erro em vez da limpeza da tela.
+    const limpar = (await page.evaluate(() => window.agzos.app.info())).platform === 'win32'
+      ? 'cls'
+      : 'clear';
+    await page.keyboard.type(limpar);
     await page.keyboard.press('Enter');
-    // Depois de cls o conteúdo anterior não deve mais estar visível.
+    // Depois de limpar, o conteúdo anterior não deve mais estar visível.
     await expect.poll(() => bufferText(page)).not.toContain('echo eco-visivel-7');
   } finally {
     await app.close();

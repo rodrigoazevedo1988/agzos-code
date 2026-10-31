@@ -79,8 +79,16 @@ test('app:reveal aceita caminho da workspace e recusa fora dela', async () => {
   try {
     await app.evaluate((_electron, dir) => global.__agzosAllowRoot(dir), root);
 
+    // Sem gerenciador de arquivos (CI/Xvfb), `shell.showItemInFolder` pode
+    // bloquear e o invoke nunca voltaria. O efeito observado é a chamada.
+    await app.evaluate(({ shell }) => {
+      global.__revealed = [];
+      shell.showItemInFolder = (p) => { global.__revealed.push(p); };
+    });
+
     // Caminho liberado: revelar deve ser aceito.
     expect(await page.evaluate((p) => window.agzos.app.reveal(p), dentro)).toBe(true);
+    expect(await app.evaluate(() => global.__revealed)).toEqual([dentro]);
 
     // Fora da raiz liberada: o guard barra antes de tocar no gerenciador.
     expect(await page.evaluate((p) => window.agzos.app.reveal(p), fora)).toBe(false);
@@ -88,6 +96,9 @@ test('app:reveal aceita caminho da workspace e recusa fora dela', async () => {
     // Entradas inválidas também são recusadas sem exceção.
     expect(await page.evaluate(() => window.agzos.app.reveal(''))).toBe(false);
     expect(await page.evaluate(() => window.agzos.app.reveal(null))).toBe(false);
+
+    // Só a chamada do caminho permitido chegou ao gerenciador de arquivos.
+    expect(await app.evaluate(() => global.__revealed)).toHaveLength(1);
 
     expect(errors).toEqual([]);
   } finally {
