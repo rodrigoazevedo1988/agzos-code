@@ -442,6 +442,11 @@ function renderDoneStep(host) {
     row.appendChild(desc);
     list.appendChild(row);
   });
+  const configure = document.createElement('button');
+  configure.className = 'onb-secondary';
+  configure.textContent = 'Configurar IA agora';
+  configure.addEventListener('click', () => import('./ai-wizard.js').then((m) => m.openAIWizard()));
+  wrap.appendChild(configure);
   host.appendChild(wrap);
 }
 
@@ -451,6 +456,6 @@ function goNext() {
   const overlay = document.getElementById('onboarding-overlay');
   renderStep(overlay);
 }
-function iconsInline(name) {
+function iconsInline(_name) {
   return ''; // usa prepend em vez disso
 }

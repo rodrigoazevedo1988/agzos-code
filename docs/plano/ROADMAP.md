@@ -1,8 +1,8 @@
 # Roadmap — Agzos Code
 
-**Atualizado:** 09/10/2026
+**Atualizado:** 12/11/2026
 **Base:** Electron + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md).
-**Estado atual:** Fase 1 concluída (aguardando revisão e merge). Próxima: Fase 2.
+**Estado atual:** Fase 2 — IA concluída no workspace e publicada como v0.3.0. Próxima: Fase 3 — Git e GitHub.
 
 Planos detalhados, tarefa a tarefa, para o executor: [`execucao/`](execucao/00-guia-do-executor.md).
 Relatórios de cada fase: [`relatorios/`](relatorios/).
@@ -24,6 +24,7 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [x] Welcome e onboarding
 - [x] Correção da tela preta e do ícone do macOS em dev (09/10)
 - [x] Pasta `docs/` organizada
+- [x] Explorer com ícones de arquivo e quatro estilos de ícones selecionáveis
 
 ## Fase 1 — Fundação (1–1,5 semana) · [plano](execucao/fase-1-fundacao.md)
 
@@ -39,17 +40,17 @@ Estimativa total até a v1.0: ~9–12 semanas.
 
 ## Fase 2 — IA (3 semanas) · [plano](execucao/fase-2-ia.md)
 
-- [ ] T1 Parser de SSE
-- [ ] T2 Provider compatível com OpenAI (OpenAI, Groq, OpenRouter, Gemini, Ollama, custom)
-- [ ] T3 Provider Anthropic
-- [ ] T4 Perfis de provider + migração
-- [ ] T5 IPC de chat com streaming e cancelamento
-- [ ] T6 Servidor OpenAI falso para E2E
-- [ ] T7 Wizard de IA
-- [ ] T8 Painel de chat com streaming e histórico
-- [ ] T9 Contexto de arquivo, seleção e terminal
-- [ ] T10 Comandos rápidos e aplicar código com diff
-- [ ] T11 Docs + relatório
+- [x] T1 Parser de SSE
+- [x] T2 Provider compatível com OpenAI (OpenAI, Groq, OpenRouter, Gemini, Ollama, custom)
+- [x] T3 Provider Anthropic
+- [x] T4 Perfis de provider + migração
+- [x] T5 IPC de chat com streaming e cancelamento
+- [x] T6 Servidor OpenAI falso para E2E
+- [x] T7 Wizard de IA
+- [x] T8 Painel de chat com streaming e histórico
+- [x] T9 Contexto de arquivo, seleção e terminal
+- [x] T10 Comandos rápidos e aplicar código com diff
+- [x] T11 Docs + relatório
 
 ## Fase 3 — Git e GitHub multi-conta (2 semanas) · [plano](execucao/fase-3-git-github.md)
 
@@ -86,3 +87,7 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - **IntelliSense de outras linguagens:** `monaco-languageclient` + servidores LSP (Python, Go, PHP).
 - **Agent:** IA editando vários arquivos e rodando comandos com aprovação.
 - **Freemium:** agentes em background, indexação de codebase, colaboração, créditos de modelos.
+
+## Fora do escopo atual
+
+- Extensões do VS Code e marketplace Open VSX não são suportados pela arquitetura Electron + Monaco. Para mudar essa decisão, reabrir o [ADR-0001](../decisoes/ADR-0001-base-do-editor.md).

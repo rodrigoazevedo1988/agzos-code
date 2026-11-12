@@ -59,6 +59,49 @@ contextBridge.exposeInMainWorld('agzos', {
     has: (key) => ipcRenderer.invoke('secrets:has', key),
   },
 
+  ai: {
+    presets: () => ipcRenderer.invoke('ai:presets'),
+    profiles: () => ipcRenderer.invoke('ai:profiles'),
+    saveProfile: (profile, apiKey) => ipcRenderer.invoke('ai:profile:save', profile, apiKey),
+    removeProfile: (id) => ipcRenderer.invoke('ai:profile:remove', id),
+    activateProfile: (id) => ipcRenderer.invoke('ai:profile:activate', id),
+    models: (idOrDraft, apiKey) => ipcRenderer.invoke('ai:models', idOrDraft, apiKey),
+    test: (draft, apiKey) => ipcRenderer.invoke('ai:test', draft, apiKey),
+    detectOllama: () => ipcRenderer.invoke('ai:detectOllama'),
+    chat: (requestId, payload) => ipcRenderer.invoke('ai:chat', requestId, payload),
+    cancel: (requestId) => ipcRenderer.invoke('ai:cancel', requestId),
+    onChunk: (cb) => {
+      const handler = (_event, id, text) => cb(id, text);
+      ipcRenderer.on('ai:chunk', handler);
+      return () => ipcRenderer.removeListener('ai:chunk', handler);
+    },
+    onDone: (cb) => {
+      const handler = (_event, id) => cb(id);
+      ipcRenderer.on('ai:done', handler);
+      return () => ipcRenderer.removeListener('ai:done', handler);
+    },
+    onError: (cb) => {
+      const handler = (_event, id, message) => cb(id, message);
+      ipcRenderer.on('ai:error', handler);
+      return () => ipcRenderer.removeListener('ai:error', handler);
+    },
+  },
+
+  chat: {
+    loadHistory: (root) => ipcRenderer.invoke('chat:history:load', root),
+    saveHistory: (root, messages) => ipcRenderer.invoke('chat:history:save', root, messages),
+  },
+
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onNotice: (cb) => {
+      const handler = (_event, notice) => cb(notice);
+      ipcRenderer.on('update:notice', handler);
+      return () => ipcRenderer.removeListener('update:notice', handler);
+    },
+  },
+
   // Workspace (libera a pasta no guard de arquivos)
   workspace: {
     open: (p) => ipcRenderer.invoke('workspace:open', p),
@@ -72,7 +115,7 @@ contextBridge.exposeInMainWorld('agzos', {
 
   // Menu events (main → renderer)
   onMenu: (cb) => {
-    const channels = ['menu:open-folder', 'menu:save', 'menu:command-palette', 'menu:toggle-terminal', 'menu:toggle-sidebar'];
+    const channels = ['menu:open-folder', 'menu:save', 'menu:command-palette', 'menu:toggle-terminal', 'menu:toggle-sidebar', 'menu:check-updates'];
     const handler = (channel) => (_e, ...args) => cb(channel, ...args);
     const handlers = channels.map((ch) => {
       const h = handler(ch);

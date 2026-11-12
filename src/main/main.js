@@ -188,13 +188,18 @@ function buildAppMenu() {
       label: 'Ajuda',
       submenu: [
         {
+          label: 'Verificar atualizações…',
+          click: () => mainWindow?.webContents.send('menu:check-updates'),
+        },
+        { type: 'separator' },
+        {
           label: 'Sobre o Agzos Code',
           click: () => {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'Sobre',
               message: `${APP_NAME}`,
-              detail: `Versão ${app.getVersion()}\nElectron ${process.versions.electron}\nNode ${process.versions.node}\n\nFork do Code-OSS com branding Agzos.\n\n© 2026 Agzos`,
+              detail: `Versão ${app.getVersion()}\nElectron ${process.versions.electron}\nNode ${process.versions.node}\n\nEditor próprio construído com Electron + Monaco.\n\n© 2026 Agzos`,
               buttons: ['OK'],
             });
           },
@@ -236,6 +241,7 @@ if (process.env.AGZOS_TEST === '1') {
 }
 const { createSecretStore } = require('./lib/secrets');
 const { migrateLegacySecrets } = require('./lib/settings');
+const { migrateLegacyAi } = require('./ai/profiles');
 // Em testes E2E sem keyring (CI Linux), usa um cofre falso. Inerte fora de AGZOS_TEST=1.
 const secretsBackend = process.env.AGZOS_TEST === '1' && process.env.AGZOS_TEST_SAFESTORAGE === 'fake'
   ? {
@@ -249,7 +255,17 @@ const secretStore = createSecretStore({
   safeStorage: secretsBackend,
 });
 require('./ipc/secrets').register(ipcMain, { store: secretStore });
+const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
+require('./ipc/chat-history').register(ipcMain, deps);
 require('./ipc/app-info').register(ipcMain, deps);
+const updater = require('./updater').createUpdater({
+  app,
+  notify: (notice) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:notice', notice);
+  },
+});
+ipcMain.handle('update:check', () => updater.checkForUpdates({ manual: true }));
+ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
 
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle                                                                   */
@@ -257,7 +273,9 @@ require('./ipc/app-info').register(ipcMain, deps);
 app.whenReady().then(() => {
   // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
   const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);
-  if (migrated.changed) settingsStore.save(migrated.settings);
+  // Em seguida, associa o provider antigo à chave já guardada em ai.legacy.
+  const migratedAi = migrateLegacyAi(migrated.settings, secretStore);
+  if (migrated.changed || migratedAi.changed) settingsStore.save(migratedAi.settings);
 
   // macOS: seta o ícone da Dock enquanto o app roda (em dev e empacotado)
   if (process.platform === 'darwin' && app.dock && APP_ICON) {
@@ -269,16 +287,19 @@ app.whenReady().then(() => {
   if (process.platform === 'win32' && APP_ICON) {
     try {
       app.setUserTasks?.([{ program: process.execPath, title: 'Nova Janela', iconPath: APP_ICON }]);
-    } catch (e) { /* ignora */ }
+    } catch { /* ignora */ }
   }
   // Linux: Unity launcher (best-effort)
   if (process.platform === 'linux' && APP_ICON) {
-    try { app.setBadgeCount?.(0); } catch (e) { /* ignora */ }
+    try { app.setBadgeCount?.(0); } catch { /* ignora */ }
   }
 
   createSplash();
   // Atrasa um pouquinho pra splash renderizar com calma
   setTimeout(() => createMainWindow(), 350);
+  updater.start({ checkOnStart: false });
+  setTimeout(() => updater.checkForUpdates({ manual: false }), 10_000);
+  setInterval(() => updater.checkForUpdates({ manual: false }), 6 * 60 * 60 * 1000).unref();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -286,6 +307,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  aiSessions.cancelAll();
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();

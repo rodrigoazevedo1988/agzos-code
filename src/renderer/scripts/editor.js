@@ -14,7 +14,6 @@ let monacoLoaded = null;
 let monaco = null;
 let activeEditor = null;
 let currentModel = null;
-let languageByExt = null;
 let saveHandler = null;
 
 /* --------------------------------------------------------------------------
@@ -120,6 +119,23 @@ export async function setupEditor() {
     tabSize: 2,
     wordWrap: 'off',
   });
+
+  const aiActions = [
+    ['explain', 'Explicar', 'Explique o código selecionado de forma objetiva.'],
+    ['refactor', 'Refatorar', 'Refatore o código selecionado mantendo o comportamento. Responda só com o código final em um bloco.'],
+    ['document', 'Documentar', 'Adicione comentários de documentação ao código selecionado. Responda só com o código final em um bloco.'],
+    ['tests', 'Gerar testes', 'Escreva testes para o código selecionado.'],
+  ];
+  aiActions.forEach(([id, label, prompt], index) => activeEditor.addAction({
+    id: `agzos-ai.${id}`, label: `Agzos IA: ${label}`, contextMenuGroupId: 'agzos-ai', contextMenuOrder: index,
+    run: async () => {
+      const { captureAITarget, setAITarget } = await import('./ai-apply.js');
+      const { sendToChat, focusChat } = await import('./ai-chat.js');
+      setAITarget(captureAITarget());
+      sendToChat(prompt, { includeSelection: true });
+      focusChat();
+    },
+  }));
 
   // Status bar: posição do cursor
   activeEditor.onDidChangeCursorPosition((e) => {

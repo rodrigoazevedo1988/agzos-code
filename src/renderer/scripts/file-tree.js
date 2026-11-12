@@ -48,24 +48,10 @@ export function render() {
       children: null,
       expanded: true,
     };
-    if (window.agzos?.fs?.readDir) {
-      window.agzos.fs.readDir(State.workspaceRoot).then((items) => {
-        if (!treeRoot) return;
-        treeRoot.children = items
-          .map((it) => ({
-            name: it.name,
-            path: it.path,
-            isDirectory: it.isDirectory,
-            children: null,
-            expanded: State.expandedDirs.has(it.path),
-          }))
-          .sort((a, b) => {
-            if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-            return a.name.localeCompare(b.name);
-          });
-        render();
-      }).catch((e) => console.error('Erro ao ler pasta raiz:', e));
-    }
+    const root = treeRoot;
+    loadChildren(root).then(() => {
+      if (treeRoot === root) render();
+    }).catch((e) => console.error('Erro ao ler pasta raiz:', e));
   }
 
   host.appendChild(buildNode(treeRoot, 0));
@@ -169,35 +155,52 @@ export function highlightActiveFile(filePath) {
   if (el) el.classList.add('selected', 'active-file');
 }
 
+async function loadChildren(node) {
+  const items = await window.agzos.fs.readDir(node.path);
+  node.children = items
+    .map((it) => ({
+      name: it.name,
+      path: it.path,
+      isDirectory: it.isDirectory,
+      children: null,
+      expanded: it.isDirectory && State.expandedDirs.has(it.path),
+    }))
+    .sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  await Promise.all(node.children.filter((child) => child.expanded).map(async (child) => {
+    try {
+      await loadChildren(child);
+    } catch (err) {
+      child.expanded = false;
+      State.expandedDirs.delete(child.path);
+      console.error('Erro ao ler diretório:', err);
+    }
+  }));
+}
+
 async function toggleDir(node) {
-  if (!node.isDirectory) return;
+  if (!node.isDirectory || node.loading) return;
   if (node.expanded) {
     node.expanded = false;
     State.expandedDirs.delete(node.path);
     render();
     return;
   }
-  // Expande — carrega filhos se ainda não tem
+  const root = treeRoot;
   if (!node.children) {
+    node.loading = true;
     try {
-      const items = await window.agzos.fs.readDir(node.path);
-      node.children = items
-        .map((it) => ({
-          name: it.name,
-          path: it.path,
-          isDirectory: it.isDirectory,
-          children: null,
-          expanded: State.expandedDirs.has(it.path),
-        }))
-        .sort((a, b) => {
-          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-          return a.name.localeCompare(b.name);
-        });
-    } catch (e) {
-      toast(`Erro ao ler pasta: ${e.message}`, 'error');
+      await loadChildren(node);
+    } catch (err) {
+      toast(`Erro ao ler diretório: ${err.message}`, 'error');
       return;
+    } finally {
+      node.loading = false;
     }
   }
+  if (treeRoot !== root) return;
   node.expanded = true;
   State.expandedDirs.add(node.path);
   render();
@@ -290,6 +293,7 @@ export async function openWorkspace(folderPath) {
     return;
   }
   State.workspaceRoot = folderPath;
+  window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
   State.expandedDirs.add(folderPath);
   treeRoot = {
     name: basename(folderPath),
@@ -298,29 +302,19 @@ export async function openWorkspace(folderPath) {
     children: null,
     expanded: true,
   };
+  const root = treeRoot;
   try {
-    const items = await window.agzos.fs.readDir(folderPath);
-    treeRoot.children = items
-      .map((it) => ({
-        name: it.name,
-        path: it.path,
-        isDirectory: it.isDirectory,
-        children: null,
-        expanded: State.expandedDirs.has(it.path),
-      }))
-      .sort((a, b) => {
-        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
+    await loadChildren(root);
   } catch (err) {
     console.error('Erro ao ler diretório raiz do workspace:', err);
   }
+  if (treeRoot !== root) return;
   const topbar = document.getElementById('topbar-workspace');
   if (topbar) topbar.textContent = `— ${basename(folderPath)}`;
   render();
 }
 
-export function refreshTree(keepState = true) {
+export function refreshTree(keepState = false) {
   if (!keepState) {
     treeRoot = null;
   }

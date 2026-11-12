@@ -29,7 +29,8 @@ Se `state.js` não carregar antes, `State` fica `undefined` e o boot quebra (sin
 | `app.js` | Boot, atalhos, settings da UI, ações da sidebar |
 | `editor.js` | Loader AMD do Monaco, temas, modelos, salvar |
 | `tabs.js` | Abas e indicador de alteração |
-| `file-tree.js` | Explorer (lazy), menu de contexto |
+| `file-tree.js` | Explorer (lazy), menu de contexto e integração com os ícones configuráveis |
+| `icon-theme.js` | Ícones de arquivos, pastas e abas em quatro estilos |
 | `search.js` | Busca textual na workspace |
 | `terminal.js` | xterm.js ligado ao `term:*` (spawn sem pty) |
 | `command-palette.js` | Command Palette |
@@ -124,4 +125,4 @@ Módulos em `lib/` recebem dependências por parâmetro, então os testes unitá
 - `sandbox: false` na janela principal (preload usa `ipcRenderer`; mover para `sandbox: true` está no roadmap)
 - CSP com `'unsafe-eval'` (exigido pelo loader AMD do Monaco)
 - Acesso a arquivos restrito às raízes liberadas; chaves no cofre do SO
-- Pendências: ver [roadmap](../plano/ROADMAP.md) (Fase 1 e Fase 5)
+- Pendências de produto e entrega: ver [roadmap](../plano/ROADMAP.md).

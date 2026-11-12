@@ -7,8 +7,6 @@
 
 import { toast } from './toast.js';
 
-const HOME = window.agzos?.fs?.homeDir ? null : null; // preenchido em runtime
-
 async function getHome() {
   return await window.agzos.fs.homeDir();
 }

@@ -1008,3 +1008,38 @@ body.perf-high .welcome-actions button { transition: all 0.1s; }
 .monaco-editor, .monaco-editor-background, .monaco-editor .margin {
   background-color: var(--bg) !important;
 }
+
+.ai-wizard-card { max-height: 90vh; overflow-y: auto; }
+.ai-wizard-content { display: flex; flex-direction: column; gap: 12px; }
+.ai-wizard-content label:not(.ai-context-option) { display: flex; flex-direction: column; gap: 6px; }
+.ai-wizard-content input:not([type="checkbox"]), .ai-wizard-content select { width: 100%; padding: 8px; }
+.ai-provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ai-wizard-result { min-height: 1.5em; }
+#status-ai { cursor: pointer; }
+
+/* Chat de IA */
+#panel-ai:not([hidden]) { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ai-chat { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
+.ai-chat[hidden], .ai-empty[hidden] { display: none; }
+.ai-toolbar { display: flex; flex-direction: column; gap: 6px; }
+.ai-toolbar label { display: flex; flex-direction: column; gap: 3px; }
+.ai-toolbar select, .ai-compose textarea { width: 100%; background: var(--bg-soft3); border: 1px solid var(--line); color: var(--fg); border-radius: 3px; padding: 6px; }
+.ai-context-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ai-context-chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; background: var(--bg-soft3); color: var(--fg); cursor: pointer; font-size: 11px; }
+.ai-context-chip[aria-pressed="true"] { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 18%, var(--bg-soft3)); }
+.ai-messages { flex: 1; min-height: 80px; overflow-y: auto; overflow-wrap: anywhere; }
+.ai-msg { padding: 8px; margin: 6px 0; border-radius: 4px; }
+.ai-user { background: var(--bg-soft3); white-space: pre-wrap; }
+.ai-assistant pre { overflow-x: auto; white-space: pre; background: var(--bg-soft3); padding: 8px; }
+.ai-assistant img { max-width: 100%; }
+.ai-code-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.ai-code-actions + pre { margin-top: 0; }
+.ai-compose { display: flex; flex-direction: column; gap: 6px; }
+.ai-compose textarea { resize: vertical; font: inherit; }
+.ai-error { color: #ef7777; }
+
+.diff-overlay { position: fixed; inset: 0; z-index: 10000; background: #000b; display: flex; align-items: center; justify-content: center; }
+.diff-dialog { width: 90vw; height: 85vh; background: var(--bg-panel, #181818); color: var(--text-primary, #eee); display: flex; flex-direction: column; padding: 16px; gap: 12px; }
+.diff-dialog h2 { margin: 0; font-size: 16px; }
+.diff-editor { flex: 1; min-height: 0; }
+.diff-actions { display: flex; justify-content: flex-end; gap: 8px; }

@@ -44,6 +44,18 @@ test('árvore de pastas expande verticalmente e suporta troca de tema de ícones
     // O filho deve estar abaixo (Y maior) e não na mesma linha horizontal do pai
     expect(firstChildBox.y).toBeGreaterThanOrEqual(rootBox.y + rootBox.height);
 
+    // Atualizar deve refletir alterações externas e manter pastas expandidas.
+    const subRow = page.locator('.tree-node').filter({ hasText: 'subfolder' });
+    await subRow.click();
+    await expect(page.getByText('styles.css', { exact: true })).toBeVisible();
+    fs.writeFileSync(path.join(subDir, 'new.css'), '');
+    await page.evaluate(async () => {
+      const mod = await import('./scripts/file-tree.js');
+      mod.refreshTree();
+    });
+    await expect(page.getByText('styles.css', { exact: true })).toBeVisible();
+    await expect(page.getByText('new.css', { exact: true })).toBeVisible();
+
     // Testa troca de tema de ícones nas configurações
     await page.locator('.activity-btn[data-view="settings"]').click();
     await expect(page.locator('#panel-settings')).toBeVisible();

@@ -19,6 +19,8 @@ const COMMANDS = [
   { id: 'view.perf.economy',  label: 'Performance: Modo Economia',      hint: '',        run: () => setPerf('economy') },
   { id: 'view.perf.balanced', label: 'Performance: Modo Balanceado',    hint: '',        run: () => setPerf('balanced') },
   { id: 'view.perf.high',     label: 'Performance: Modo Alta',          hint: '',        run: () => setPerf('high') },
+  ...[['explain', 'Explicar'], ['refactor', 'Refatorar'], ['document', 'Documentar'], ['tests', 'Gerar testes']].map(([id, label]) => ({ id: `ai.${id}`, label: `Agzos IA: ${label}`, hint: '', run: () => import('./editor.js').then(m => m.getActiveEditor()?.getAction(`agzos-ai.${id}`)?.run()) })),
+  { id: 'ai.configure', label: 'IA: Configurar provider', hint: '', run: () => import('./ai-wizard.js').then(m => m.openAIWizard({ profileId: window.AgzosState.settings.ai?.activeProfileId })) },
   { id: 'help.about',         label: 'Ajuda: Sobre o Agzos Code',       hint: '',        run: showAbout },
 ];
 
@@ -43,8 +45,6 @@ export function hideCommandPalette() {
 export function setupCommandPalette() {
   const overlay = document.getElementById('cmd-overlay');
   const input = document.getElementById('cmd-input');
-  const list = document.getElementById('cmd-list');
-
   input.addEventListener('input', () => {
     const q = input.value.toLowerCase().trim();
     currentResults = COMMANDS

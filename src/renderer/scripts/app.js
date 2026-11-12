@@ -5,15 +5,16 @@
  */
 
 import { toast } from './toast.js';
-import { setupEditor, openFile, saveActive } from './editor.js';
+import { setupEditor, openFile, saveActive, getActiveEditor } from './editor.js';
 import { setupCommandPalette, showCommandPalette, hideCommandPalette } from './command-palette.js';
-import { setupAI } from './ai-chat.js';
+import { setupAI, focusChat, sendToChat } from './ai-chat.js';
+import { captureAITarget, setAITarget } from './ai-apply.js';
 import { setupSearch } from './search.js';
-import { initTerminal, toggleTerminal, focusTerminal } from './terminal.js';
+import { initTerminal, toggleTerminal } from './terminal.js';
 import { openWorkspace } from './file-tree.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
-import { showWelcome, hideWelcome, showEditorWelcome } from './welcome.js';
+import { showWelcome, showEditorWelcome } from './welcome.js';
 import { startOnboarding, exitOnboarding } from './onboarding.js';
 
 const State = window.AgzosState;
@@ -119,6 +120,26 @@ async function boot() {
     else if (channel === 'menu:command-palette') showCommandPalette();
     else if (channel === 'menu:toggle-terminal') toggleTerminal();
     else if (channel === 'menu:toggle-sidebar') document.body.classList.toggle('sidebar-hidden');
+    else if (channel === 'menu:check-updates') window.agzos.update.check();
+  });
+
+  window.agzos.update.onNotice(async (notice) => {
+    if (notice.type === 'ready') {
+      const hasUnsaved = [...State.files.values()].some((file) => file.dirty);
+      const warning = hasUnsaved ? '\n\nHá arquivos não salvos. Salve-os antes de continuar.' : '';
+      if (window.confirm(`A versão ${notice.version || 'nova'} foi baixada. Reiniciar e instalar agora?${warning}`)) {
+        if (hasUnsaved) return;
+        await window.agzos.update.install();
+      }
+      return;
+    }
+    if (notice.type === 'manual-download') {
+      toast(`Atualização ${notice.version || ''} disponível para download em code.rsolutionsbr.com.`, 'info', 7000);
+      return;
+    }
+    if (notice.type === 'not-available') toast('Você já está usando a versão mais recente.', 'success');
+    else if (notice.type === 'error') toast(`Falha ao verificar atualização: ${notice.message}`, 'error', 6000);
+    else if (notice.type === 'available') toast(`Baixando atualização ${notice.version || ''}…`, 'info', 5000);
   });
 
   // 18) Init terminal (lazy no primeiro toggle)
@@ -214,8 +235,6 @@ function applySettingsToUI() {
   document.getElementById('setting-perf').value = s.performanceMode;
   document.getElementById('setting-telemetry').checked = !!s.telemetry;
   document.getElementById('setting-fontsize').value = s.fontSize;
-  document.getElementById('setting-ai-provider').value = s.aiProvider || '';
-  refreshAiKeyPlaceholder();
   document.getElementById('status-perf').textContent = perfLabel(s.performanceMode);
 }
 
@@ -260,43 +279,20 @@ function bindSettingsInputs() {
     const mod = await import('./editor.js');
     mod.applyFontSize(size);
   });
-  document.getElementById('setting-ai-provider').addEventListener('change', async (e) => {
-    State.settings.aiProvider = e.target.value || null;
-    await window.agzos.settings.save(State.settings);
-    updateStatusAI();
-  });
-  document.getElementById('setting-ai-key').addEventListener('change', async (e) => {
-    const value = e.target.value.trim();
-    e.target.value = '';
-    try {
-      if (value) {
-        await window.agzos.secrets.set('ai.legacy', value);
-        toast('Chave salva no cofre do sistema.', 'success');
-      } else {
-        await window.agzos.secrets.delete('ai.legacy');
-      }
-    } catch (err) {
-      toast(`Erro ao salvar a chave: ${err.message}`, 'error', 5000);
-    }
-    refreshAiKeyPlaceholder();
-  });
+  document.getElementById('btn-configure-ai').addEventListener('click', openAISettings);
+  document.getElementById('status-ai').addEventListener('click', openAISettings);
 }
 
-// Campo de chave nunca mostra o valor: placeholder indica se há chave salva.
-async function refreshAiKeyPlaceholder() {
-  const el = document.getElementById('setting-ai-key');
-  let saved = false;
-  try { saved = await window.agzos.secrets.has('ai.legacy'); } catch {}
-  el.placeholder = saved ? '•••• salva no cofre' : 'sk-…';
+async function openAISettings() {
+  const { openAIWizard } = await import('./ai-wizard.js');
+  await openAIWizard({ profileId: State.settings.ai?.activeProfileId });
+  updateStatusAI();
 }
 
 function updateStatusAI() {
-  const el = document.getElementById('status-ai');
-  if (State.settings.aiProvider) {
-    el.textContent = `IA: ${State.settings.aiProvider}`;
-  } else {
-    el.textContent = `IA: off`;
-  }
+  const ai = State.settings.ai;
+  const profile = ai?.profiles?.find((item) => item.id === ai.activeProfileId);
+  document.getElementById('status-ai').textContent = profile ? `IA: ${profile.model || profile.label}` : 'IA: off';
 }
 
 /* --------------------------------------------------------------------------
@@ -316,7 +312,16 @@ function bindShortcuts() {
       }
       return;
     }
-    if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
+    if (ctrl && e.shiftKey && e.key.toLowerCase() === 'a') {
+      e.preventDefault(); e.stopPropagation(); focusChat();
+    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'l') {
+      e.preventDefault(); e.stopPropagation();
+      const editor = getActiveEditor();
+      const selection = editor?.getSelection();
+      const text = selection && editor.getModel()?.getValueInRange(selection);
+      if (text) { setAITarget(captureAITarget()); sendToChat(text, { includeSelection: true }); }
+      focusChat();
+    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       showCommandPalette();
     } else if (ctrl && e.key.toLowerCase() === 'p') {
@@ -344,7 +349,7 @@ function bindShortcuts() {
     } else if (e.key === 'Escape') {
       hideCommandPalette();
     }
-  });
+  }, true);
 }
 
 function switchSidebarView(view) {

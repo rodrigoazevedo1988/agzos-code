@@ -24,17 +24,18 @@
 
 ## ✨ O que é
 
-**Agzos Code** é um editor de código desktop construído com [Electron](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/) (o mesmo engine que o VS Code usa de verdade — não é imitação). Este repositório é a **Fase 0 do roadmap** descrita no PRD: um editor funcional com a cara Agzos, pronto pra evoluir pro fork completo do Code-OSS.
+**Agzos Code** é um editor de código desktop construído com [Electron](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/), o componente de edição também usado pelo VS Code. A base é um aplicativo próprio, sem fork do Code-OSS e sem suporte à API de extensões do VS Code. A Fase 1 (Fundação) foi concluída e a Fase 2 (IA) está em andamento. Consulte o [roadmap atual](docs/plano/ROADMAP.md).
 
 **Diferencial intencional:** o editor foi desenhado desde o dia 1 com o ecossistema Agzos em mente (IA, ferramentas internas, identidade visual) e com privacidade por padrão (telemetria desligada até opt-in explícito).
 
 ## 🎯 Features atuais (v0.1)
 
-- **Editor Monaco completo** com syntax highlight, IntelliSense, multi-cursor, bracket pair colorization, minimap, line numbers.
-- **3 temas Agzos:** `Agzos Dark` (preto + vermelho), `Agzos Light`, `Monokai` (compatibilidade).
-- **Sidebar com 5 views:** Explorer, Buscar, Git, Extensões, Agzos IA.
+- **Editor Monaco** com syntax highlight, sugestões básicas, multi-cursor, bracket pair colorization, minimap e line numbers. Os language workers para IntelliSense completo entram na Fase 4.
+- **3 temas do editor:** `Agzos Dark` (preto + vermelho), `Agzos Light` e `Monokai`.
+- **4 estilos de ícones para arquivos e pastas**, configuráveis nas preferências: Lucide colorido, Lucide minimalista, badges técnicos e emojis. Ícones também aparecem nas abas.
+- **Sidebar** com Explorer e views de Buscar, Git, Extensões e Agzos IA; Git, Extensões e IA ainda são áreas em desenvolvimento, conforme o roadmap.
 - **Activity Bar lateral** estilo VS Code.
-- **File tree** com expansão lazy, ícones por extensão, context menu (renomear, excluir, novo arquivo/pasta, revelar no SO).
+- **Árvore de arquivos** com expansão lazy, ícones por tipo de arquivo e pastas conhecidas, e menu de contexto (renomear, excluir, criar arquivo/pasta, revelar no SO).
 - **Tabs com indicador de dirty** (●) e close on middle-click.
 - **Quick Open** (`Ctrl+P`): busca fuzzy por nome de arquivo na workspace.
 - **Buscar em arquivos** (`Ctrl+Shift+F`): varre texto nos arquivos da pasta aberta (com skip em `node_modules`, `.git`, `dist`, etc).
@@ -42,25 +43,36 @@
 - **Command Palette** (`Ctrl+Shift+P`): fuzzy matcher de comandos.
 - **Status bar** com Ln/Col, linguagem, encoding, EOL, branch mock e modo de performance.
 - **Top bar** com busca rápida e botões de atalho.
-- **Settings persistentes** em JSON (tema, performance, telemetria, IA provider/key, fonte).
+- **Preferências persistentes** em JSON, com segredos destinados ao cofre do sistema.
 - **3 modos de performance:** Economia (animações off), Balanceado (padrão), Alta Performance.
 - **Atalhos globais** estilo VS Code: `Ctrl+S`, `Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+B`, `Ctrl+` `, `Ctrl+Shift+E/F/G/X`.
 - **Branding Agzos:** splash screen, logo, paleta de cores em todos os elementos.
 - **Builds multiplataforma** via electron-builder: NSIS (Win) + AppImage/DEB/RPM (Linux) + DMG/ZIP (macOS).
 
-## 🧠 Roadmap (do PRD)
+## 🧠 Roadmap
 
 | Fase | Status | Foco |
 |------|--------|------|
-| **0 — Setup + Branding** | ✅ Concluída (este repo) | Editor funcional com identidade Agzos |
-| **1 — MVP Core** | ⏳ Próxima | Wizard de IA, Chat Agent real, Multi-GitHub, Auto-update |
-| **2 — Polimento** | ⏳ | Temas Agzos extras, testes de extensões (top 50 do Open VSX) |
-| **3 — Integrações Agzos** | ⏳ | Agzos Key (SSO), Browser, Project, Hub |
-| **4 — Freemium** | ⏳ | Billing + recursos premium |
+| **0 — Protótipo** | ✅ Concluída | Editor Electron + Monaco e identidade Agzos |
+| **1 — Fundação** | ✅ Concluída | Testes, segurança, modularização e CI |
+| **2 — IA** | 🚧 Em andamento | Providers, streaming, wizard e painel de chat |
+| **3 — Git e GitHub** | ⏳ | Git integrado e contas GitHub |
+| **4 — Editor completo** | ⏳ | IntelliSense, terminal, busca e restauração de sessão |
+| **5 — Distribuição e v1.0** | ⏳ | Releases e atualização automática |
 
-> **Decisão consciente de arquitetura:** em vez de fazer fork 1:1 do `microsoft/vscode` (que exigiria semanas só pra configurar o build system do Code-OSS e mais semanas pra cada build multi-plataforma), começamos com um **editor Electron enxuto que já usa o mesmo Monaco** que o VS Code. Migrar para um fork Code-OSS no futuro é viável — o `product.json` e a maior parte do código de aplicação pode ser reaproveitada.
+> **Decisão de arquitetura:** o projeto mantém Electron + Monaco próprio. Extensões do VS Code e marketplace Open VSX não fazem parte do escopo atual; essa decisão está registrada no [ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md).
 
 ## 🚀 Quick start
+
+### Downloads — v0.3.0
+
+- [Windows — instalador](https://code.rsolutionsbr.com/release/Agzos%20Code%20Setup%200.3.0.exe)
+- [Windows — portátil](https://code.rsolutionsbr.com/release/Agzos%20Code%200.3.0.exe)
+- [macOS — Apple Silicon](https://code.rsolutionsbr.com/release/Agzos%20Code-0.3.0-arm64-mac.zip)
+- [macOS — Intel](https://code.rsolutionsbr.com/release/Agzos%20Code-0.3.0-mac.zip)
+- [Linux — AppImage](https://code.rsolutionsbr.com/release/Agzos%20Code-0.3.0.AppImage)
+
+Windows e Linux consultam atualizações diretamente em `https://code.rsolutionsbr.com/release/`. No macOS, enquanto o aplicativo não estiver assinado/notarizado, novas versões são informadas para download manual.
 
 ### Pré-requisitos
 - Node.js 20.x ou 22.x
@@ -135,6 +147,7 @@ agzos-code/
 │       │   ├── editor.js           # Monaco wrapper
 │       │   ├── tabs.js             # Sistema de abas
 │       │   ├── file-tree.js        # Sidebar de arquivos
+│       │   ├── icon-theme.js       # Ícones de arquivos, pastas e abas
 │       │   ├── terminal.js         # xterm + shell IPC
 │       │   ├── command-palette.js  # Overlay de comandos
 │       │   ├── ai-chat.js          # UI stub do chat IA
@@ -218,17 +231,9 @@ Customizar o tema: edite as CSS variables em `app.css` ou crie um novo bloco `bo
 3. `npm run check` (lint + testes unitários) e `npm run test:e2e` (Playwright; no Linux sem display use `xvfb-run -a npm run test:e2e`)
 4. PR descrevendo o que mudou e por quê
 
-## 📋 TODOs próximos
+## 📋 Trabalho futuro
 
-- [ ] Integrar Monaco language workers (TS, JSON, CSS, HTML)
-- [ ] Implementar salvamento de API key com `keytar` (cofre do SO)
-- [ ] Wizard de primeira execução
-- [ ] Chat Agent real (OpenAI / Anthropic / Groq / OpenRouter / Ollama)
-- [ ] Multi-conta GitHub (PAT + OAuth)
-- [ ] Auto-update via `electron-updater`
-- [ ] CI com GitHub Actions (build 3 plataformas)
-- [ ] Marketplace Open VSX
-- [ ] Temas extras (Agzos High Contrast, Solarized Agzos)
+O trabalho planejado está organizado por fase no [roadmap](docs/plano/ROADMAP.md). A Fase 2 implementa IA; Git e GitHub, IntelliSense e melhorias do editor e distribuição vêm nas fases seguintes.
 
 ## 📄 Licença
 

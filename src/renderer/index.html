@@ -65,9 +65,27 @@
           <p class="hint">Extensões — Open VSX será plugado na próxima fase.</p>
         </div>
         <div class="panel" id="panel-ai" hidden>
-          <p class="hint">Chat de IA — provedor configurável em Settings.</p>
-          <div class="ai-mock" id="ai-mock">
-            <div class="ai-msg ai-system">[Agzos IA] Stub. Configure o provider em Settings → IA para começar.</div>
+          <div id="ai-empty" class="ai-empty" hidden>
+            <p>Configure um provider para começar a conversar.</p>
+            <button id="ai-configure" class="primary-btn">Configurar IA</button>
+          </div>
+          <div id="ai-chat" class="ai-chat" hidden>
+            <div class="ai-toolbar">
+              <label>Perfil <select id="ai-profile"></select></label>
+              <label>Modelo <select id="ai-chat-model"></select></label>
+              <button id="ai-new-chat">Nova conversa</button>
+            </div>
+            <div class="ai-context-chips" role="group" aria-label="Contexto enviado à IA">
+              <button type="button" class="ai-context-chip" data-context="file" aria-pressed="true">Arquivo</button>
+              <button type="button" class="ai-context-chip" data-context="selection" aria-pressed="true">Seleção</button>
+              <button type="button" class="ai-context-chip" data-context="terminal" aria-pressed="false">Terminal</button>
+            </div>
+            <div id="ai-error" class="ai-error" role="status"></div>
+            <div id="ai-messages" class="ai-messages" aria-live="polite"></div>
+            <div class="ai-compose">
+              <textarea id="ai-input" rows="3" placeholder="Pergunte algo ao Agzos IA…" aria-label="Mensagem"></textarea>
+              <button id="ai-send" class="primary-btn">Enviar</button>
+            </div>
           </div>
         </div>
         <div class="panel" id="panel-settings" hidden>
@@ -106,23 +124,8 @@
             <label>Tamanho da fonte</label>
             <input type="number" id="setting-fontsize" min="10" max="24" value="14" />
           </div>
-          <h3>IA (em construção)</h3>
-          <div class="setting-row">
-            <label>Provider</label>
-            <select id="setting-ai-provider">
-              <option value="">— Nenhum —</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="groq">Groq</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="ollama">Ollama (local)</option>
-              <option value="custom">Custom endpoint</option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>API Key</label>
-            <input type="password" id="setting-ai-key" placeholder="sk-…" />
-          </div>
+          <h3>IA</h3>
+          <div class="setting-row"><button class="primary-btn" id="btn-configure-ai">Configurar IA</button></div>
           <h3>Ajuda</h3>
           <div class="setting-row">
             <button class="primary-btn" id="btn-restart-onboarding">↻ Refazer Onboarding</button>
@@ -190,6 +193,8 @@
   <!-- ONBOARDING WIZARD (multi-step) -->
   <div id="onboarding-overlay" class="overlay"></div>
 
+  <div id="ai-wizard-overlay" class="overlay" hidden></div>
+
   <!-- CONTEXT MENU (file tree) -->
   <div id="context-menu" class="context-menu" hidden>
     <ul>
@@ -209,6 +214,8 @@
   <!-- State global (window.AgzosState) — script clássico, roda antes dos módulos ESM.
        Sem ele todo módulo lê State = undefined e o boot quebra (tela preta). -->
   <script src="scripts/state.js"></script>
+  <script src="vendor/marked/marked.umd.js"></script>
+  <script src="vendor/dompurify/purify.min.js"></script>
   <!-- App principal (ESM) -->
   <script type="module" src="scripts/app.js"></script>
 </body>

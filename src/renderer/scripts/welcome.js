@@ -15,22 +15,6 @@ import { toast } from './toast.js';
 
 const State = window.AgzosState;
 
-let currentSlide = 0;
-let slides = [];
-
-const WELCOME_SLIDES = [
-  {
-    id: 'main',
-    title: 'Bem-vindo ao Agzos Code',
-    body: 'O editor de código do time Agzos — IA nativa, terminal integrado e pronto pra multi-plataforma.',
-    primary: 'Iniciar Onboarding',
-    primaryAction: 'onboarding',
-    secondary: 'Pular por enquanto',
-    secondaryAction: 'close',
-    logo: 'full-light', // ou 'full-dark' pra tema claro
-  },
-];
-
 export function showWelcome(opts = {}) {
   const overlay = document.getElementById('welcome-popup');
   if (!overlay) return;

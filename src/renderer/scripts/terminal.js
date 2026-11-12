@@ -13,6 +13,23 @@ let term = null;
 let fitAddon = null;
 let termId = null;
 let xtermLoaded = null;
+let recentOutput = '';
+const OUTPUT_BUFFER_CHARS = 20000;
+
+// ANSI escape bytes are control characters by design and must be stripped before context is sent.
+function stripAnsi(text) {
+  // eslint-disable-next-line no-control-regex
+  return String(text).replace(/\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|P[^\x1B]*\x1B\\|[@-_])/g, '');
+}
+
+function rememberOutput(text) {
+  recentOutput = (recentOutput + stripAnsi(text)).slice(-OUTPUT_BUFFER_CHARS);
+}
+
+export function getRecentOutput(maxChars = 4000) {
+  const limit = Math.max(0, Number.isFinite(maxChars) ? Math.floor(maxChars) : 4000);
+  return limit ? recentOutput.slice(-limit) : '';
+}
 
 function loadXterm() {
   if (xtermLoaded) return xtermLoaded;
@@ -84,7 +101,7 @@ export async function initTerminal() {
     try {
       fitAddon.fit();
       spawnShell();
-    } catch (e) {
+    } catch {
       // ignore — fit em host invisível pode falhar
     }
   }, 60);
@@ -101,7 +118,7 @@ export async function initTerminal() {
 
   // Cleanup on exit
   window.agzos.term.onData((id, data) => {
-    if (id === termId) term.write(data);
+    if (id === termId) { rememberOutput(data); term.write(data); }
   });
   window.agzos.term.onExit((id, code) => {
     if (id === termId) {

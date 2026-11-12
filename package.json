@@ -1,6 +1,6 @@
 {
   "name": "agzos-code",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Agzos Code — editor de código baseado em Electron com Monaco, feito para o time Agzos.",
   "main": "src/main/main.js",
   "author": {
@@ -22,6 +22,7 @@
     "dist:win": "electron-builder --win",
     "dist:linux": "electron-builder --linux",
     "dist:mac": "electron-builder --mac",
+    "release:vps": "node tools/publish-vps-release.js",
     "lint": "eslint .",
     "test:unit": "node --test \"test/unit/**/*.test.js\"",
     "check": "npm run lint && npm run test:unit",
@@ -36,7 +37,10 @@
     "globals": "^15.15.0"
   },
   "dependencies": {
+    "dompurify": "^3.4.17",
+    "electron-updater": "^6.8.11",
     "lucide-static": "^1.54.0",
+    "marked": "^14.1.4",
     "monaco-editor": "^0.50.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0"
@@ -45,6 +49,12 @@
     "appId": "com.agzos.code",
     "productName": "Agzos Code",
     "copyright": "Copyright © 2026 Agzos",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://code.rsolutionsbr.com/release"
+      }
+    ],
     "directories": {
       "output": "dist",
       "buildResources": "build"

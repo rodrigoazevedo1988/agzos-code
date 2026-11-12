@@ -16,7 +16,7 @@ function killAll() {
 }
 
 function register(ipcMain) {
-  ipcMain.handle('term:create', (evt, cols = 80, rows = 24) => {
+  ipcMain.handle('term:create', (evt, _cols = 80, _rows = 24) => {
     const id = `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const shellPath = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
     const cwd = os.homedir();
@@ -48,16 +48,16 @@ function register(ipcMain) {
     return true;
   });
 
-  ipcMain.handle('term:resize', (_evt, id, _cols, _rows) => {
+  ipcMain.handle('term:resize', (_evt, _id, _cols, _rows) => {
     // xterm fit addon cuida do resize no renderer; manter handler pra API
     return true;
   });
 
-  ipcMain.handle('term:kill', (_evt, id) => {
-    const proc = shells.get(id);
+  ipcMain.handle('term:kill', (_evt, _id) => {
+    const proc = shells.get(_id);
     if (proc) {
       proc.kill();
-      shells.delete(id);
+      shells.delete(_id);
     }
     return true;
   });

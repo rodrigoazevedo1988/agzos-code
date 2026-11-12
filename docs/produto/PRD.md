@@ -1,12 +1,12 @@
 # PRD — Agzos Code
 
 **Versão:** 0.1 (Draft)
-**Data:** 09/10/2026
-**Status:** Em definição
+**Data:** 12/11/2026
+**Status:** Documento de visão; execução acompanhada no roadmap
 **Base:** Electron + Monaco próprio — ver [ADR-0001](../decisoes/ADR-0001-base-do-editor.md)
 **Plataformas:** Windows (x64/arm64), Linux (AppImage/DEB/RPM) e macOS (DMG/ZIP)
 
-> Decisão de 09/10/2026 (ADR-0001): sem fork do Code-OSS. Extensões do VS Code não são suportadas.
+> Decisão de 09/10/2026 (ADR-0001): sem fork do Code-OSS. Extensões do VS Code e marketplace Open VSX não são suportados.
 
 ## 1. Visão do Produto
 
@@ -109,7 +109,8 @@ Permite vários providers salvos e troca rápida.
 
 ### 6.4 Temas e Personalização
 - Tema Agzos (preto `#0E0E0E`, vermelho `#D10A11`, branco) em destaque
-- Suporte a temas VS Code existentes
+- Temas de editor disponíveis hoje: Agzos Dark, Agzos Light e Monokai
+- Explorer com quatro estilos próprios de ícones selecionáveis
 - Futuro: editor visual de cores e exportação de temas
 
 ### 6.5 Performance e Telemetria
@@ -150,18 +151,18 @@ Ver [plano/ROADMAP.md](../plano/ROADMAP.md) — versão viva e detalhada.
 
 | Fase | Foco |
 |------|------|
-| 0 — Setup | Editor + branding + builds básicos |
-| 1 — MVP Core | Wizard IA + Chat Agent + Multi-GitHub + Performance/Telemetria |
-| 2 — Polimento | Temas + auto-update + testes de extensões |
-| 3 — Integrações | Agzos Key, Browser, Project |
-| 4 — Freemium | Recursos pagos + billing |
+| 0 — Protótipo | Editor + branding |
+| 1 — Fundação | Testes, segurança, modularização e CI (concluída) |
+| 2 — IA | Providers, streaming, wizard e painel de chat (próxima) |
+| 3 — Git e GitHub | Git integrado e contas GitHub |
+| 4 — Editor completo | IntelliSense, terminal, busca e sessão |
+| 5 — Distribuição e v1.0 | Releases e atualização automática |
 
 ## 11. Riscos e Mitigações
 
 | Risco | Impacto | Mitigação |
 |-------|---------|-----------|
-| Manutenção do fork (upstream) | Alto | Rebase documentado + testes automatizados |
-| Sem extensões do VS Code | Médio | Priorizar features nativas que o time mais usa; reavaliar no ADR-0001 |
+| Ausência de extensões do VS Code | Médio | Priorizar recursos nativos usados pelo time; decisão registrada no ADR-0001 |
 | Performance da IA | Médio | Modos de performance + streaming + cache |
 | Licença / branding | Médio | Nunca usar marcas Microsoft; seguir MIT |
 | Assinatura de apps (macOS) | Médio | CI com certificados (GitHub Actions + runner Mac) |
