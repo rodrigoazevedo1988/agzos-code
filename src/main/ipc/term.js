@@ -3,6 +3,7 @@
  */
 
 const os = require('os');
+const fs = require('fs');
 const { spawn } = require('child_process');
 
 // Processos de shell vivos, por id. Exportado para encerrar tudo ao fechar o app.
@@ -16,24 +17,67 @@ function killAll() {
 }
 
 function register(ipcMain) {
-  ipcMain.handle('term:create', (evt, _cols = 80, _rows = 24) => {
+  ipcMain.handle('term:create', (evt, _cols = 80, _rows = 24, options = {}) => {
     const id = `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const shellPath = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
-    const cwd = os.homedir();
 
-    const proc = spawn(shellPath, [], {
-      cwd,
-      env: { ...process.env, TERM: 'xterm-256color' },
-      shell: false,
-    });
+    let shellPath;
+    let shellArgs = [];
 
-    shells.set(id, proc);
+    if (process.platform === 'win32') {
+      // No Windows, PowerShell com -NoExit ou CMD para manter o shell interativo
+      const powerShell = 'powershell.exe';
+      shellPath = options.shell || powerShell;
+      if (shellPath.toLowerCase().includes('powershell')) {
+        shellArgs = ['-NoExit', '-ExecutionPolicy', 'Bypass'];
+      } else if (shellPath.toLowerCase().includes('cmd')) {
+        shellArgs = [];
+      }
+    } else {
+      shellPath = options.shell || process.env.SHELL || 'bash';
+      shellArgs = ['-l'];
+    }
+
+    let cwd = options.cwd || os.homedir();
+    try {
+      if (options.cwd && (!fs.existsSync(options.cwd) || !fs.statSync(options.cwd).isDirectory())) {
+        cwd = os.homedir();
+      }
+    } catch {
+      cwd = os.homedir();
+    }
 
     const send = (channel, ...args) => {
       if (!evt.sender.isDestroyed()) evt.sender.send(channel, ...args);
     };
-    proc.stdout.on('data', (data) => send('term:data', id, data.toString()));
-    proc.stderr.on('data', (data) => send('term:data', id, data.toString()));
+
+    let proc;
+    try {
+      proc = spawn(shellPath, shellArgs, {
+        cwd,
+        env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+        shell: false,
+      });
+    } catch (err) {
+      setTimeout(() => {
+        send('term:data', id, `\r\n\x1b[31m[Erro ao iniciar shell ${shellPath}: ${err.message}]\x1b[0m\r\n`);
+      }, 50);
+      return { id, cwd, error: err.message };
+    }
+
+    shells.set(id, proc);
+
+    proc.on('error', (err) => {
+      send('term:data', id, `\r\n\x1b[31m[Erro no processo do terminal: ${err.message}]\x1b[0m\r\n`);
+      shells.delete(id);
+    });
+
+    if (proc.stdout) {
+      proc.stdout.on('data', (data) => send('term:data', id, data.toString()));
+    }
+    if (proc.stderr) {
+      proc.stderr.on('data', (data) => send('term:data', id, data.toString()));
+    }
+
     proc.on('exit', (code) => {
       send('term:exit', id, code);
       shells.delete(id);

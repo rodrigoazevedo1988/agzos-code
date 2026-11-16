@@ -5,8 +5,8 @@
  */
 
 import { toast } from './toast.js';
-import { setupEditor, openFile, saveActive, getActiveEditor } from './editor.js';
-import { setupCommandPalette, showCommandPalette, hideCommandPalette } from './command-palette.js';
+import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings } from './editor.js';
+import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette } from './command-palette.js';
 import { setupAI, focusChat, sendToChat } from './ai-chat.js';
 import { captureAITarget, setAITarget } from './ai-apply.js';
 import { setupSearch } from './search.js';
@@ -17,6 +17,7 @@ import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
 import { startOnboarding, exitOnboarding } from './onboarding.js';
 import { setupSettingsModal, openSettingsModal, updateOTAProgress } from './settings-modal.js';
+import { closeTab } from './editor.js';
 
 const State = window.AgzosState;
 
@@ -65,14 +66,10 @@ async function boot() {
   // 9) Welcome do editor (estado vazio)
   showEditorWelcome();
 
-  // 10) Topbar search
-  document.getElementById('search').addEventListener('keydown', async (e) => {
-    if (e.key === 'Enter') {
-      const q = e.target.value.trim();
-      if (!q) return;
-      await quickOpen(q);
-    }
-  });
+  // 10) Topbar search — clique ou foco abre o Quick Open
+  const searchInput = document.getElementById('search');
+  searchInput.addEventListener('click', () => showQuickOpen());
+  searchInput.addEventListener('focus', () => showQuickOpen());
 
   // 11) Botões topbar e configurações
   setupSettingsModal();
@@ -203,6 +200,10 @@ function hydrateLucideIcons() {
     'btn-new-file': 'file-plus',
     'btn-new-folder': 'folder-plus',
     'btn-open-folder': 'folder-open',
+    'btn-clear-terminal': 'trash-2',
+    'btn-restart-terminal': 'rotate-ccw',
+    'btn-pos-terminal': 'panel-right',
+    'btn-maximize-bottom': 'maximize-2',
     'btn-close-bottom': 'x',
     'cmd-palette-input-icon': 'square-asterisk',
     'status-remote': 'git-branch',
@@ -298,9 +299,68 @@ function bindShortcuts() {
     } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       showCommandPalette();
-    } else if (ctrl && e.key.toLowerCase() === 'p') {
+    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
-      document.getElementById('search').focus();
+      showQuickOpen();
+    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      if (State.activeFile) closeTab(State.activeFile);
+    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'f') {
+      const editor = getActiveEditor();
+      if (editor) {
+        e.preventDefault();
+        editor.focus();
+        editor.getAction('actions.find')?.run();
+      }
+    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'h') {
+      const editor = getActiveEditor();
+      if (editor) {
+        e.preventDefault();
+        editor.focus();
+        editor.getAction('editor.action.startFindReplaceAction')?.run();
+      }
+    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'g') {
+      const editor = getActiveEditor();
+      if (editor) {
+        e.preventDefault();
+        editor.focus();
+        editor.getAction('editor.action.gotoLine')?.run();
+      }
+    } else if (e.altKey && !ctrl && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      const curr = State.settings?.editor?.wordWrap || 'off';
+      const next = curr === 'on' ? 'off' : 'on';
+      State.settings.editor = State.settings.editor || {};
+      State.settings.editor.wordWrap = next;
+      window.agzos.settings.save(State.settings);
+      applyEditorSettings(State.settings);
+      toast(`Quebra de linha: ${next.toUpperCase()}`, 'info', 1000);
+    } else if (e.shiftKey && e.altKey && e.key.toLowerCase() === 'f') {
+      const editor = getActiveEditor();
+      if (editor) {
+        e.preventDefault();
+        editor.getAction('editor.action.formatDocument')?.run();
+      }
+    } else if (ctrl && (e.key === '=' || e.key === '+')) {
+      e.preventDefault();
+      const next = Math.min(32, (State.settings.fontSize || 14) + 1);
+      State.settings.fontSize = next;
+      window.agzos.settings.save(State.settings);
+      applyEditorSettings(State.settings);
+      toast(`Fonte: ${next}px`, 'info', 800);
+    } else if (ctrl && e.key === '-') {
+      e.preventDefault();
+      const next = Math.max(8, (State.settings.fontSize || 14) - 1);
+      State.settings.fontSize = next;
+      window.agzos.settings.save(State.settings);
+      applyEditorSettings(State.settings);
+      toast(`Fonte: ${next}px`, 'info', 800);
+    } else if (ctrl && e.key === '0') {
+      e.preventDefault();
+      State.settings.fontSize = 14;
+      window.agzos.settings.save(State.settings);
+      applyEditorSettings(State.settings);
+      toast('Fonte resetada: 14px', 'info', 800);
     } else if (ctrl && e.key === '`') {
       e.preventDefault();
       toggleTerminal();
@@ -382,26 +442,6 @@ async function newFolderInRoot() {
     const mod = await import('./file-tree.js');
     mod.refreshTree();
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
-}
-async function quickOpen(query) {
-  if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
-  const lower = query.toLowerCase();
-  const results = [];
-  await walkForQuickOpen(State.workspaceRoot, lower, results);
-  if (results.length === 0) { toast(`Nenhum arquivo combina com "${query}"`, 'info'); return; }
-  await openFile(results[0]);
-  toast(`Aberto: ${results[0].split(/[\\/]/).pop()}`, 'success', 1500);
-}
-async function walkForQuickOpen(dir, q, results, depth = 0) {
-  if (depth > 6 || results.length > 1) return;
-  let entries;
-  try { entries = await window.agzos.fs.readDir(dir); } catch { return; }
-  for (const e of entries) {
-    if (e.name.startsWith('.') && e.name !== '.gitignore') continue;
-    if (['node_modules','dist','out','build','.git'].includes(e.name)) continue;
-    if (e.isDirectory) await walkForQuickOpen(e.path, q, results, depth + 1);
-    else if (e.name.toLowerCase().includes(q)) results.push(e.path);
-  }
 }
 
 function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }

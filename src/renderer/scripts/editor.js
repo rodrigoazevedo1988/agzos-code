@@ -238,7 +238,7 @@ export async function saveActive() {
   if (State.settings.editor?.formatOnSave && activeEditor) {
     try {
       await activeEditor.getAction('editor.action.formatDocument')?.run();
-    } catch {}
+    } catch { }
   }
   const content = activeEditor.getValue();
   try {

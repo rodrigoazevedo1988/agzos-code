@@ -5,6 +5,8 @@
 import { openFile, closeTab } from './editor.js';
 import { renderTabIcon } from './icon-theme.js';
 
+export { closeTab };
+
 const State = window.AgzosState;
 
 export function renderTabs() {

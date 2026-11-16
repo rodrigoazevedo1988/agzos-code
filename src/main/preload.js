@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('agzos', {
   // File system
   fs: {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
+    findFiles: (p, maxResults) => ipcRenderer.invoke('fs:findFiles', p, maxResults),
     readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
     writeFile: (p, c) => ipcRenderer.invoke('fs:writeFile', p, c),
     mkdir: (p) => ipcRenderer.invoke('fs:mkdir', p),
@@ -36,7 +37,7 @@ contextBridge.exposeInMainWorld('agzos', {
 
   // Terminal
   term: {
-    create: (cols, rows) => ipcRenderer.invoke('term:create', cols, rows),
+    create: (cols, rows, options) => ipcRenderer.invoke('term:create', cols, rows, options),
     write: (id, data) => ipcRenderer.invoke('term:write', id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke('term:resize', id, cols, rows),
     kill: (id) => ipcRenderer.invoke('term:kill', id),

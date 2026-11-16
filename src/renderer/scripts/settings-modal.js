@@ -110,8 +110,8 @@ const SETTINGS_DEF = [
   // Comumente Usados
   {
     key: 'theme',
-    title: 'Tema de Cores',
-    desc: 'Define o tema visual geral da interface e do editor.',
+    title: 'Workbench: Color Theme',
+    desc: 'Define o tema visual geral da interface e do editor de código.',
     categories: ['commonlyUsed', 'appearance'],
     type: 'select',
     options: [
@@ -126,8 +126,8 @@ const SETTINGS_DEF = [
   },
   {
     key: 'fontSize',
-    title: 'Tamanho da Fonte',
-    desc: 'Tamanho da fonte em pixels para o editor de código.',
+    title: 'Editor: Font Size',
+    desc: 'Controls the font size in pixels for code editors.',
     categories: ['commonlyUsed', 'editor'],
     type: 'number',
     min: 10,
@@ -136,7 +136,7 @@ const SETTINGS_DEF = [
   },
   {
     key: 'iconTheme',
-    title: 'Tema de Ícones de Arquivos',
+    title: 'Workbench: Icon Theme',
     desc: 'Estilo dos ícones exibidos na árvore de arquivos e nas abas.',
     categories: ['commonlyUsed', 'appearance'],
     type: 'select',
@@ -156,7 +156,7 @@ const SETTINGS_DEF = [
   },
   {
     key: 'performanceMode',
-    title: 'Modo de Performance',
+    title: 'Workbench: Performance Mode',
     desc: 'Controla animações, consumo de CPU e suavizações de rolagem.',
     categories: ['commonlyUsed', 'appearance'],
     type: 'select',
@@ -404,20 +404,26 @@ function renderModal() {
   overlay.innerHTML = `
     <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
       <div class="settings-header">
-        <div class="settings-header-left">
-          <span class="settings-header-icon">${lucideIcon('settings', { size: 18 }).outerHTML}</span>
-          <h2 id="settings-modal-title">Configurações</h2>
+        <div class="settings-header-top">
+          <div class="settings-header-left">
+            <span class="settings-header-icon">${lucideIcon('settings', { size: 18 }).outerHTML}</span>
+            <h2 id="settings-modal-title">Configurações</h2>
+          </div>
+          <div class="settings-search-box">
+            <span class="settings-search-icon">${lucideIcon('search', { size: 14 }).outerHTML}</span>
+            <input type="text" id="settings-search-input" placeholder="Search settings (ex: font, tabSize, @modified)…" value="${escapeHtml(searchQuery)}" autocomplete="off" spellcheck="false" />
+            ${searchQuery ? `<button id="settings-clear-search" class="icon-btn" title="Limpar busca">✕</button>` : ''}
+          </div>
+          <div class="settings-header-actions">
+            <button id="btn-toggle-settings-json" class="settings-tool-btn" title="${isJsonMode ? 'Visualizar Interface (UI)' : 'Abrir settings.json'}">
+              ${isJsonMode ? lucideIcon('sliders', { size: 15 }).outerHTML + ' <span>Interface</span>' : '<span>{ } JSON</span>'}
+            </button>
+            <button id="btn-close-settings-modal" class="settings-close-btn" title="Fechar (Esc)">✕</button>
+          </div>
         </div>
-        <div class="settings-search-box">
-          <span class="settings-search-icon">${lucideIcon('search', { size: 15 }).outerHTML}</span>
-          <input type="text" id="settings-search-input" placeholder="Buscar configurações (ex: font, tabSize, @modified)…" value="${escapeHtml(searchQuery)}" autocomplete="off" spellcheck="false" />
-          ${searchQuery ? `<button id="settings-clear-search" class="icon-btn" title="Limpar busca">✕</button>` : ''}
-        </div>
-        <div class="settings-header-actions">
-          <button id="btn-toggle-settings-json" class="settings-tool-btn" title="${isJsonMode ? 'Visualizar Interface (UI)' : 'Abrir settings.json'}">
-            ${isJsonMode ? lucideIcon('sliders', { size: 16 }).outerHTML + ' <span>Interface</span>' : '<span>{ } JSON</span>'}
-          </button>
-          <button id="btn-close-settings-modal" class="settings-close-btn" title="Fechar (Esc)">✕</button>
+        <div class="settings-header-subtabs">
+          <button class="settings-subtab active" data-tab="user">Usuário (User)</button>
+          <button class="settings-subtab" data-tab="workspace">Espaço de Trabalho (Workspace)</button>
         </div>
       </div>
       <div class="settings-body">
@@ -425,7 +431,7 @@ function renderModal() {
           <ul class="settings-categories" role="tablist">
             ${CATEGORIES.map((cat) => `
               <li class="settings-category-item ${activeCategory === cat.id && !searchQuery ? 'active' : ''}" data-cat="${cat.id}">
-                ${lucideIcon(cat.icon, { size: 16 }).outerHTML}
+                <span class="settings-cat-chevron">›</span>
                 <span>${cat.label}</span>
               </li>
             `).join('')}
@@ -498,7 +504,15 @@ function renderContentHtml() {
     `;
   }
 
+  const activeCatObj = CATEGORIES.find((c) => c.id === activeCategory);
+  const categoryHeading = query
+    ? (isSearchModified ? 'Configurações Modificadas (@modified)' : `Resultados da busca por "${escapeHtml(searchQuery)}"`)
+    : (activeCatObj?.label || 'Configurações');
+
   return `
+    <div class="settings-category-header">
+      <h2 class="settings-category-title">${categoryHeading}</h2>
+    </div>
     <div class="settings-items-list">
       ${items.map(renderSettingItemHtml).join('')}
       ${extraHtml}
@@ -529,9 +543,9 @@ function renderSettingItemHtml(item) {
     `;
   } else if (item.type === 'boolean') {
     controlHtml = `
-      <label class="settings-switch">
-        <input type="checkbox" data-key="${item.key}" ${currentVal ? 'checked' : ''} />
-        <span class="settings-slider"></span>
+      <label class="settings-checkbox-wrap">
+        <input type="checkbox" class="settings-control-checkbox" data-key="${item.key}" ${currentVal ? 'checked' : ''} />
+        <span class="settings-checkbox-label-text">${item.desc}</span>
       </label>
     `;
   }
@@ -544,7 +558,7 @@ function renderSettingItemHtml(item) {
           <span class="setting-item-key">(${item.key})</span>
           ${modified ? `<button class="setting-reset-btn" data-reset-key="${item.key}" title="Restaurar valor padrão">↺ Restaurar padrão</button>` : ''}
         </div>
-        <p class="setting-item-desc">${item.desc}</p>
+        ${item.type !== 'boolean' ? `<p class="setting-item-desc">${item.desc}</p>` : ''}
       </div>
       <div class="setting-item-control">
         ${controlHtml}

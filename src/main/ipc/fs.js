@@ -72,6 +72,47 @@ function register(ipcMain, { guard }) {
     return true;
   });
 
+  ipcMain.handle('fs:findFiles', async (_evt, dirPath, maxResults = 1000) => {
+    if (!dirPath) return [];
+    guard.assertAllowed(dirPath);
+
+    const results = [];
+    const ignoredDirs = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', '.cache', 'coverage', '.vscode', '.idea']);
+
+    async function scan(currentDir, relativePrefix = '', depth = 0) {
+      if (depth > 12 || results.length >= maxResults) return;
+      let entries;
+      try {
+        entries = await fsp.readdir(currentDir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      for (const entry of entries) {
+        if (results.length >= maxResults) break;
+        if (entry.name.startsWith('.') && entry.name !== '.gitignore' && entry.name !== '.env') continue;
+
+        const relPath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
+        const fullPath = path.join(currentDir, entry.name);
+
+        if (entry.isDirectory()) {
+          if (!ignoredDirs.has(entry.name)) {
+            await scan(fullPath, relPath, depth + 1);
+          }
+        } else if (entry.isFile()) {
+          results.push({
+            name: entry.name,
+            path: fullPath,
+            relativePath: relPath,
+          });
+        }
+      }
+    }
+
+    await scan(dirPath);
+    return results;
+  });
+
   ipcMain.handle('fs:homeDir', () => os.homedir());
 }
 

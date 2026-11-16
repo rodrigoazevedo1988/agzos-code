@@ -1,12 +1,15 @@
 <!doctype html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
   <title>Agzos Code</title>
   <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg" />
   <link rel="stylesheet" href="styles/app.css" />
 </head>
+
 <body class="theme-agzos-dark">
   <!-- TOP BAR -->
   <header id="topbar">
@@ -16,8 +19,7 @@
       <span class="topbar-section" id="topbar-workspace">— Sem pasta aberta</span>
     </div>
     <div class="topbar-center">
-      <input type="text" id="search" placeholder="Buscar arquivos (Ctrl+P)…"
-             spellcheck="false" autocomplete="off" />
+      <input type="text" id="search" placeholder="Buscar arquivos (Ctrl+P)…" spellcheck="false" autocomplete="off" />
     </div>
     <div class="topbar-right">
       <button class="topbar-btn icon-host" id="btn-toggle-sidebar" title="Alternar Sidebar (Ctrl+B)"></button>
@@ -77,13 +79,16 @@
             </div>
             <div class="ai-context-chips" role="group" aria-label="Contexto enviado à IA">
               <button type="button" class="ai-context-chip" data-context="file" aria-pressed="true">Arquivo</button>
-              <button type="button" class="ai-context-chip" data-context="selection" aria-pressed="true">Seleção</button>
-              <button type="button" class="ai-context-chip" data-context="terminal" aria-pressed="false">Terminal</button>
+              <button type="button" class="ai-context-chip" data-context="selection"
+                aria-pressed="true">Seleção</button>
+              <button type="button" class="ai-context-chip" data-context="terminal"
+                aria-pressed="false">Terminal</button>
             </div>
             <div id="ai-error" class="ai-error" role="status"></div>
             <div id="ai-messages" class="ai-messages" aria-live="polite"></div>
             <div class="ai-compose">
-              <textarea id="ai-input" rows="3" placeholder="Pergunte algo ao Agzos IA…" aria-label="Mensagem"></textarea>
+              <textarea id="ai-input" rows="3" placeholder="Pergunte algo ao Agzos IA…"
+                aria-label="Mensagem"></textarea>
               <button id="ai-send" class="primary-btn">Enviar</button>
             </div>
           </div>
@@ -91,31 +96,45 @@
       </div>
     </aside>
 
-    <!-- Editor + Tabs + Terminal -->
-    <main id="editor-area">
-      <div id="tabs"></div>
-      <div id="editor-host">
-        <!-- Welcome screen do editor (preenchido por welcome.js) -->
-        <div class="welcome" id="welcome"></div>
-      </div>
-    </main>
-  </div>
+    <!-- Workbench body (Editor + Resizer + Terminal/Bottom Panel) -->
+    <div id="workbench-body" class="panel-bottom">
+      <main id="editor-area">
+        <div id="tabs"></div>
+        <div id="editor-host">
+          <!-- Welcome screen do editor (preenchido por welcome.js) -->
+          <div class="welcome" id="welcome"></div>
+        </div>
+      </main>
 
-  <!-- BOTTOM PANEL: Terminal -->
-  <section id="bottom-panel" hidden>
-    <div class="bottom-tabs">
-      <button class="bottom-tab active" data-tab="terminal">TERMINAL</button>
-      <button class="bottom-tab" data-tab="output">OUTPUT</button>
-      <button class="bottom-tab" data-tab="problems">PROBLEMAS</button>
-      <div class="bottom-spacer"></div>
-      <button class="icon-btn icon-host" id="btn-close-bottom"></button>
+      <div id="panel-resizer" class="panel-resizer" hidden></div>
+
+      <!-- BOTTOM / SIDE PANEL: Terminal -->
+      <section id="bottom-panel" hidden>
+        <div class="bottom-tabs">
+          <button class="bottom-tab active" data-tab="terminal">TERMINAL</button>
+          <button class="bottom-tab" data-tab="output">OUTPUT</button>
+          <button class="bottom-tab" data-tab="problems">PROBLEMAS</button>
+          <div class="bottom-spacer"></div>
+          <button class="icon-btn icon-host" id="btn-clear-terminal" title="Limpar Terminal"></button>
+          <button class="icon-btn icon-host" id="btn-restart-terminal" title="Reiniciar Shell"></button>
+          <button class="icon-btn icon-host" id="btn-pos-terminal" title="Mover Terminal para a Direita"></button>
+          <button class="icon-btn icon-host" id="btn-maximize-bottom" title="Maximizar Painel"></button>
+          <button class="icon-btn icon-host" id="btn-close-bottom" title="Fechar (Esc)"></button>
+        </div>
+        <div class="bottom-content">
+          <div class="bottom-pane active" id="pane-terminal">
+            <div id="terminal-host"></div>
+          </div>
+          <div class="bottom-pane" id="pane-output">
+            <pre id="output-pre" class="output-pre">Sem saída ainda.</pre>
+          </div>
+          <div class="bottom-pane" id="pane-problems">
+            <div class="empty-state">Sem problemas.</div>
+          </div>
+        </div>
+      </section>
     </div>
-    <div class="bottom-content">
-      <div class="bottom-pane active" id="pane-terminal"><div id="terminal-host"></div></div>
-      <div class="bottom-pane" id="pane-output"><pre id="output-pre" class="output-pre">Sem saída ainda.</pre></div>
-      <div class="bottom-pane" id="pane-problems"><div class="empty-state">Sem problemas.</div></div>
-    </div>
-  </section>
+  </div>
 
   <!-- STATUS BAR -->
   <footer id="statusbar">
@@ -179,4 +198,5 @@
   <!-- App principal (ESM) -->
   <script type="module" src="scripts/app.js"></script>
 </body>
+
 </html>
