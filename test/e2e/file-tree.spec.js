@@ -56,27 +56,31 @@ test('árvore de pastas expande verticalmente e suporta troca de tema de ícones
     await expect(page.getByText('styles.css', { exact: true })).toBeVisible();
     await expect(page.getByText('new.css', { exact: true })).toBeVisible();
 
-    // Testa troca de tema de ícones nas configurações
-    await page.locator('.activity-btn[data-view="settings"]').click();
-    await expect(page.locator('#panel-settings')).toBeVisible();
+    // Testa troca de tema de ícones no modal de configurações
+    await page.locator('#btn-settings').click();
+    const modal = page.locator('#settings-modal-overlay');
+    await expect(modal).toBeVisible();
 
-    const iconSelect = page.locator('#setting-icon-theme');
+    const iconSelect = page.locator('.settings-control-select[data-key="iconTheme"]');
     await expect(iconSelect).toHaveValue('lucide-color');
 
     // Altera para 'emoji'
     await iconSelect.selectOption('emoji');
     await expect.poll(() => readSettings(userData).iconTheme).toBe('emoji');
 
-    // Volta ao Explorer e verifica se emoji foi renderizado
-    await page.locator('.activity-btn[data-view="explorer"]').click();
+    // Fecha modal e verifica se emoji foi renderizado
+    await page.keyboard.press('Escape');
+    await expect(modal).toBeHidden();
     await expect(page.locator('#file-tree .emoji-icon').first()).toBeVisible();
 
-    // Altera para 'badges'
-    await page.locator('.activity-btn[data-view="settings"]').click();
+    // Reabre modal e altera para 'badges'
+    await page.locator('#btn-settings').click();
+    await expect(modal).toBeVisible();
     await iconSelect.selectOption('badges');
     await expect.poll(() => readSettings(userData).iconTheme).toBe('badges');
 
-    await page.locator('.activity-btn[data-view="explorer"]').click();
+    await page.keyboard.press('Escape');
+    await expect(modal).toBeHidden();
     await expect(page.locator('#file-tree .tree-badge').first()).toBeVisible();
 
     expect(errors).toEqual([]);

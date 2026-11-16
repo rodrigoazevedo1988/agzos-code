@@ -14,6 +14,24 @@ function register(ipcMain, { app }) {
     const { recentFolders } = loadSettings(settingsPath);
     return saveSettings(settingsPath, { ...settings, recentFolders });
   });
+  ipcMain.handle('settings:import-vscode', (_evt, editor = 'vscode') => {
+    const { importFromVSCode } = require('../lib/import-vscode');
+    const res = importFromVSCode({ editor });
+    if (res.ok && res.mapped) {
+      const current = loadSettings(settingsPath);
+      const merged = {
+        ...current,
+        ...res.mapped,
+        editor: {
+          ...(current.editor || {}),
+          ...(res.mapped.editor || {}),
+        },
+      };
+      saveSettings(settingsPath, merged);
+      return { ok: true, imported: res.imported, path: res.path };
+    }
+    return res;
+  });
 
   // Usado pelo main no boot (migrações), fora do IPC.
   return {

@@ -18,10 +18,13 @@ async function launchApp({ userData, settings } = {}) {
   const args = ['.'];
   if (needsNoSandbox()) args.push('--no-sandbox');
 
+  const env = { ...process.env, AGZOS_USER_DATA: dir, AGZOS_TEST: '1', AGZOS_TEST_SAFESTORAGE: 'fake' };
+  delete env.ELECTRON_RUN_AS_NODE;
+
   const app = await electron.launch({
     args,
     cwd: ROOT,
-    env: { ...process.env, AGZOS_USER_DATA: dir, AGZOS_TEST: '1', AGZOS_TEST_SAFESTORAGE: 'fake' },
+    env,
   });
 
   const errors = [];

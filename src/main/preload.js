@@ -111,11 +111,20 @@ contextBridge.exposeInMainWorld('agzos', {
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (s) => ipcRenderer.invoke('settings:save', s),
+    importVSCode: (editor) => ipcRenderer.invoke('settings:import-vscode', editor),
   },
 
   // Menu events (main → renderer)
   onMenu: (cb) => {
-    const channels = ['menu:open-folder', 'menu:save', 'menu:command-palette', 'menu:toggle-terminal', 'menu:toggle-sidebar', 'menu:check-updates'];
+    const channels = [
+      'menu:open-folder',
+      'menu:save',
+      'menu:command-palette',
+      'menu:toggle-terminal',
+      'menu:toggle-sidebar',
+      'menu:check-updates',
+      'menu:open-settings',
+    ];
     const handler = (channel) => (_e, ...args) => cb(channel, ...args);
     const handlers = channels.map((ch) => {
       const h = handler(ch);

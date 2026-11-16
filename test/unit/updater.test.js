@@ -112,10 +112,52 @@ test('instala somente após confirmação explícita do renderer', () => {
   assert.equal(autoUpdater.quitAndInstallCalls, 1);
 });
 
-test('macOS não tenta instalar pacote não assinado pelo updater', () => {
-  const { updater, autoUpdater } = makeHarness({ platform: 'darwin' });
+test('notifica progresso de download durante auto-update', () => {
+  const { updater, autoUpdater, notifications } = makeHarness({ platform: 'linux' });
   updater.start({ checkOnStart: false });
-  assert.equal(updater.installDownloadedUpdate(), false);
-  assert.equal(autoUpdater.quitAndInstallCalls, 0);
+  autoUpdater.emit('download-progress', { percent: 45.2, transferred: 45000, total: 100000 });
+  assert.equal(notifications.at(-1).type, 'progress');
+  assert.equal(notifications.at(-1).percent, 45);
 });
+
+test('macOS usa macOtaManager para check e download quando configurado', async () => {
+  const notifications = [];
+  const fakeMacOta = {
+    checkCalls: 0,
+    downloadCalls: 0,
+    installCalls: 0,
+    check() {
+      this.checkCalls++;
+      return Promise.resolve({ available: true, version: '0.4.0' });
+    },
+    download(res) {
+      this.downloadCalls++;
+      notifications.push({ type: 'ready', version: res.version });
+      return Promise.resolve(true);
+    },
+    install() {
+      this.installCalls++;
+      return true;
+    },
+  };
+
+  const updater = createUpdater({
+    app: { isPackaged: true, getVersion: () => '0.3.0' },
+    platform: 'darwin',
+    macOtaManager: fakeMacOta,
+    notify: (n) => notifications.push(n),
+  });
+
+  const checked = await updater.checkForUpdates({ manual: true });
+  assert.equal(checked, true);
+  assert.equal(fakeMacOta.checkCalls, 1);
+  assert.equal(fakeMacOta.downloadCalls, 1);
+  assert.ok(notifications.some((n) => n.type === 'available' && n.version === '0.4.0'));
+  assert.ok(notifications.some((n) => n.type === 'ready' && n.version === '0.4.0'));
+
+  const installed = updater.installDownloadedUpdate();
+  assert.equal(installed, true);
+  assert.equal(fakeMacOta.installCalls, 1);
+});
+
 

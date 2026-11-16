@@ -19,6 +19,8 @@ const COMMANDS = [
   { id: 'view.perf.economy',  label: 'Performance: Modo Economia',      hint: '',        run: () => setPerf('economy') },
   { id: 'view.perf.balanced', label: 'Performance: Modo Balanceado',    hint: '',        run: () => setPerf('balanced') },
   { id: 'view.perf.high',     label: 'Performance: Modo Alta',          hint: '',        run: () => setPerf('high') },
+  { id: 'preferences.settings', label: 'Preferências: Abrir Configurações', hint: 'Ctrl+,', run: () => import('./settings-modal.js').then((m) => m.openSettingsModal()) },
+  { id: 'preferences.settingsJson', label: 'Preferências: Abrir Configurações (JSON)', hint: '', run: () => import('./settings-modal.js').then((m) => { m.openSettingsModal(); const btn = document.getElementById('btn-toggle-settings-json'); if (btn) btn.click(); }) },
   ...[['explain', 'Explicar'], ['refactor', 'Refatorar'], ['document', 'Documentar'], ['tests', 'Gerar testes']].map(([id, label]) => ({ id: `ai.${id}`, label: `Agzos IA: ${label}`, hint: '', run: () => import('./editor.js').then(m => m.getActiveEditor()?.getAction(`agzos-ai.${id}`)?.run()) })),
   { id: 'ai.configure', label: 'IA: Configurar provider', hint: '', run: () => import('./ai-wizard.js').then(m => m.openAIWizard({ profileId: window.AgzosState.settings.ai?.activeProfileId })) },
   { id: 'help.about',         label: 'Ajuda: Sobre o Agzos Code',       hint: '',        run: showAbout },

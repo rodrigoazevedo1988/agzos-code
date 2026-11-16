@@ -75,6 +75,22 @@ async function listArtifacts(source) {
   return selected;
 }
 
+async function verifyManifestReferences(source, artifacts) {
+  const manifests = artifacts.filter((name) => /^latest[^/]*\.yml$/i.test(name));
+  for (const manifestName of manifests) {
+    const raw = await fs.readFile(path.join(source, manifestName), 'utf-8');
+    const matches = raw.matchAll(/(?:url|path):\s*([^\s\r\n]+)/g);
+    for (const match of matches) {
+      const referencedFile = match[1];
+      if (referencedFile && !referencedFile.startsWith('http') && !artifacts.includes(referencedFile)) {
+        throw new Error(
+          `O manifesto ${manifestName} referencia o arquivo '${referencedFile}', mas ele não está presente no diretório de release.`
+        );
+      }
+    }
+  }
+}
+
 async function sha256(filePath) {
   const hash = crypto.createHash('sha256');
   const stream = require('node:fs').createReadStream(filePath);
@@ -115,6 +131,7 @@ async function publish({ source, destination, version }) {
   }
 
   const artifacts = await listArtifacts(source);
+  await verifyManifestReferences(source, artifacts);
   await fs.mkdir(destination, { recursive: true, mode: 0o755 });
   const destinationStat = await fs.lstat(destination);
   if (!destinationStat.isDirectory() || destinationStat.isSymbolicLink()) {

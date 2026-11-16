@@ -17,11 +17,16 @@ test('arquivo ausente retorna defaults', () => {
 
 test('mescla arquivo com defaults', () => {
   const p = tmpFile();
-  fs.writeFileSync(p, JSON.stringify({ fontSize: 18 }));
+  fs.writeFileSync(p, JSON.stringify({ fontSize: 18, editor: { tabSize: 4 } }));
   const s = loadSettings(p);
   assert.equal(s.fontSize, 18);
   assert.equal(s.theme, 'agzos-dark');
   assert.equal(s.iconTheme, 'lucide-color');
+  assert.equal(s.editor.tabSize, 4);
+  assert.equal(s.editor.wordWrap, 'off');
+  assert.equal(s.editor.insertSpaces, true);
+  assert.equal(s.terminal.fontSize, 13);
+  assert.equal(s.update.autoDownload, true);
 });
 
 test('mescla e persiste iconTheme customizado', () => {

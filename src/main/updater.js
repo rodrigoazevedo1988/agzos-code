@@ -1,4 +1,5 @@
 const DEFAULT_FEED_URL = 'https://code.rsolutionsbr.com/release';
+const { createMacOtaManager } = require('./lib/mac-ota');
 
 /**
  * Creates the main-process updater controller.
@@ -10,12 +11,14 @@ const DEFAULT_FEED_URL = 'https://code.rsolutionsbr.com/release';
 function createUpdater({
   app,
   autoUpdater: injectedUpdater,
+  macOtaManager: injectedMacOta,
   platform = process.platform,
   feedUrl = process.env.AGZOS_UPDATE_URL || DEFAULT_FEED_URL,
   notify = () => {},
   logger = console,
 } = {}) {
   let autoUpdater = injectedUpdater;
+  let macOtaManager = injectedMacOta;
   let initialized = false;
   let manualCheckActive = false;
   const reportedErrors = new WeakSet();
@@ -53,12 +56,40 @@ function createUpdater({
     }
   }
 
+  function resolveMacOta() {
+    if (macOtaManager) return macOtaManager;
+    try {
+      macOtaManager = createMacOtaManager({
+        feedUrl,
+        currentVersion: app?.getVersion ? app.getVersion() : '0.3.0',
+        notify: safeNotify,
+      });
+      return macOtaManager;
+    } catch (err) {
+      logError('[updater] falha ao inicializar macOtaManager:', err);
+      return null;
+    }
+  }
+
   function installListeners() {
-    if (initialized) return;
+    if (initialized || !autoUpdater) return;
     initialized = true;
+
     autoUpdater.on('error', (error) => reportError(error));
+
+    autoUpdater.on('download-progress', (progressObj) => {
+      safeNotify({
+        type: 'progress',
+        percent: Math.round(progressObj.percent || 0),
+        transferred: progressObj.transferred || 0,
+        total: progressObj.total || 0,
+        bytesPerSecond: progressObj.bytesPerSecond || 0,
+      });
+    });
+
     autoUpdater.on('update-available', (info = {}) => {
-      if (isMac) {
+      // Se não houver macOta configurado e for Mac legado
+      if (isMac && !macOtaManager) {
         safeNotify({
           type: 'manual-download',
           version: info.version,
@@ -70,12 +101,14 @@ function createUpdater({
       }
       manualCheckActive = false;
     });
+
     autoUpdater.on('update-not-available', (info = {}) => {
       if (manualCheckActive) {
         safeNotify({ type: 'not-available', version: info.version });
       }
       manualCheckActive = false;
     });
+
     autoUpdater.on('update-downloaded', (info = {}) => {
       safeNotify({
         type: 'ready',
@@ -88,9 +121,34 @@ function createUpdater({
 
   async function checkForUpdates({ manual = false } = {}) {
     if (!app || !app.isPackaged) return false;
+    manualCheckActive = Boolean(manual);
+
+    // No macOS em produção (quando não foi injetado autoUpdater de teste)
+    if (isMac && !injectedUpdater) {
+      const macOta = resolveMacOta();
+      if (macOta) {
+        try {
+          const checkRes = await macOta.check();
+          if (!checkRes.available) {
+            if (manualCheckActive) safeNotify({ type: 'not-available', version: checkRes.version });
+            manualCheckActive = false;
+            return true;
+          }
+          safeNotify({ type: 'available', version: checkRes.version });
+          await macOta.download(checkRes);
+          manualCheckActive = false;
+          return true;
+        } catch (err) {
+          reportError(err, Boolean(manual));
+          manualCheckActive = false;
+          return false;
+        }
+      }
+    }
+
+    // Fluxo padrão electron-updater (Windows e Linux)
     if (!resolveUpdater()) return false;
     installListeners();
-    manualCheckActive = Boolean(manual);
     try {
       await autoUpdater.checkForUpdates();
       return true;
@@ -103,19 +161,34 @@ function createUpdater({
 
   function start({ checkOnStart = true } = {}) {
     if (!app || !app.isPackaged) return false;
+
+    if (isMac && !injectedUpdater) {
+      resolveMacOta();
+      if (checkOnStart) {
+        checkForUpdates({ manual: false }).catch((error) => reportError(error, false));
+      }
+      return true;
+    }
+
     if (!resolveUpdater()) return false;
     installListeners();
     autoUpdater.autoDownload = !isMac;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
+
     if (checkOnStart) {
-      // Automatic checks log failures but never surface them to the user.
       checkForUpdates({ manual: false }).catch((error) => reportError(error, false));
     }
     return true;
   }
 
   function installDownloadedUpdate() {
+    if (isMac && macOtaManager) {
+      return macOtaManager.install({
+        appQuit: () => app?.quit?.(),
+      });
+    }
+
     if (!autoUpdater || isMac || typeof autoUpdater.quitAndInstall !== 'function') return false;
     autoUpdater.quitAndInstall(false, true);
     return true;

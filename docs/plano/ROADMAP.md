@@ -1,8 +1,8 @@
 # Roadmap — Agzos Code
 
-**Atualizado:** 12/11/2026
+**Atualizado:** 16/11/2026
 **Base:** Electron + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md).
-**Estado atual:** Fase 2 — IA concluída no workspace e publicada como v0.3.0. Próxima: Fase 3 — Git e GitHub.
+**Estado atual:** Fase 2 concluída e v0.4.0 entregue (Settings Modal no padrão VS Code + OTA Multiplataforma + Workers Monaco + Importador VS Code/Cursor). Próxima: Fase 3 — Git e GitHub.
 
 Planos detalhados, tarefa a tarefa, para o executor: [`execucao/`](execucao/00-guia-do-executor.md).
 Relatórios de cada fase: [`relatorios/`](relatorios/).
@@ -63,18 +63,18 @@ Estimativa total até a v1.0: ~9–12 semanas.
 
 ## Fase 4 — Editor completo (2 semanas) · [plano](execucao/fase-4-editor.md)
 
-- [ ] T1 IntelliSense TS/JS/JSON/CSS/HTML (workers do Monaco)
+- [x] T1 IntelliSense TS/JS/JSON/CSS/HTML (workers do Monaco configurados na v0.4.0)
 - [ ] T2 Terminal com node-pty
 - [ ] T3 Busca e Quick Open com ripgrep
 - [ ] T4 Recarregar arquivos alterados fora + restaurar sessão
 - [ ] T5 Modos de performance com efeito
-- [ ] T6 Importar configurações do VS Code / Cursor
+- [x] T6 Importar configurações do VS Code / Cursor (entregue na v0.4.0)
 - [ ] T7 Docs + relatório
 
 ## Fase 5 — Distribuição e v1.0 (1–1,5 semana) · [plano](execucao/fase-5-distribuicao.md)
 
-- [ ] T1 Release multiplataforma por tag
-- [ ] T2 Auto-update (Windows/Linux; macOS só aviso até ter assinatura)
+- [x] T1 Release multiplataforma por tag (workflow de matriz GitHub Actions na v0.4.0)
+- [x] T2 Auto-update (multiplataforma Windows/Linux/macOS in-app via mac-ota entregue na v0.4.0)
 - [ ] T3 Tela de privacidade
 - [ ] T4 Assinatura opcional por secrets + guia de compra dos certificados
 - [ ] T5 v1.0.0 + relatório

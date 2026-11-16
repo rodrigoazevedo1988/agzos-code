@@ -16,6 +16,7 @@ import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
 import { startOnboarding, exitOnboarding } from './onboarding.js';
+import { setupSettingsModal, openSettingsModal, updateOTAProgress } from './settings-modal.js';
 
 const State = window.AgzosState;
 
@@ -73,14 +74,17 @@ async function boot() {
     }
   });
 
-  // 11) Botões topbar
+  // 11) Botões topbar e configurações
+  setupSettingsModal();
   document.getElementById('btn-command-palette').addEventListener('click', showCommandPalette);
   document.getElementById('btn-toggle-terminal').addEventListener('click', toggleTerminal);
   document.getElementById('btn-toggle-sidebar').addEventListener('click', () => {
     document.body.classList.toggle('sidebar-hidden');
     State.sidebarHidden = document.body.classList.contains('sidebar-hidden');
   });
-  document.getElementById('btn-settings').addEventListener('click', () => switchSidebarView('settings'));
+  document.getElementById('btn-settings').addEventListener('click', () => openSettingsModal());
+  const btnActSettings = document.getElementById('btn-activity-settings');
+  if (btnActSettings) btnActSettings.addEventListener('click', () => openSettingsModal());
 
   // 12) Botões do header da sidebar
   document.getElementById('btn-open-folder').addEventListener('click', openFolderDialog);
@@ -121,9 +125,14 @@ async function boot() {
     else if (channel === 'menu:toggle-terminal') toggleTerminal();
     else if (channel === 'menu:toggle-sidebar') document.body.classList.toggle('sidebar-hidden');
     else if (channel === 'menu:check-updates') window.agzos.update.check();
+    else if (channel === 'menu:open-settings') openSettingsModal();
   });
 
   window.agzos.update.onNotice(async (notice) => {
+    if (notice.type === 'progress') {
+      updateOTAProgress(notice);
+      return;
+    }
     if (notice.type === 'ready') {
       const hasUnsaved = [...State.files.values()].some((file) => file.dirty);
       const warning = hasUnsaved ? '\n\nHá arquivos não salvos. Salve-os antes de continuar.' : '';
@@ -190,6 +199,7 @@ function hydrateLucideIcons() {
     'btn-toggle-terminal': 'square-terminal',
     'btn-command-palette': 'square-asterisk',
     'btn-settings': 'settings',
+    'btn-activity-settings': 'settings',
     'btn-new-file': 'file-plus',
     'btn-new-folder': 'folder-plus',
     'btn-open-folder': 'folder-open',
@@ -206,7 +216,6 @@ function hydrateLucideIcons() {
     'git': 'git-branch',
     'extensions': 'puzzle',
     'ai': 'sparkles',
-    'settings': 'settings',
   };
   document.querySelectorAll('.activity-btn').forEach((btn) => {
     const view = btn.dataset.view;
@@ -229,58 +238,23 @@ function applySettingsToUI() {
   document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${s.theme}`;
   if (s.performanceMode === 'economy') document.body.classList.add('perf-economy');
   if (s.performanceMode === 'high') document.body.classList.add('perf-high');
-  document.getElementById('setting-theme').value = s.theme;
+  const themeEl = document.getElementById('setting-theme');
+  if (themeEl) themeEl.value = s.theme;
   const iconThemeEl = document.getElementById('setting-icon-theme');
   if (iconThemeEl) iconThemeEl.value = s.iconTheme || 'lucide-color';
-  document.getElementById('setting-perf').value = s.performanceMode;
-  document.getElementById('setting-telemetry').checked = !!s.telemetry;
-  document.getElementById('setting-fontsize').value = s.fontSize;
-  document.getElementById('status-perf').textContent = perfLabel(s.performanceMode);
+  const perfEl = document.getElementById('setting-perf');
+  if (perfEl) perfEl.value = s.performanceMode;
+  const telEl = document.getElementById('setting-telemetry');
+  if (telEl) telEl.checked = !!s.telemetry;
+  const fsEl = document.getElementById('setting-fontsize');
+  if (fsEl) fsEl.value = s.fontSize;
+  const statusPerf = document.getElementById('status-perf');
+  if (statusPerf) statusPerf.textContent = perfLabel(s.performanceMode);
 }
 
 function bindSettingsInputs() {
-  document.getElementById('setting-theme').addEventListener('change', async (e) => {
-    const theme = e.target.value;
-    document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${theme}`;
-    const mod = await import('./editor.js');
-    mod.applyTheme(theme);
-    // Re-renderiza welcome com novo logo
-    if (!State.workspaceRoot || !State.activePath) showEditorWelcome();
-  });
-  const iconThemeSelect = document.getElementById('setting-icon-theme');
-  if (iconThemeSelect) {
-    iconThemeSelect.addEventListener('change', async (e) => {
-      const theme = e.target.value;
-      State.settings.iconTheme = theme;
-      await window.agzos.settings.save(State.settings);
-      const fileTreeMod = await import('./file-tree.js');
-      fileTreeMod.refreshTree(true);
-      const tabsMod = await import('./tabs.js');
-      tabsMod.renderTabs();
-      toast('Tema de ícones atualizado.', 'info', 1500);
-    });
-  }
-  document.getElementById('setting-perf').addEventListener('change', async (e) => {
-    const mode = e.target.value;
-    State.settings.performanceMode = mode;
-    document.body.classList.remove('perf-economy', 'perf-high');
-    if (mode === 'economy') document.body.classList.add('perf-economy');
-    if (mode === 'high') document.body.classList.add('perf-high');
-    document.getElementById('status-perf').textContent = perfLabel(mode);
-    await window.agzos.settings.save(State.settings);
-  });
-  document.getElementById('setting-telemetry').addEventListener('change', async (e) => {
-    State.settings.telemetry = e.target.checked;
-    await window.agzos.settings.save(State.settings);
-    toast(`Telemetria ${e.target.checked ? 'ativada' : 'desativada'}.`, 'info');
-  });
-  document.getElementById('setting-fontsize').addEventListener('change', async (e) => {
-    const size = parseInt(e.target.value, 10) || 14;
-    const mod = await import('./editor.js');
-    mod.applyFontSize(size);
-  });
-  document.getElementById('btn-configure-ai').addEventListener('click', openAISettings);
-  document.getElementById('status-ai').addEventListener('click', openAISettings);
+  const statusAi = document.getElementById('status-ai');
+  if (statusAi) statusAi.addEventListener('click', openAISettings);
 }
 
 async function openAISettings() {
@@ -359,12 +333,11 @@ function switchSidebarView(view) {
     git:      { panel: 'panel-git', title: 'GIT' },
     extensions: { panel: 'panel-extensions', title: 'EXTENSÕES' },
     ai:       { panel: 'panel-ai', title: 'AGZOS IA' },
-    settings: { panel: 'panel-settings', title: 'CONFIGURAÇÕES' },
   };
   const cfg = map[view];
   if (!cfg) return;
   document.getElementById('sidebar-title').textContent = cfg.title;
-  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai','panel-settings'].forEach((id) => {
+  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });

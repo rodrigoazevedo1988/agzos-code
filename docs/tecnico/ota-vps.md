@@ -4,9 +4,12 @@ Este runbook prepara releases imutáveis do Agzos Code em `/var/www/agzos-code-r
 
 ## Estado atual do projeto
 
-O `package.json` usa o provider `generic`, o processo principal inicializa `electron-updater` e o feed padrão é `https://code.rsolutionsbr.com/release`. Windows e Linux baixam a atualização e pedem confirmação antes de reiniciar; macOS, enquanto não houver assinatura, apenas avisa e direciona ao download manual. A URL pode ser substituída por `AGZOS_UPDATE_URL`.
+O `package.json` usa o provider `generic`, o processo principal inicializa `electron-updater` e o feed padrão é `https://code.rsolutionsbr.com/release`. A partir da versão `0.4.0`:
+- **Windows (NSIS)** e **Linux (AppImage)** realizam download in-app via `electron-updater` com progresso exibido na UI e confirmação antes da instalação.
+- **macOS** realiza atualização in-app automatizada via `mac-ota.js` (baixa o zip do release, valida checksum SHA-512, descompacta com `ditto`, remove quarentena `xattr -cr`, substitui o `.app` atomicamente e reinicia).
+- A URL do feed pode ser substituída pela variável de ambiente `AGZOS_UPDATE_URL`.
 
-Os manifestos (`latest.yml`, `latest-linux.yml` e `latest-mac.yml`) devem referenciar arquivos presentes na mesma release. O vhost específico e o certificado Let's Encrypt de `code.rsolutionsbr.com` foram ativados em 12/11/2026.
+Os manifestos (`latest.yml`, `latest-linux.yml` e `latest-mac.yml`) devem referenciar arquivos presentes na mesma release. O script `tools/publish-vps-release.js` valida estritamente todas as referências de arquivos contidas nos manifestos antes de permitir a publicação. O vhost específico e o certificado Let's Encrypt de `code.rsolutionsbr.com` foram ativados em 12/11/2026.
 
 ## Preparar a rota pública
 

@@ -15,6 +15,19 @@ let monaco = null;
 let activeEditor = null;
 let currentModel = null;
 let saveHandler = null;
+let autoSaveTimer = null;
+
+if (typeof self !== 'undefined' && !self.MonacoEnvironment) {
+  self.MonacoEnvironment = {
+    getWorkerUrl: function (_moduleId, label) {
+      if (label === 'json') return 'vendor/monaco/vs/language/json/jsonWorker.js';
+      if (label === 'css' || label === 'scss' || label === 'less') return 'vendor/monaco/vs/language/css/cssWorker.js';
+      if (label === 'html' || label === 'handlebars' || label === 'razor') return 'vendor/monaco/vs/language/html/htmlWorker.js';
+      if (label === 'typescript' || label === 'javascript') return 'vendor/monaco/vs/language/typescript/tsWorker.js';
+      return 'vendor/monaco/vs/base/worker/workerMain.js';
+    },
+  };
+}
 
 /* --------------------------------------------------------------------------
    Loader
@@ -99,25 +112,28 @@ export async function setupEditor() {
   const host = document.getElementById('editor-host');
   // Mantém o #welcome (estado vazio) ao recriar o editor
   [...host.children].filter((el) => el.id !== 'welcome').forEach((el) => el.remove());
+  const edCfg = State.settings.editor || {};
   activeEditor = monaco.editor.create(host, {
     value: '',
     language: 'plaintext',
     theme: themeIdToMonaco(State.settings.theme),
     automaticLayout: true,
-    minimap: { enabled: true, scale: 1, renderCharacters: false },
-    fontSize: State.settings.fontSize,
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
-    lineNumbers: 'on',
-    renderWhitespace: 'selection',
+    minimap: { enabled: edCfg.minimap !== false, scale: 1, renderCharacters: false },
+    fontSize: State.settings.fontSize || 14,
+    fontFamily: edCfg.fontFamily || 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
+    lineNumbers: edCfg.lineNumbers || 'on',
+    renderWhitespace: edCfg.renderWhitespace || 'selection',
     scrollBeyondLastLine: false,
-    smoothScrolling: true,
-    cursorBlinking: 'smooth',
-    cursorSmoothCaretAnimation: 'on',
-    bracketPairColorization: { enabled: true },
+    smoothScrolling: edCfg.smoothScrolling !== false,
+    cursorBlinking: edCfg.cursorBlinking || 'smooth',
+    cursorSmoothCaretAnimation: edCfg.cursorSmoothCaretAnimation || 'on',
+    bracketPairColorization: { enabled: edCfg.bracketPairColorization !== false },
     guides: { indentation: true, bracketPairs: 'active' },
     padding: { top: 12, bottom: 12 },
-    tabSize: 2,
-    wordWrap: 'off',
+    tabSize: Number(edCfg.tabSize) || 2,
+    insertSpaces: edCfg.insertSpaces !== false,
+    wordWrap: edCfg.wordWrap || 'off',
+    wordWrapColumn: Number(edCfg.wordWrapColumn) || 80,
   });
 
   const aiActions = [
@@ -155,6 +171,18 @@ export async function setupEditor() {
         file.dirty = true;
         renderTabs();
       }
+    }
+    if (State.settings.editor?.autoSave === 'afterDelay') {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(() => {
+        saveActive();
+      }, Number(State.settings.editor?.autoSaveDelay) || 1000);
+    }
+  });
+
+  activeEditor.onDidBlurEditorWidget(() => {
+    if (State.settings.editor?.autoSave === 'onFocusChange') {
+      saveActive();
     }
   });
 
@@ -207,6 +235,11 @@ export async function saveActive() {
   if (!State.activePath) return;
   const file = State.files.get(State.activePath);
   if (!file) return;
+  if (State.settings.editor?.formatOnSave && activeEditor) {
+    try {
+      await activeEditor.getAction('editor.action.formatDocument')?.run();
+    } catch {}
+  }
   const content = activeEditor.getValue();
   try {
     await window.agzos.fs.writeFile(State.activePath, content);
@@ -267,6 +300,26 @@ export function applyFontSize(size) {
   activeEditor.updateOptions({ fontSize: size });
   State.settings.fontSize = size;
   window.agzos.settings.save(State.settings);
+}
+
+export function applyEditorSettings(customSettings) {
+  if (!activeEditor) return;
+  const ed = { ...(State.settings.editor || {}), ...(customSettings || {}) };
+  activeEditor.updateOptions({
+    fontSize: State.settings.fontSize || 14,
+    fontFamily: ed.fontFamily || 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
+    tabSize: Number(ed.tabSize) || 2,
+    insertSpaces: ed.insertSpaces !== false,
+    wordWrap: ed.wordWrap || 'off',
+    wordWrapColumn: Number(ed.wordWrapColumn) || 80,
+    lineNumbers: ed.lineNumbers || 'on',
+    minimap: { enabled: ed.minimap !== false, scale: 1, renderCharacters: false },
+    renderWhitespace: ed.renderWhitespace || 'selection',
+    bracketPairColorization: { enabled: ed.bracketPairColorization !== false },
+    cursorBlinking: ed.cursorBlinking || 'smooth',
+    cursorSmoothCaretAnimation: ed.cursorSmoothCaretAnimation || 'on',
+    smoothScrolling: ed.smoothScrolling !== false,
+  });
 }
 
 /* --------------------------------------------------------------------------

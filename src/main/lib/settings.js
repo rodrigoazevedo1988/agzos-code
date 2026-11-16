@@ -16,8 +16,37 @@ const DEFAULT_SETTINGS = {
   onboardingCompleted: false,
   onboardingSkipped: false,
   onboardingAnswers: null,
-  ai: { activeProfileId: null, profiles: [] },
+  ai: { activeProfileId: null, profiles: [], context: { file: true, selection: true, terminal: false } },
   github: { accounts: [], repoAccounts: {} },
+  editor: {
+    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
+    tabSize: 2,
+    insertSpaces: true,
+    wordWrap: 'off', // off | on | wordWrapColumn
+    wordWrapColumn: 80,
+    lineNumbers: 'on', // on | off | relative
+    minimap: true,
+    renderWhitespace: 'selection', // none | boundary | selection | all
+    bracketPairColorization: true,
+    cursorBlinking: 'smooth', // blink | smooth | phase | expand | solid
+    cursorSmoothCaretAnimation: 'on', // on | off | explicit
+    smoothScrolling: true,
+    formatOnSave: false,
+    autoSave: 'off', // off | afterDelay | onFocusChange
+    autoSaveDelay: 1000,
+  },
+  workbench: {
+    sidebarPosition: 'left', // left | right
+    statusBarVisible: true,
+  },
+  terminal: {
+    fontSize: 13,
+    scrollback: 1000,
+  },
+  update: {
+    autoDownload: true,
+    channel: 'stable', // stable | beta
+  },
 };
 
 function defaults() {
@@ -26,6 +55,20 @@ function defaults() {
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function deepMerge(target, source) {
+  const output = isPlainObject(target) ? { ...target } : {};
+  if (!isPlainObject(source)) return output;
+
+  for (const [key, value] of Object.entries(source)) {
+    if (isPlainObject(value) && isPlainObject(output[key])) {
+      output[key] = deepMerge(output[key], value);
+    } else {
+      output[key] = value;
+    }
+  }
+  return output;
 }
 
 /**
@@ -55,7 +98,7 @@ function loadSettings(filePath) {
   }
 
   if (!isPlainObject(parsed)) return defaults();
-  return { ...defaults(), ...parsed };
+  return deepMerge(defaults(), parsed);
 }
 
 /**

@@ -23,7 +23,7 @@
       <button class="topbar-btn icon-host" id="btn-toggle-sidebar" title="Alternar Sidebar (Ctrl+B)"></button>
       <button class="topbar-btn icon-host" id="btn-toggle-terminal" title="Alternar Terminal (Ctrl+`)"></button>
       <button class="topbar-btn icon-host" id="btn-command-palette" title="Command Palette (Ctrl+Shift+P)"></button>
-      <button class="topbar-btn icon-host" id="btn-settings" title="Configurações"></button>
+      <button class="topbar-btn icon-host" id="btn-settings" title="Configurações (Ctrl+,)"></button>
     </div>
   </header>
 
@@ -37,7 +37,7 @@
       <button class="activity-btn icon-host" data-view="extensions" title="Extensões (Ctrl+Shift+X)"></button>
       <button class="activity-btn icon-host" data-view="ai" title="Agzos IA"></button>
       <div class="activity-spacer"></div>
-      <button class="activity-btn icon-host" data-view="settings" title="Configurações"></button>
+      <button class="activity-btn icon-host" id="btn-activity-settings" title="Configurações (Ctrl+,)"></button>
     </nav>
 
     <!-- Sidebar (esquerda) -->
@@ -86,49 +86,6 @@
               <textarea id="ai-input" rows="3" placeholder="Pergunte algo ao Agzos IA…" aria-label="Mensagem"></textarea>
               <button id="ai-send" class="primary-btn">Enviar</button>
             </div>
-          </div>
-        </div>
-        <div class="panel" id="panel-settings" hidden>
-          <h3>Configurações</h3>
-          <div class="setting-row">
-            <label>Tema</label>
-            <select id="setting-theme">
-              <option value="agzos-dark">Agzos Dark</option>
-              <option value="agzos-light">Agzos Light</option>
-              <option value="monokai">Monokai</option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>Ícones de Arquivos</label>
-            <select id="setting-icon-theme">
-              <option value="lucide-color">Lucide Moderno (Colorido)</option>
-              <option value="lucide-minimal">Lucide Minimalista</option>
-              <option value="badges">Badges Técnicos (Seti)</option>
-              <option value="emoji">Emoji Clássico</option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>Performance</label>
-            <select id="setting-perf">
-              <option value="economy">Economia</option>
-              <option value="balanced" selected>Balanceado</option>
-              <option value="high">Alta Performance</option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>Telemetria</label>
-            <input type="checkbox" id="setting-telemetry" />
-            <span class="hint">Desativada por padrão.</span>
-          </div>
-          <div class="setting-row">
-            <label>Tamanho da fonte</label>
-            <input type="number" id="setting-fontsize" min="10" max="24" value="14" />
-          </div>
-          <h3>IA</h3>
-          <div class="setting-row"><button class="primary-btn" id="btn-configure-ai">Configurar IA</button></div>
-          <h3>Ajuda</h3>
-          <div class="setting-row">
-            <button class="primary-btn" id="btn-restart-onboarding">↻ Refazer Onboarding</button>
           </div>
         </div>
       </div>
@@ -194,6 +151,9 @@
   <div id="onboarding-overlay" class="overlay"></div>
 
   <div id="ai-wizard-overlay" class="overlay" hidden></div>
+
+  <!-- SETTINGS MODAL (padrão VS Code separado) -->
+  <div id="settings-modal-overlay" class="overlay settings-overlay" hidden></div>
 
   <!-- CONTEXT MENU (file tree) -->
   <div id="context-menu" class="context-menu" hidden>

@@ -145,6 +145,12 @@ function buildAppMenu() {
           click: () => mainWindow?.webContents.send('menu:save'),
         },
         { type: 'separator' },
+        {
+          label: 'Configurações…',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => mainWindow?.webContents.send('menu:open-settings'),
+        },
+        { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
     },
