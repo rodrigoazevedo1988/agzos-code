@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="styles/app.css" />
   <link rel="stylesheet" href="styles/ai-panel.css" />
   <link rel="stylesheet" href="styles/terminal.css" />
+  <link rel="stylesheet" href="styles/git.css" />
 </head>
 
 <body class="theme-agzos-dark">
@@ -62,9 +63,8 @@
           <input type="text" id="search-text" placeholder="Buscar texto nos arquivos…" />
           <div id="search-results"></div>
         </div>
-        <div class="panel" id="panel-git" hidden>
-          <p class="hint">Git UI — wiring com próxima fase.</p>
-        </div>
+        <!-- Controle de versão: preenchido por git-panel.js -->
+        <div class="panel" id="panel-git" hidden aria-label="Controle de versão"></div>
         <div class="panel" id="panel-extensions" hidden>
           <p class="hint">Extensões — Open VSX será plugado na próxima fase.</p>
         </div>
@@ -153,7 +153,7 @@
   <footer id="statusbar">
     <div class="status-left">
       <span class="status-item icon-host" id="status-remote"></span>
-      <span class="status-item" id="status-sync">↑0 ↓0</span>
+      <span class="status-item" id="status-sync" hidden></span>
     </div>
     <div class="status-right">
       <span class="status-item icon-host" id="status-perf"></span>

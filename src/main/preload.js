@@ -96,6 +96,60 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Agente (tools no workspace). Eventos: (requestId, evt) — ver src/main/agent/loop.js.
+  agent: {
+    run: (requestId, payload) => ipcRenderer.invoke('agent:run', requestId, payload),
+    approve: (requestId, callId, decision) => ipcRenderer.invoke('agent:approve', requestId, callId, decision),
+    cancel: (requestId) => ipcRenderer.invoke('agent:cancel', requestId),
+    undo: (checkpointId) => ipcRenderer.invoke('agent:undo', checkpointId),
+    setMode: (mode) => ipcRenderer.invoke('agent:setMode', mode),
+    onEvent: (cb) => {
+      const handler = (_event, id, evt) => cb(id, evt);
+      ipcRenderer.on('agent:event', handler);
+      return () => ipcRenderer.removeListener('agent:event', handler);
+    },
+  },
+
+  // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
+  git: {
+    available: () => ipcRenderer.invoke('git:available'),
+    status: (cwd) => ipcRenderer.invoke('git:status', cwd),
+    init: (cwd) => ipcRenderer.invoke('git:init', cwd),
+    stage: (cwd, paths) => ipcRenderer.invoke('git:stage', cwd, paths),
+    unstage: (cwd, paths) => ipcRenderer.invoke('git:unstage', cwd, paths),
+    discard: (cwd, paths) => ipcRenderer.invoke('git:discard', cwd, paths),
+    commit: (cwd, message, options) => ipcRenderer.invoke('git:commit', cwd, message, options),
+    log: (cwd, limit) => ipcRenderer.invoke('git:log', cwd, limit),
+    branches: (cwd) => ipcRenderer.invoke('git:branches', cwd),
+    checkout: (cwd, name) => ipcRenderer.invoke('git:checkout', cwd, name),
+    createBranch: (cwd, name, options) => ipcRenderer.invoke('git:createBranch', cwd, name, options),
+    fetch: (cwd) => ipcRenderer.invoke('git:fetch', cwd),
+    pull: (cwd) => ipcRenderer.invoke('git:pull', cwd),
+    push: (cwd) => ipcRenderer.invoke('git:push', cwd),
+    sync: (cwd) => ipcRenderer.invoke('git:sync', cwd),
+    diffFile: (cwd, relPath, options) => ipcRenderer.invoke('git:diffFile', cwd, relPath, options),
+    clone: (url, parentDir, options) => ipcRenderer.invoke('git:clone', url, parentDir, options),
+    onProgress: (cb) => {
+      const handler = (_event, progress) => cb(progress);
+      ipcRenderer.on('git:progress', handler);
+      return () => ipcRenderer.removeListener('git:progress', handler);
+    },
+  },
+
+  // Contas GitHub. O token entra por addPat e nunca volta ao renderer.
+  github: {
+    accounts: () => ipcRenderer.invoke('github:accounts'),
+    addPat: (token) => ipcRenderer.invoke('github:addPat', token),
+    remove: (id) => ipcRenderer.invoke('github:remove', id),
+    setDefault: (id) => ipcRenderer.invoke('github:setDefault', id),
+    accountForCwd: (cwd) => ipcRenderer.invoke('github:accountForCwd', cwd),
+    assign: (cwd, accountId) => ipcRenderer.invoke('github:assign', cwd, accountId),
+    orgs: (accountId) => ipcRenderer.invoke('github:orgs', accountId),
+    publish: (cwd, options) => ipcRenderer.invoke('github:publish', cwd, options),
+    prDefaults: (cwd) => ipcRenderer.invoke('github:prDefaults', cwd),
+    createPr: (cwd, options) => ipcRenderer.invoke('github:createPr', cwd, options),
+  },
+
   chat: {
     // Histórico por workspace: { conversations: [{ id, title, updatedAt, messages }], activeId }
     loadHistory: (root) => ipcRenderer.invoke('chat:history:load', root),

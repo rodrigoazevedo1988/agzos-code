@@ -90,10 +90,26 @@ const COMMANDS = [
   { id: 'ai.document',          label: 'Agzos IA: Gerar Documentação',                  hint: '',               run: () => triggerAIAction('document') },
   { id: 'ai.tests',             label: 'Agzos IA: Gerar Testes Unitários',              hint: '',               run: () => triggerAIAction('tests') },
   { id: 'ai.togglePanel',       label: 'Agzos IA: Alternar Painel',                     hint: 'Ctrl+L',         run: () => aiDock()?.toggle({ focus: true }) },
+  { id: 'ai.agentMode',         label: 'Agzos IA: Alternar modo do agente',             hint: '',               run: () => import('./ai-chat.js').then((m) => m.pickAgentMode()) },
   { id: 'ai.moveLeft',          label: 'Agzos IA: Mover para Esquerda',                 hint: '',               run: () => moveAiDock('left') },
   { id: 'ai.moveRight',         label: 'Agzos IA: Mover para Direita',                  hint: '',               run: () => moveAiDock('right') },
   { id: 'ai.moveBottom',        label: 'Agzos IA: Mover para Embaixo',                  hint: '',               run: () => moveAiDock('bottom') },
   { id: 'ai.configure',         label: 'Agzos IA: Configurar Provedor (Wizard)',        hint: '',               run: () => import('./ai-wizard.js').then((m) => m.openAIWizard({ profileId: State.settings?.ai?.activeProfileId })) },
+
+  // Git & GitHub (git-panel.js)
+  { id: 'git.commit',           label: 'Git: Commit',                                   hint: 'Ctrl+Enter',     run: () => gitCommand('commit') },
+  { id: 'git.commitPush',       label: 'Git: Commit e Push',                            hint: '',               run: () => gitCommand('commitPush') },
+  { id: 'git.push',             label: 'Git: Push',                                     hint: '',               run: () => gitCommand('push') },
+  { id: 'git.pull',             label: 'Git: Pull',                                     hint: '',               run: () => gitCommand('pull') },
+  { id: 'git.fetch',            label: 'Git: Fetch',                                    hint: '',               run: () => gitCommand('fetch') },
+  { id: 'git.sync',             label: 'Git: Sincronizar (Pull + Push)',                hint: '',               run: () => gitCommand('sync') },
+  { id: 'git.createBranch',     label: 'Git: Criar Branch…',                            hint: '',               run: () => gitCommand('createBranch') },
+  { id: 'git.checkout',         label: 'Git: Trocar Branch…',                           hint: '',               run: () => gitCommand('checkout') },
+  { id: 'git.clone',            label: 'Git: Clonar Repositório…',                      hint: '',               run: () => gitCommand('clone') },
+  { id: 'git.init',             label: 'Git: Inicializar Repositório',                  hint: '',               run: () => gitCommand('init') },
+  { id: 'git.publish',          label: 'Git: Publicar no GitHub…',                      hint: '',               run: () => gitCommand('publish') },
+  { id: 'git.pr',               label: 'Git: Criar Pull Request…',                      hint: '',               run: () => gitCommand('pr') },
+  { id: 'git.account',          label: 'Git: Conta GitHub do Repositório…',             hint: '',               run: () => gitCommand('account') },
 
   // Ajuda & Atualizações
   { id: 'help.checkUpdates',    label: 'Ajuda: Verificar Atualizações Agora (OTA)',     hint: '',               run: () => window.agzos.update.check() },
@@ -495,6 +511,10 @@ function moveAiDock(position) {
   if (!dock) return;
   dock.setPosition(position, { show: true });
   dock.focusInput();
+}
+
+function gitCommand(id) {
+  return import('./git-panel.js').then((m) => m.runGitCommand(id));
 }
 
 function switchView(view) {

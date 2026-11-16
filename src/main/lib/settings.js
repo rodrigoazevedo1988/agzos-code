@@ -27,7 +27,10 @@ const DEFAULT_SETTINGS = {
     sendKey: 'enter', // enter | ctrlEnter
     defaultContext: { file: true, selection: true, terminal: false },
   },
-  github: { accounts: [], repoAccounts: {} },
+  // Agente: modo de autonomia ask | edit | auto. Dono: ipc/agent.js (agent:setMode).
+  aiAgent: { mode: 'edit' },
+  // Contas GitHub (só metadados; tokens no cofre em github.<id>). Dono: ipc/github.js.
+  github: { accounts: [], defaultAccountId: null, repoAccounts: {} },
   editor: {
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
     tabSize: 2,
@@ -111,6 +114,12 @@ function normalizeAiPanel(value, legacyContext) {
   };
 }
 
+/** `aiAgent.mode` inválido volta a 'edit'. */
+function normalizeAiAgent(value) {
+  const v = isPlainObject(value) ? value : {};
+  return { ...v, mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode };
+}
+
 /**
  * Lê as settings. Arquivo ausente → defaults. JSON inválido → move o arquivo
  * para `settings.json.corrupt-<timestamp>` e retorna defaults.
@@ -141,6 +150,7 @@ function loadSettings(filePath) {
   const merged = deepMerge(defaults(), parsed);
   // Contexto padrão herda a escolha antiga (ai.context) de quem já usava o chat.
   merged.aiPanel = normalizeAiPanel(parsed.aiPanel, parsed.ai?.context);
+  merged.aiAgent = normalizeAiAgent(parsed.aiAgent);
   return merged;
 }
 
@@ -198,4 +208,4 @@ function migrateLegacySecrets(settings, store) {
   return { settings: out, changed };
 }
 
-module.exports = { DEFAULT_SETTINGS, normalizeAiPanel, loadSettings, saveSettings, migrateLegacySecrets };
+module.exports = { DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, loadSettings, saveSettings, migrateLegacySecrets };

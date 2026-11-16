@@ -14,6 +14,7 @@ import { toast } from './toast.js';
 import { openFile } from './editor.js';
 import { renderFileIcon, renderFolderIcon } from './icon-theme.js';
 import { invalidateQuickOpenCache } from './command-palette.js';
+import { gitStatusFor } from './git-decorations.js';
 
 const State = window.AgzosState;
 
@@ -70,6 +71,8 @@ function buildNode(node, depth) {
   row.dataset.isDir = String(node.isDirectory);
   row.style.paddingLeft = `${6 + depth * 14}px`;
   row.title = node.path;
+  const gitKind = gitStatusFor(node.path);
+  if (gitKind) row.dataset.git = gitKind;
 
   if (State.activePath === node.path && !node.isDirectory) {
     row.classList.add('selected', 'active-file');

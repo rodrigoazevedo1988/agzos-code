@@ -71,7 +71,7 @@ test('aguarda a chave legacy em settings ser migrada para o cofre', () => {
 test('fábrica escolhe provider Anthropic pelo preset', () => {
   const fetchImpl = async () => new Response(JSON.stringify({ data: [{ id: 'claude' }] }));
   const provider = createProviderForProfile({ id: 'p1', preset: 'anthropic', baseUrl: PRESETS.anthropic.baseUrl }, fakeStore({ 'ai.p1': 'key' }), { fetchImpl });
-  assert.deepEqual(Object.keys(provider).sort(), ['chat', 'listModels', 'testConnection']);
+  assert.deepEqual(Object.keys(provider).sort(), ['chat', 'chatTools', 'listModels', 'testConnection']);
   return provider.listModels().then((models) => assert.deepEqual(models, ['claude']));
 });
 

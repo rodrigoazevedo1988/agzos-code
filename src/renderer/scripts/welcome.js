@@ -148,9 +148,14 @@ export function showEditorWelcome() {
     document.querySelector('#btn-open-folder')?.click();
   });
   welcome.querySelector('[data-action="open-file"]').addEventListener('click', () => {
-    document.querySelector('#welcome-open-file')?.click();
+    window.agzos.dialog.openFile().then(async (p) => {
+      if (!p) return;
+      const mod = await import('./editor.js');
+      await mod.openFile(p);
+    }).catch(() => {});
   });
-  welcome.querySelector('[data-action="clone"]').addEventListener('click', () => {
-    document.querySelector('#welcome-clone')?.click();
+  welcome.querySelector('[data-action="clone"]').addEventListener('click', async () => {
+    const { openCloneDialog } = await import('./git-panel.js');
+    openCloneDialog();
   });
 }

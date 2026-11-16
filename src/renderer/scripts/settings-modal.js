@@ -409,6 +409,22 @@ const SETTINGS_DEF = [
     type: 'boolean',
     apply: notifyAiPanel,
   },
+  {
+    key: 'aiAgent.mode',
+    title: 'Agzos IA: Autonomia do Agente',
+    desc: 'O que o agente pode fazer sem pedir OK. Comandos de risco sempre pedem confirmação.',
+    categories: ['ai'],
+    type: 'select',
+    options: [
+      { value: 'ask', label: 'Perguntar tudo (pede OK para criar, editar, apagar e rodar comandos)' },
+      { value: 'edit', label: 'Edição livre (cria e edita sozinho; pede OK para apagar, mover e comandos)' },
+      { value: 'auto', label: 'Automático (faz tudo sem perguntar)' },
+    ],
+    apply: (val) => {
+      Promise.resolve(window.agzos.agent?.setMode?.(val)).catch(() => {});
+      window.dispatchEvent(new CustomEvent('agzos:agent-mode', { detail: { mode: val } }));
+    },
+  },
 
   // Atualizações (OTA)
   {
@@ -696,20 +712,12 @@ function renderAIExtraHtml() {
 }
 
 function renderGitExtraHtml() {
-  const gh = State.settings.github || { accounts: [] };
-  const accounts = gh.accounts || [];
-
+  // Conteúdo montado por github-settings.js (bindContentEvents → mountGithubSettings)
   return `
-    <div class="settings-section-card">
+    <div class="settings-section-card" id="github-settings-card">
       <h3 class="settings-section-title">Contas GitHub</h3>
-      <p class="setting-item-desc">Associe contas pessoais ou de organizações para commits e operações Git integradas.</p>
-      <div class="git-accounts-list">
-        ${accounts.length === 0 ? `<p class="hint">Nenhuma conta GitHub conectada ainda.</p>` : `
-          <ul>
-            ${accounts.map((a) => `<li><strong>@${escapeHtml(a.login || a.name || 'Conta')}</strong></li>`).join('')}
-          </ul>
-        `}
-      </div>
+      <p class="setting-item-desc">Conecte contas pessoais ou de organizações. Cada repositório usa a conta do dono, a escolhida para ele ou a padrão.</p>
+      <div id="github-settings-host"></div>
     </div>
   `;
 }
@@ -817,6 +825,10 @@ function bindModalEvents() {
 }
 
 function bindContentEvents() {
+  // Git & GitHub: contas montadas por github-settings.js
+  const githubHost = document.getElementById('github-settings-host');
+  if (githubHost) import('./github-settings.js').then((m) => m.mountGithubSettings(githubHost));
+
   // Limpar busca no botão vazio
   const resetSearch = document.getElementById('btn-reset-search');
   if (resetSearch) {

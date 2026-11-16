@@ -14,6 +14,8 @@ function friendlyError(err, baseUrl, apiKey) {
   if (apiKey) message = message.split(apiKey).join('[redigido]');
   const safe = new Error(message);
   safe.userMessage = message;
+  if (err.status) safe.status = err.status;
+  if (err.code) safe.code = err.code;
   return safe;
 }
 

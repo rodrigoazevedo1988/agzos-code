@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0.0 — 2026-11-16
+
+### Agzos IA agêntico
+
+- Modo **Agente** no chat: a IA lê, busca, cria e edita arquivos, cria/move/apaga pastas e roda comandos dentro da pasta do projeto — corrige bugs, cria sites e projetos, faz melhorias.
+- Tool calling nos provedores OpenAI-compatíveis (OpenAI, Groq, OpenRouter, Gemini, Ollama) e Anthropic; modelo sem suporte a ferramentas cai para o chat com aviso.
+- Três modos de autonomia: **Perguntar tudo**, **Edição livre** (padrão: edita sozinho, pede OK para comandos e para apagar/mover) e **Automático**. Comandos de risco (apagar raiz, formatar, `git push --force`, `reset --hard`, `curl | sh`…) sempre pedem confirmação; nada fora da pasta do projeto.
+- Cartões por ação (ler, editar `+N −M` com diff, comando com saída ao vivo), cartão de aprovação com diff inline (`Enter` permite, `Esc` nega, "Permitir sempre nesta conversa").
+- Resumo final com arquivos alterados e **Desfazer tudo** (checkpoint antes de cada alteração).
+- Editor recarrega arquivos alterados pelo agente; se você também editou, pergunta qual versão manter.
+- Histórico guarda as ações do agente; segredos são redigidos da saída de comandos.
+
+### Git e GitHub
+
+- Painel GIT: branch (trocar/criar, remotas), sincronizar ↓/↑, fetch/pull/push, áreas Preparadas/Alterações/Conflitos com stage/unstage/descartar e diff, commit (`Ctrl+Enter`) e "Commit e Push", histórico com commits não enviados destacados.
+- Barra de status com branch e sincronização; badge de alterações; cores de status na árvore de arquivos.
+- "Clonar Repo" funcionando (tela inicial e paleta) com barra de progresso.
+- Contas GitHub por token (PAT), várias contas, conta por repositório; token só no cofre do sistema, nunca no renderer, na IA ou no `.git/config`.
+- Publicar pasta no GitHub (pessoal ou organização, público/privado) e criar Pull Request da branch atual.
+- Comandos Git na paleta.
+
+### Correções
+
+- Botão "Abrir Arquivo" da tela inicial não fazia nada.
+
 ## 0.7.0 — 2026-11-16
 
 ### Terminal multi-sessão

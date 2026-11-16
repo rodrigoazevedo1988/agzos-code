@@ -16,6 +16,7 @@ import {
 } from './terminal.js';
 import { setupAiDock } from './ai-dock.js';
 import { openWorkspace } from './file-tree.js';
+import { setupGitPanel } from './git-panel.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -74,6 +75,11 @@ async function boot() {
     console.error('[Agzos IA] setupAI falhou:', e);
   }
   setupSearch();
+  try {
+    setupGitPanel({ switchSidebarView });
+  } catch (e) {
+    console.error('[Git] setupGitPanel falhou:', e);
+  }
 
   // 9) Welcome do editor (estado vazio)
   showEditorWelcome();

@@ -262,7 +262,12 @@ const secretStore = createSecretStore({
   safeStorage: secretsBackend,
 });
 require('./ipc/secrets').register(ipcMain, { store: secretStore });
+// Git + GitHub: contas (tokens só no main) e operações git do sistema.
+const githubAccounts = require('./ipc/github').register(ipcMain, { guard, settingsStore, store: secretStore, app });
+require('./ipc/git').register(ipcMain, { guard, accounts: githubAccounts });
 const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
+// Agente (tools no workspace): chave da IA só no main; raiz via guard.
+const agentSessions = require('./ipc/agent').register(ipcMain, { settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData') });
 require('./ipc/chat-history').register(ipcMain, deps);
 require('./ipc/app-info').register(ipcMain, deps);
 const updater = require('./updater').createUpdater({
@@ -315,6 +320,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   aiSessions.cancelAll();
+  agentSessions.cancelAll();
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();

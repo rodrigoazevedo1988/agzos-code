@@ -16,6 +16,8 @@ let activeEditor = null;
 let currentModel = null;
 let saveHandler = null;
 const autoSaveTimers = new Map(); // path -> timeout (afterDelay)
+let applyingExternal = false; // recarga vinda do disco: não marca a aba como suja
+const conflicts = new Set(); // arquivos sujos alterados por fora (agente)
 
 // Workers: o loader AMD do Monaco resolve vs/base/worker/workerMain.js sozinho.
 // Apontar direto para tsWorker.js/jsonWorker.js quebra (são módulos AMD: "define is not defined").
@@ -155,6 +157,7 @@ export async function setupEditor() {
 
   // Detectar mudanças → marca tab como dirty
   activeEditor.onDidChangeModelContent(() => {
+    if (applyingExternal) return;
     if (currentModel && State.activePath) {
       const file = State.files.get(State.activePath);
       if (file) {
@@ -221,6 +224,7 @@ export async function openFile(filePath, contentOverride) {
   renderTabs();
   syncEditorWelcome();
   focusTab(filePath);
+  syncConflictBar();
   document.getElementById('welcome').style.display = 'none';
   // Atualiza título da janela
   document.title = `${basename(filePath)} — Agzos Code`;
@@ -259,7 +263,9 @@ export async function saveFile(filePath) {
     // Só limpa o dirty se nada mudou durante a escrita
     if (file.content === content) file.dirty = false;
     file.mtime = Date.now();
+    if (conflicts.delete(filePath)) syncConflictBar();
     renderTabs();
+    window.dispatchEvent(new CustomEvent('agzos:file-saved', { detail: { path: filePath } }));
     toast(`Salvo: ${basename(filePath)}`, 'success', 1800);
   } catch (e) {
     toast(`Erro ao salvar: ${e.message}`, 'error');
@@ -277,6 +283,7 @@ export async function closeTab(filePath) {
     currentModel = null;
   }
   State.files.delete(filePath);
+  if (conflicts.delete(filePath)) syncConflictBar();
   syncEditorWelcome();
   if (State.activePath === filePath) {
     State.activePath = null;
@@ -346,6 +353,101 @@ export function applyEditorSettings(customSettings) {
     cursorSmoothCaretAnimation: ed.cursorSmoothCaretAnimation || 'on',
     smoothScrolling: ed.smoothScrolling !== false,
   });
+}
+
+/* --------------------------------------------------------------------------
+   Mudanças feitas por fora (agente da IA)
+   -------------------------------------------------------------------------- */
+const normPath = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '');
+
+/** Caminho como está em State.files (aceita separadores diferentes; case-insensitive no Windows). */
+function openPathFor(filePath) {
+  if (State.files.has(filePath)) return filePath;
+  const target = normPath(filePath);
+  const win = /^[a-z]:/i.test(target);
+  for (const key of State.files.keys()) {
+    const k = normPath(key);
+    if (k === target || (win && k.toLowerCase() === target.toLowerCase())) return key;
+  }
+  return null;
+}
+
+/**
+ * Um arquivo mudou no disco por fora do editor (ex.: o agente editou).
+ * Aberto e limpo → recarrega mantendo cursor/rolagem (e o Ctrl+Z desfaz a mudança).
+ * Aberto e sujo → mantém o texto do usuário e mostra o aviso de conflito.
+ * @returns {Promise<'closed'|'conflict'|'reloaded'|'same'|'missing'>}
+ */
+export async function handleExternalChange(filePath, { force = false } = {}) {
+  const key = openPathFor(filePath);
+  if (!key) return 'closed';
+  const file = State.files.get(key);
+  if (file.dirty && !force) {
+    conflicts.add(key);
+    syncConflictBar();
+    return 'conflict';
+  }
+  let disk;
+  try {
+    disk = await window.agzos.fs.readFile(key);
+  } catch {
+    // Apagado: fecha a aba se não houver nada a perder.
+    if (!file.dirty) await closeTab(key);
+    return 'missing';
+  }
+  const current = State.files.get(key);
+  if (!current) return 'closed';
+  if (current.dirty && !force) { conflicts.add(key); syncConflictBar(); return 'conflict'; }
+  conflicts.delete(key);
+  const changed = disk.content !== current.content;
+  Object.assign(current, { content: disk.content, size: disk.size, mtime: disk.mtime, dirty: false });
+  if (key === State.activePath && currentModel && activeEditor && currentModel.getValue() !== disk.content) {
+    const view = activeEditor.saveViewState();
+    applyingExternal = true;
+    try {
+      currentModel.pushEditOperations([], [{ range: currentModel.getFullModelRange(), text: disk.content }], () => null);
+    } finally {
+      applyingExternal = false;
+    }
+    if (view) activeEditor.restoreViewState(view);
+  }
+  renderTabs();
+  syncConflictBar();
+  return changed ? 'reloaded' : 'same';
+}
+
+function syncConflictBar() {
+  const host = document.getElementById('editor-host');
+  if (!host) return;
+  let bar = document.getElementById('agent-conflict');
+  const path = State.activePath && conflicts.has(State.activePath) ? State.activePath : null;
+  if (!path) { bar?.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'agent-conflict';
+    bar.className = 'agent-conflict';
+    bar.setAttribute('role', 'alert');
+    host.append(bar);
+  }
+  const text = document.createElement('span');
+  text.className = 'agent-conflict-text';
+  text.textContent = `${basename(path)} foi alterado pelo agente, mas você tem mudanças não salvas aqui.`;
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.className = 'agent-conflict-reload';
+  reload.textContent = 'Usar a versão do disco';
+  reload.addEventListener('click', () => handleExternalChange(path, { force: true }));
+  const keep = document.createElement('button');
+  keep.type = 'button';
+  keep.className = 'agent-conflict-keep';
+  keep.textContent = 'Manter as minhas';
+  keep.addEventListener('click', () => { conflicts.delete(path); syncConflictBar(); });
+  bar.replaceChildren(text, reload, keep);
+}
+
+/** Linguagem do Monaco para um caminho (usado pelo diff do agente). */
+export function languageForPath(filePath) {
+  return detectLanguage(filePath);
 }
 
 /* --------------------------------------------------------------------------

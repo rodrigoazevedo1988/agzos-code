@@ -7,13 +7,16 @@
  */
 import { renderMarkdown } from './markdown.js';
 import { buildContextMessage } from './ai-context.js';
-import { getActiveEditor, getMonaco } from './editor.js';
+import { getActiveEditor, getMonaco, openFile, handleExternalChange, languageForPath } from './editor.js';
 import { getRecentOutput } from './terminal.js';
 import { lucideIcon } from './lucide.js';
 import { toast } from './toast.js';
 import {
   DEFAULT_TITLE, MAX_MESSAGES, makeTitle, composerKeyAction, sendHint, relativeTime, addConversation, baseName,
+  AGENT_MODES, AGENT_MODE_INFO, normalizeAgentMode, createAgentTurn, applyAgentEvent, settleSteps,
+  encodeAgentContent, decodeAgentContent, stripAgentMarker, joinRoot, relativePath,
 } from './ai-chat-utils.js';
+import { TurnView } from './agent-ui.js';
 
 const State = window.AgzosState;
 const IS_MAC = /Mac/i.test(navigator.platform || '');
@@ -23,7 +26,7 @@ const $ = (sel) => panel.querySelector(sel);
 
 let root = null;
 let store = { conversations: [], activeId: null };
-let request = null; // { id, message, el, conversationId }
+let request = null; // { id, message, el, conversationId, agent?: { turn, view } }
 let renderTimer = null;
 let loadVersion = 0;
 let loadingHistory = false;
@@ -34,6 +37,9 @@ let selectedModel = '';
 let lastError = null; // { text, retry }
 let menuState = null; // { el, anchor, onClose }
 const contextOptions = { file: true, selection: true, terminal: false };
+let agentEnabled = null; // null = automático (Agente quando há pasta aberta)
+const turnViews = new WeakMap(); // mensagem → TurnView
+const decodedTurns = new WeakMap(); // mensagem do histórico → turno decodificado
 
 const SUGGESTIONS = [
   { icon: 'book-open', label: 'Explicar arquivo', desc: 'O que ele faz e como se conecta ao resto',
@@ -78,6 +84,18 @@ function activeConversation() {
 }
 function messages() {
   return activeConversation()?.messages || [];
+}
+
+function agentApi() {
+  return window.agzos?.agent || null;
+}
+function agentMode() {
+  return normalizeAgentMode(State.settings.aiAgent?.mode);
+}
+/** Agente ligado no composer? Padrão: sim quando há pasta aberta. */
+function isAgentOn() {
+  if (!agentApi()) return false;
+  return agentEnabled == null ? !!State.workspaceRoot : agentEnabled;
 }
 
 /* ------------------------------------------------------------------ */
@@ -134,6 +152,7 @@ function buildComposer() {
     type: 'button', class: 'ai-context-chip', 'data-context': key, 'aria-pressed': 'false',
   }, icon(iconName, 12), h('span', { class: 'ai-chip-label', text: label }));
   return h('div', { class: 'ai-composer' },
+    buildAgentBar(),
     h('div', { class: 'ai-composer-box' },
       h('textarea', {
         id: 'ai-input', rows: '1', spellcheck: 'true',
@@ -148,6 +167,19 @@ function buildComposer() {
         h('button', { type: 'button', id: 'ai-send', class: 'ai-send', 'data-state': 'send', 'aria-label': 'Enviar mensagem', title: 'Enviar mensagem' },
           icon('arrow-up', 15)))),
     h('div', { id: 'ai-hint', class: 'ai-hint' }));
+}
+
+function buildAgentBar() {
+  const seg = (value, iconName, label, title) => h('button', {
+    type: 'button', class: 'ai-seg-btn', role: 'radio', 'data-agent': value, 'aria-checked': 'false', title,
+  }, icon(iconName, 12), h('span', { text: label }));
+  return h('div', { id: 'ai-agent-bar', class: 'ai-agent-bar' },
+    h('div', { class: 'ai-seg', role: 'radiogroup', 'aria-label': 'Modo de resposta' },
+      seg('agent', 'bot', 'Agente', 'Agente: lê, edita e roda comandos no projeto aberto'),
+      seg('chat', 'message-circle', 'Chat', 'Chat: só responde, não mexe nos arquivos')),
+    h('button', {
+      type: 'button', id: 'ai-agent-mode', class: 'ai-mode-btn', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    }, h('span', { class: 'ai-mode-icon' }), h('span', { class: 'ai-mode-label' }), icon('chevron-down', 11)));
 }
 
 function buildHistory() {
@@ -319,10 +351,33 @@ function highlightCode(container) {
   });
 }
 
+function agentTurnOf(message) {
+  if (message.agent) return message.agent;
+  if (decodedTurns.has(message)) return decodedTurns.get(message);
+  const { turn } = decodeAgentContent(message.content);
+  decodedTurns.set(message, turn);
+  return turn;
+}
+
+function agentMessageElement(message, turn) {
+  const live = request?.message === message;
+  let view = turnViews.get(message);
+  if (!view) {
+    view = new TurnView(turn, agentContext(message, live));
+    turnViews.set(message, view);
+  }
+  const el = h('div', { class: `ai-msg ai-assistant ai-agent-msg${live ? ' is-streaming' : ''}`, 'aria-busy': live ? 'true' : null },
+    h('div', { class: 'ai-avatar', 'aria-hidden': 'true' }, mark('ai-avatar-mark')), view.el);
+  if (live) request.el = el;
+  return el;
+}
+
 function messageElement(message) {
   if (message.role === 'user') {
     return h('div', { class: 'ai-msg ai-user' }, h('div', { class: 'ai-bubble', text: message.content }));
   }
+  const turn = agentTurnOf(message);
+  if (turn) return agentMessageElement(message, turn);
   const streaming = request?.message === message;
   const prose = h('div', { class: 'ai-prose' });
   const el = h('div', { class: `ai-msg ai-assistant${streaming ? ' is-streaming' : ''}`, 'aria-busy': streaming ? 'true' : null },
@@ -368,6 +423,12 @@ function renderMessages() {
 }
 
 function renderStreaming() {
+  if (request?.agent) {
+    request.agent.view.sync();
+    const list = $('#ai-messages');
+    if (stickToBottom) list.scrollTop = list.scrollHeight;
+    return;
+  }
   if (!request?.el) { renderMessages(); return; }
   const list = $('#ai-messages');
   renderAssistantBody(request.el.querySelector('.ai-prose'), request.message, true);
@@ -382,7 +443,10 @@ function queueRender() {
 /* ------------------------------------------------------------------ */
 
 function persist() {
-  const snapshot = { conversations: store.conversations, activeId: store.activeId };
+  const conversations = store.conversations.map((c) => ({
+    ...c, messages: c.messages.map(({ role, content }) => ({ role, content })),
+  }));
+  const snapshot = { conversations, activeId: store.activeId };
   return window.agzos.chat.saveHistory(root, snapshot).catch(() => {
     toast('Não foi possível salvar o histórico do chat.', 'error');
   });
@@ -393,11 +457,12 @@ async function loadHistory() {
   const version = ++loadVersion;
   loadingHistory = true;
   $('#ai-input').disabled = true;
-  if (request) await window.agzos.ai.cancel(request.id);
+  if (request) await cancelRequest();
   root = nextRoot;
   store = { conversations: [], activeId: null };
   lastError = null;
   closeHistory();
+  syncAgentBar();
   renderMessages();
   try {
     const loaded = await window.agzos.chat.loadHistory(root);
@@ -496,7 +561,7 @@ function closeMenu({ restoreFocus = false } = {}) {
   if (restoreFocus) anchor.focus();
 }
 
-function openMenu(anchor, items, { align = 'start' } = {}) {
+function openMenu(anchor, items, { align = 'start', placement = 'below' } = {}) {
   if (menuState?.anchor === anchor) { closeMenu({ restoreFocus: true }); return; }
   closeMenu();
   const menu = h('div', { class: 'ai-menu', role: 'menu' });
@@ -509,8 +574,10 @@ function openMenu(anchor, items, { align = 'start' } = {}) {
       'aria-checked': item.checked === undefined ? null : String(!!item.checked), disabled: item.disabled || null,
     },
     h('span', { class: 'ai-menu-icon' }, item.checked ? icon('check', 13) : (item.icon ? icon(item.icon, 13) : null)),
-    h('span', { class: 'ai-menu-label', text: item.label }),
-    item.detail ? h('span', { class: 'ai-menu-detail', text: item.detail }) : null);
+    item.detail
+      ? h('span', { class: 'ai-menu-text' }, h('span', { class: 'ai-menu-label', text: item.label }), h('span', { class: 'ai-menu-detail', text: item.detail }))
+      : h('span', { class: 'ai-menu-label', text: item.label }));
+    if (item.detail) btn.classList.add('has-detail');
     btn.addEventListener('click', () => { closeMenu({ restoreFocus: true }); item.action?.(); });
     menu.append(btn);
   }
@@ -521,8 +588,13 @@ function openMenu(anchor, items, { align = 'start' } = {}) {
   let left = align === 'end' ? a.right - p.left - width : a.left - p.left;
   left = Math.max(6, Math.min(left, p.width - width - 6));
   menu.style.left = `${left}px`;
-  menu.style.top = `${a.bottom - p.top + 4}px`;
-  menu.style.maxHeight = `${Math.max(120, p.height - (a.bottom - p.top) - 12)}px`;
+  if (placement === 'above') {
+    menu.style.maxHeight = `${Math.max(120, a.top - p.top - 12)}px`;
+    menu.style.top = `${Math.max(6, a.top - p.top - menu.offsetHeight - 4)}px`;
+  } else {
+    menu.style.top = `${a.bottom - p.top + 4}px`;
+    menu.style.maxHeight = `${Math.max(120, p.height - (a.bottom - p.top) - 12)}px`;
+  }
   anchor.setAttribute('aria-expanded', 'true');
   menuState = { el: menu, anchor };
   const enabled = () => [...menu.querySelectorAll('.ai-menu-item:not([disabled])')];
@@ -644,6 +716,7 @@ function setStreaming(active) {
   send.title = send.getAttribute('aria-label');
   send.replaceChildren(icon(active ? 'square' : 'arrow-up', active ? 12 : 15));
   for (const id of ['#ai-new-chat', '#ai-history-btn', '#ai-model-pill']) $(id).disabled = active;
+  panel.querySelectorAll('.ai-seg-btn').forEach((b) => { b.disabled = active; });
   panel.classList.toggle('is-streaming', active);
 }
 
@@ -680,6 +753,8 @@ function retryLast() {
 export function sendToChat(text, opts = {}) {
   const content = String(text || '').trim();
   if (!content || request || loadingHistory || !selectedProfile || !panel) return;
+  // Ações do editor (Explicar/Refatorar…) e o fallback seguem pelo chat.
+  if (!opts.forceChat && !opts.includeSelection && isAgentOn()) { runAgent(content, opts); return; }
   lastError = null;
   closeHistory();
   let conversation = activeConversation();
@@ -691,7 +766,7 @@ export function sendToChat(text, opts = {}) {
   conversation.messages.push({ role: 'user', content });
   conversation.messages = conversation.messages.slice(-(MAX_MESSAGES - 1));
   conversation.updatedAt = Date.now();
-  const payload = conversation.messages.map(({ role, content: body }) => ({ role, content: body }));
+  const payload = conversation.messages.map(({ role, content: body }) => ({ role, content: stripAgentMarker(body) }));
   const contextMessage = makeContextMessage(opts.includeSelection);
   if (contextMessage) payload.unshift({ role: 'system', content: contextMessage });
   const answer = { role: 'assistant', content: '' };
@@ -717,6 +792,258 @@ export function focusChat() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Agente                                                              */
+/* ------------------------------------------------------------------ */
+
+function cancelRequest() {
+  if (!request) return Promise.resolve();
+  const { id, agent } = request;
+  if (!agent) return window.agzos.ai.cancel(id);
+  agent.turn.cancelled = true;
+  // Se o motor não confirmar o fim, fecha o turno aqui mesmo.
+  setTimeout(() => { if (request?.id === id) finishAgent(id); }, 2500);
+  return Promise.resolve(agentApi()?.cancel(id)).catch(() => {});
+}
+
+function absPath(p) {
+  return joinRoot(State.workspaceRoot || root, p);
+}
+
+function agentContext(message, live) {
+  return {
+    live,
+    root: State.workspaceRoot || root,
+    approve: (callId, decision) => approveStep(message, callId, decision),
+    openFile: (p) => openFile(absPath(p)),
+    showDiff: (step, diff) => showStepDiff(step, diff),
+    undo: (turn) => undoTurn(message, turn),
+    chatFallback: () => chatFallback(message),
+    openFolder: () => openFolderForAgent(),
+    onApprovalShown: (card) => {
+      // Foco vai para o cartão só se o usuário já está no painel (não rouba do editor).
+      const active = document.activeElement;
+      if (!active || active === document.body || panel.contains(active)) card.focus({ preventScroll: true });
+      requestAnimationFrame(() => card.scrollIntoView({ block: 'nearest' }));
+      // Barra de status/aria: anuncia o pedido de aprovação.
+      card.setAttribute('aria-live', 'assertive');
+    },
+    onText: (el, isLive) => { if (!isLive) highlightCode(el); },
+  };
+}
+
+function runAgent(content, opts = {}) {
+  lastError = null;
+  closeHistory();
+  let conversation = activeConversation();
+  if (!conversation) {
+    conversation = { id: crypto.randomUUID(), title: DEFAULT_TITLE, updatedAt: Date.now(), messages: [] };
+    store = addConversation(store, conversation);
+  }
+  if (!opts.resend) {
+    if (!conversation.messages.some((m) => m.role === 'user')) conversation.title = makeTitle(content);
+    conversation.messages.push({ role: 'user', content });
+  }
+  conversation.messages = conversation.messages.slice(-(MAX_MESSAGES - 1));
+  conversation.updatedAt = Date.now();
+  const payload = conversation.messages.map(({ role, content: body }) => ({ role, content: stripAgentMarker(body) }));
+  const contextMessage = makeContextMessage(false);
+  if (contextMessage) payload.unshift({ role: 'system', content: contextMessage });
+  const mode = agentMode();
+  const turn = createAgentTurn(mode);
+  const answer = { role: 'assistant', content: '', agent: turn };
+  conversation.messages.push(answer);
+  const id = crypto.randomUUID();
+  request = { id, message: answer, el: null, conversationId: conversation.id, agent: { turn, view: null } };
+  setStreaming(true);
+  renderMessages();
+  request.agent.view = turnViews.get(answer);
+  persist();
+  if (!State.workspaceRoot) {
+    onAgentEvent(id, { type: 'error', code: 'no_workspace', message: 'Abra uma pasta para usar o agente.' });
+    return;
+  }
+  Promise.resolve()
+    .then(() => agentApi().run(id, {
+      profileId: selectedProfile.id, model: selectedModel || selectedProfile.model, messages: payload, mode,
+      root: State.workspaceRoot, conversationId: conversation.id,
+    }))
+    .catch((error) => onAgentEvent(id, { type: 'error', message: error?.message || 'Não foi possível iniciar o agente.' }));
+}
+
+let treeTimer = null;
+function refreshWorkspaceViews() {
+  clearTimeout(treeTimer);
+  treeTimer = setTimeout(() => {
+    import('./command-palette.js').then((m) => m.invalidateQuickOpenCache?.()).catch(() => {});
+    import('./file-tree.js').then((m) => m.refreshTree?.()).catch(() => {});
+  }, 150);
+}
+
+function onFileChanged(filePath) {
+  if (!filePath) return;
+  handleExternalChange(absPath(filePath)).catch(() => {});
+  refreshWorkspaceViews();
+}
+
+function onAgentEvent(id, evt) {
+  if (evt?.type === 'file_changed') onFileChanged(evt.path);
+  if (!request?.agent || request.id !== id) return;
+  const { kind } = applyAgentEvent(request.agent.turn, evt);
+  if (kind === 'done' || kind === 'error') { finishAgent(id); return; }
+  if (kind) queueRender();
+}
+
+function finishAgent(id) {
+  if (!request || request.id !== id || !request.agent) return;
+  const { message, conversationId, agent } = request;
+  const { turn, view } = agent;
+  if (!turn.done && !turn.error) settleSteps(turn);
+  const conversation = store.conversations.find((c) => c.id === conversationId);
+  message.content = encodeAgentContent(turn, State.workspaceRoot || root);
+  if (conversation) conversation.updatedAt = Date.now();
+  request = null;
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+  view?.sync();
+  view?.setLive(false);
+  setStreaming(false);
+  renderMessages();
+  persist();
+  if (turn.done?.changes?.length) refreshWorkspaceViews();
+}
+
+function approveStep(message, callId, decision) {
+  if (!request?.agent || request.message !== message) return;
+  const step = request.agent.turn.steps[callId];
+  if (!step || step.status !== 'awaiting') return;
+  step.approval = null;
+  step.status = decision === 'deny' ? 'denied' : 'running';
+  request.agent.view.sync();
+  // Devolve o foco ao composer depois de decidir (o cartão some).
+  if (panel.contains(document.activeElement) || document.activeElement === document.body) $('#ai-input').focus({ preventScroll: true });
+  Promise.resolve(agentApi()?.approve(request.id, callId, decision)).catch(() => toast('Não foi possível enviar a decisão ao agente.', 'error'));
+}
+
+async function showStepDiff(step, diff) {
+  const { showDiff } = await import('./diff-view.js');
+  const rel = relativePath(diff.path || step.input?.path || '', State.workspaceRoot || root);
+  showDiff({
+    title: rel ? `Agente: ${rel}` : 'Agente: diff',
+    original: diff.before ?? '', modified: diff.after ?? '',
+    language: languageForPath(diff.path || ''), readOnly: true,
+  });
+}
+
+async function undoTurn(message, turn) {
+  const api = agentApi();
+  if (!api || !turn.done?.checkpointId) return;
+  let result;
+  try {
+    result = await api.undo(turn.done.checkpointId);
+  } catch (error) {
+    toast(`Não foi possível desfazer: ${error?.message || error}`, 'error');
+    turnViews.get(message)?.setLive(false);
+    return;
+  }
+  const errors = Array.isArray(result?.errors) ? result.errors : [];
+  const restored = Array.isArray(result?.restored) ? result.restored : [];
+  turn.undone = errors.length === 0 || restored.length > 0;
+  message.content = encodeAgentContent(turn, State.workspaceRoot || root);
+  decodedTurns.set(message, turn);
+  for (const p of restored) handleExternalChange(absPath(p)).catch(() => {});
+  for (const change of turn.done.changes || []) if (!restored.includes(change.path)) handleExternalChange(absPath(change.path)).catch(() => {});
+  refreshWorkspaceViews();
+  turnViews.get(message)?.setLive(false);
+  persist();
+  if (errors.length) toast(`Desfeito em parte: ${errors.length} ${errors.length === 1 ? 'arquivo falhou' : 'arquivos falharam'}.`, 'error');
+  else toast(`${restored.length || (turn.done.changes || []).length} ${restored.length === 1 ? 'arquivo restaurado' : 'arquivos restaurados'}.`, 'success');
+}
+
+function chatFallback(message) {
+  if (request) return;
+  const conversation = activeConversation();
+  if (!conversation) return;
+  const index = conversation.messages.indexOf(message);
+  const userIndex = conversation.messages.slice(0, index < 0 ? undefined : index).map((m) => m.role).lastIndexOf('user');
+  if (userIndex < 0) return;
+  const { content } = conversation.messages[userIndex];
+  conversation.messages = conversation.messages.slice(0, userIndex);
+  agentEnabled = false;
+  syncAgentBar();
+  sendToChat(content, { forceChat: true });
+}
+
+async function openFolderForAgent() {
+  const folder = await window.agzos.dialog?.openFolder?.();
+  if (!folder) return;
+  const { openWorkspace } = await import('./file-tree.js');
+  await openWorkspace(folder);
+}
+
+function syncAgentBar() {
+  if (!panel) return;
+  const bar = $('#ai-agent-bar');
+  const available = !!agentApi();
+  bar.hidden = !available;
+  const on = isAgentOn();
+  panel.classList.toggle('is-agent', on);
+  panel.querySelectorAll('.ai-seg-btn').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.agent === 'agent') === on)));
+  const mode = agentMode();
+  const info = AGENT_MODE_INFO[mode];
+  const btn = $('#ai-agent-mode');
+  btn.hidden = !on;
+  btn.dataset.mode = mode;
+  btn.querySelector('.ai-mode-icon').replaceChildren(icon(info.icon, 12));
+  btn.querySelector('.ai-mode-label').textContent = info.label;
+  btn.title = `${info.title}: ${info.desc}`;
+  btn.setAttribute('aria-label', `Autonomia do agente: ${info.title}. ${info.desc}`);
+  const input = $('#ai-input');
+  input.placeholder = on
+    ? (State.workspaceRoot ? 'Peça uma mudança, um bug para corrigir ou algo para criar…' : 'Abra uma pasta para o agente trabalhar…')
+    : 'Pergunte sobre o código ou peça uma mudança…';
+}
+
+export function setAgentMode(mode) {
+  const next = normalizeAgentMode(mode);
+  State.settings.aiAgent = { ...(State.settings.aiAgent || {}), mode: next };
+  const api = agentApi();
+  const saved = api?.setMode ? api.setMode(next) : window.agzos.settings?.save?.(State.settings);
+  Promise.resolve(saved).catch(() => toast('Não foi possível salvar o modo do agente.', 'error'));
+  syncAgentBar();
+  window.dispatchEvent(new CustomEvent('agzos:agent-mode', { detail: { mode: next } }));
+}
+
+function setAgentEnabled(on) {
+  if (request) return;
+  agentEnabled = !!on;
+  syncAgentBar();
+}
+
+function openAgentModeMenu() {
+  const current = agentMode();
+  openMenu($('#ai-agent-mode'), [
+    { heading: 'Autonomia do agente' },
+    ...AGENT_MODES.map((mode) => ({
+      label: AGENT_MODE_INFO[mode].title, detail: AGENT_MODE_INFO[mode].desc, icon: AGENT_MODE_INFO[mode].icon,
+      checked: mode === current, action: () => setAgentMode(mode),
+    })),
+  ], { placement: 'above' });
+}
+
+/** Comando da paleta: escolhe a autonomia do agente. */
+export async function pickAgentMode() {
+  const { showPicker } = await import('./command-palette.js');
+  const current = agentMode();
+  showPicker({
+    placeholder: 'Autonomia do agente',
+    items: AGENT_MODES.map((mode) => ({
+      label: AGENT_MODE_INFO[mode].title,
+      hint: mode === current ? 'atual' : AGENT_MODE_INFO[mode].label,
+      run: () => setAgentMode(mode),
+    })),
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Composer                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -735,7 +1062,7 @@ function autoGrow() {
 
 function submitComposer() {
   if (loadingHistory) return;
-  if (request) { window.agzos.ai.cancel(request.id); return; }
+  if (request) { cancelRequest(); return; }
   const input = $('#ai-input');
   if (!input.value.trim()) return;
   sendToChat(input.value);
@@ -800,6 +1127,14 @@ function bindEvents() {
   $('#ai-history-close').addEventListener('click', () => closeHistory({ restoreFocus: true }));
   $('#ai-model-pill').addEventListener('click', openModelMenu);
   $('#ai-more-btn').addEventListener('click', openMoreMenu);
+  $('#ai-agent-mode').addEventListener('click', openAgentModeMenu);
+  panel.querySelectorAll('.ai-seg-btn').forEach((b) => b.addEventListener('click', () => setAgentEnabled(b.dataset.agent === 'agent')));
+  $('.ai-seg').addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    setAgentEnabled(!isAgentOn());
+    $(`.ai-seg-btn[aria-checked="true"]`)?.focus();
+  });
 
   $('#ai-history').addEventListener('click', (event) => {
     const del = event.target.closest('.ai-history-delete');
@@ -841,7 +1176,9 @@ function bindEvents() {
   window.agzos.ai.onChunk((id, text) => { if (request?.id === id) { request.message.content += text; queueRender(); } });
   window.agzos.ai.onDone((id) => finish(id));
   window.agzos.ai.onError((id, error) => finish(id, error));
+  agentApi()?.onEvent?.((id, evt) => onAgentEvent(id, evt));
   window.addEventListener('agzos:workspace-changed', loadHistory);
+  window.addEventListener('agzos:agent-mode', syncAgentBar);
   window.addEventListener('agzos:ai-profiles-changed', refreshProfiles);
   window.addEventListener('agzos:ai-panel-settings', applyAiPanelSettings);
   window.addEventListener('agzos:ai-dock', (event) => {
@@ -860,6 +1197,7 @@ export function setupAI() {
   hookEditor();
   applyAiPanelSettings();
   updateContextChips();
+  syncAgentBar();
   observeSize();
   refreshProfiles();
   loadHistory();

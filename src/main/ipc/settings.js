@@ -13,9 +13,10 @@ function register(ipcMain, { app }) {
   // Perfis de IA também são do main (ver ipc/ai.js): o renderer guarda uma cópia
   // que pode estar velha, então perfis e perfil ativo vêm sempre do disco.
   ipcMain.handle('settings:save', (_evt, settings) => {
-    const { recentFolders, ai } = loadSettings(settingsPath);
+    const { recentFolders, ai, github } = loadSettings(settingsPath);
     const nextAi = { ...(settings?.ai || {}), profiles: ai?.profiles || [], activeProfileId: ai?.activeProfileId ?? null };
-    return saveSettings(settingsPath, { ...settings, recentFolders, ai: nextAi });
+    // Contas GitHub são do main (ver ipc/github.js): mantém o valor do disco.
+    return saveSettings(settingsPath, { ...settings, recentFolders, ai: nextAi, github });
   });
   ipcMain.handle('settings:import-vscode', (_evt, editor = 'vscode') => {
     const { importFromVSCode } = require('../lib/import-vscode');
