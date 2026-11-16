@@ -79,9 +79,9 @@ async function verifyManifestReferences(source, artifacts) {
   const manifests = artifacts.filter((name) => /^latest[^/]*\.yml$/i.test(name));
   for (const manifestName of manifests) {
     const raw = await fs.readFile(path.join(source, manifestName), 'utf-8');
-    const matches = raw.matchAll(/(?:url|path):\s*([^\s\r\n]+)/g);
+    const matches = raw.matchAll(/(?:url|path):\s*([^\r\n#]+)/g);
     for (const match of matches) {
-      const referencedFile = match[1];
+      const referencedFile = match[1].trim().replace(/^['"]|['"]$/g, '');
       if (referencedFile && !referencedFile.startsWith('http') && !artifacts.includes(referencedFile)) {
         throw new Error(
           `O manifesto ${manifestName} referencia o arquivo '${referencedFile}', mas ele não está presente no diretório de release.`
