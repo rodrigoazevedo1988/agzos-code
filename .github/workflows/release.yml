@@ -98,9 +98,12 @@ jobs:
         run: |
           ls -la dist-consolidated
           echo "Validando presença dos 3 manifestos de OTA:"
-          test -f dist-consolidated/latest.yml && echo "✓ latest.yml (Windows) presente"
-          test -f dist-consolidated/latest-linux.yml && echo "✓ latest-linux.yml (Linux) presente"
-          test -f dist-consolidated/latest-mac.yml && echo "✓ latest-mac.yml (macOS) presente"
+          test -f dist-consolidated/latest.yml || { echo "::error::latest.yml (Windows) ausente"; exit 1; }
+          echo "✓ latest.yml (Windows) presente"
+          test -f dist-consolidated/latest-linux.yml || { echo "::error::latest-linux.yml (Linux) ausente"; exit 1; }
+          echo "✓ latest-linux.yml (Linux) presente"
+          test -f dist-consolidated/latest-mac.yml || { echo "::error::latest-mac.yml (macOS) ausente"; exit 1; }
+          echo "✓ latest-mac.yml (macOS) presente"
 
       - name: Salvar pacote de release pronto para VPS
         uses: actions/upload-artifact@v4

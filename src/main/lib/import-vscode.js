@@ -7,12 +7,75 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+/**
+ * Remove comentários (// e /* *\/) e trailing commas de um texto JSONC,
+ * preservando literais de string (inclusive escapes como \" e \\).
+ */
 function stripJsonComments(str) {
-  // Remove comentários de bloco e linha, e trailing commas
-  return str
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n\r]*/g, '')
-    .replace(/,\s*([}\]])/g, '$1');
+  const src = String(str);
+  const len = src.length;
+  let out = '';
+  let i = 0;
+
+  while (i < len) {
+    const ch = src[i];
+    const next = src[i + 1];
+
+    if (ch === '"') {
+      // Copia a string literal inteira, respeitando escapes.
+      let j = i + 1;
+      while (j < len) {
+        if (src[j] === '\\') { j += 2; continue; }
+        if (src[j] === '"') { j += 1; break; }
+        j += 1;
+      }
+      out += src.slice(i, j);
+      i = j;
+      continue;
+    }
+
+    if (ch === '/' && next === '/') {
+      i += 2;
+      while (i < len && src[i] !== '\n' && src[i] !== '\r') i += 1;
+      continue;
+    }
+
+    if (ch === '/' && next === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end === -1 ? len : end + 2;
+      // Mantém separação entre tokens adjacentes.
+      out += ' ';
+      continue;
+    }
+
+    if (ch === ',') {
+      // Trailing comma: próximo caractere significativo (fora de comentários) é } ou ].
+      let j = i + 1;
+      while (j < len) {
+        if (/\s/.test(src[j])) { j += 1; continue; }
+        if (src[j] === '/' && src[j + 1] === '/') {
+          j += 2;
+          while (j < len && src[j] !== '\n' && src[j] !== '\r') j += 1;
+          continue;
+        }
+        if (src[j] === '/' && src[j + 1] === '*') {
+          const end = src.indexOf('*/', j + 2);
+          j = end === -1 ? len : end + 2;
+          continue;
+        }
+        break;
+      }
+      if (src[j] === '}' || src[j] === ']') {
+        i += 1;
+        continue;
+      }
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
 }
 
 function parseJsonc(content) {

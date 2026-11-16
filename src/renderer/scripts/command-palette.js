@@ -11,14 +11,22 @@
 import { perfLabel } from './labels.js';
 import { renderFileIcon } from './icon-theme.js';
 import { toast } from './toast.js';
+import { isQuickOpenResultCurrent, quickOpenEnterAction } from './ui-utils.js';
 
 const State = window.AgzosState;
 
+const QUICK_OPEN_TTL_MS = 30000;
+
 let cachedFiles = null;
+let cachedAt = 0;
 let lastWorkspaceRoot = null;
+let inflightScan = null; // { root, gen, promise }
+let cacheGen = 0;
+let querySeq = 0; // incrementa a cada busca/abertura; resultados antigos são descartados
 let activeIndex = 0;
 let currentResults = [];
-let currentMode = 'commands'; // 'commands' | 'files'
+let currentMode = 'commands'; // 'commands' | 'files' | 'pick'
+let pickItems = []; // itens da lista de escolha (modo 'pick')
 
 const COMMANDS = [
   // Arquivo & Workspace
@@ -26,8 +34,8 @@ const COMMANDS = [
   { id: 'file.openFile',        label: 'Arquivo: Abrir Arquivo…',                       hint: '',               run: openFileDialog },
   { id: 'file.save',            label: 'Arquivo: Salvar',                               hint: 'Ctrl+S',         run: () => import('./editor.js').then((m) => m.saveActive()) },
   { id: 'file.saveAs',          label: 'Arquivo: Salvar Como…',                         hint: 'Ctrl+Shift+S',   run: saveFileAs },
-  { id: 'file.closeTab',        label: 'Arquivo: Fechar Editor Atual',                  hint: 'Ctrl+W',         run: () => import('./tabs.js').then((m) => m.closeTab(State.activeFile)) },
-  { id: 'file.closeAllTabs',    label: 'Arquivo: Fechar Todos os Editores',             hint: 'Ctrl+K Ctrl+W',  run: () => import('./tabs.js').then((m) => m.closeAllTabs?.()) },
+  { id: 'file.closeTab',        label: 'Arquivo: Fechar Editor Atual',                  hint: 'Ctrl+W',         run: () => import('./tabs.js').then((m) => m.closeTab(State.activePath)) },
+  { id: 'file.closeAllTabs',    label: 'Arquivo: Fechar Todos os Editores',             hint: 'Ctrl+K Ctrl+W',  run: () => import('./tabs.js').then((m) => m.closeAllTabs()) },
 
   // Editor & Produtividade
   { id: 'editor.find',          label: 'Editor: Localizar no Arquivo',                  hint: 'Ctrl+F',         run: () => triggerEditorAction('actions.find') },
@@ -44,16 +52,23 @@ const COMMANDS = [
   { id: 'view.focusExplorer',   label: 'Exibir: Focar no Explorer de Arquivos',         hint: 'Ctrl+Shift+E',   run: () => switchView('explorer') },
   { id: 'view.focusSearch',     label: 'Exibir: Focar na Busca no Projeto',             hint: 'Ctrl+Shift+F',   run: () => switchView('search') },
   { id: 'view.focusGit',        label: 'Exibir: Focar no Controle de Versão (Git)',     hint: 'Ctrl+Shift+G',   run: () => switchView('git') },
-  { id: 'view.focusAI',         label: 'Exibir: Focar no Chat Agzos IA',                hint: 'Ctrl+Shift+A',   run: () => switchView('ai') },
+  { id: 'view.focusAI',         label: 'Exibir: Focar no Chat Agzos IA',                hint: 'Ctrl+Shift+A',   run: () => aiDock()?.show({ focus: true }) },
   { id: 'view.toggleTerminal',  label: 'Exibir: Alternar Terminal Integrado',           hint: 'Ctrl+`',         run: () => import('./terminal.js').then((m) => m.toggleTerminal()) },
   { id: 'view.termMoveRight',   label: 'Exibir: Mover Terminal para a Direita',         hint: '',               run: () => import('./terminal.js').then((m) => m.toggleTerminalPosition('right')) },
   { id: 'view.termMoveBottom',  label: 'Exibir: Mover Terminal para Baixo',             hint: '',               run: () => import('./terminal.js').then((m) => m.toggleTerminalPosition('bottom')) },
   { id: 'view.termMaximize',    label: 'Exibir: Maximizar / Restaurar Terminal',        hint: '',               run: () => import('./terminal.js').then((m) => m.toggleTerminalMaximize()) },
+  { id: 'terminal.new',         label: 'Terminal: Novo Terminal',                       hint: 'Ctrl+Shift+`',   run: () => import('./terminal.js').then((m) => m.createTerminal()) },
+  { id: 'terminal.newProfile',  label: 'Terminal: Novo Terminal com Perfil…',           hint: '',               run: pickTerminalProfile },
+  { id: 'terminal.split',       label: 'Terminal: Dividir Terminal',                    hint: 'Ctrl+Shift+5',   run: () => import('./terminal.js').then((m) => m.splitTerminal()) },
+  { id: 'terminal.kill',        label: 'Terminal: Matar Terminal Ativo',                hint: '',               run: () => import('./terminal.js').then((m) => m.killTerminal()) },
+  { id: 'terminal.next',        label: 'Terminal: Próximo Terminal',                    hint: 'Ctrl+PageDown',  run: () => import('./terminal.js').then((m) => m.focusNextTerminal(1)) },
+  { id: 'terminal.prev',        label: 'Terminal: Terminal Anterior',                   hint: 'Ctrl+PageUp',    run: () => import('./terminal.js').then((m) => m.focusNextTerminal(-1)) },
+  { id: 'ports.refresh',        label: 'Portas: Atualizar',                             hint: '',               run: showPorts },
   { id: 'view.termClear',       label: 'Exibir: Limpar Saída do Terminal',              hint: '',               run: () => import('./terminal.js').then((m) => m.clearTerminal()) },
 
   // Preferências
   { id: 'pref.settings',        label: 'Preferências: Abrir Configurações (UI)',        hint: 'Ctrl+,',         run: () => import('./settings-modal.js').then((m) => m.openSettingsModal()) },
-  { id: 'pref.settingsJson',    label: 'Preferências: Abrir Configurações (JSON)',      hint: '',               run: () => import('./settings-modal.js').then((m) => { m.openSettingsModal(); const b = document.getElementById('btn-toggle-settings-json'); if (b) b.click(); }) },
+  { id: 'pref.settingsJson',    label: 'Preferências: Abrir Configurações (JSON)',      hint: '',               run: () => import('./settings-modal.js').then((m) => m.openSettingsModal('commonlyUsed', { json: true })) },
   { id: 'pref.importVSCode',    label: 'Preferências: Importar do VS Code / Cursor',    hint: '',               run: importVSCodeDialog },
   { id: 'pref.shortcuts',       label: 'Preferências: Atalhos de Teclado',              hint: 'Ctrl+K Ctrl+S',  run: showShortcutsModal },
 
@@ -74,10 +89,14 @@ const COMMANDS = [
   { id: 'ai.refactor',          label: 'Agzos IA: Refatorar Código Selecionado',        hint: '',               run: () => triggerAIAction('refactor') },
   { id: 'ai.document',          label: 'Agzos IA: Gerar Documentação',                  hint: '',               run: () => triggerAIAction('document') },
   { id: 'ai.tests',             label: 'Agzos IA: Gerar Testes Unitários',              hint: '',               run: () => triggerAIAction('tests') },
+  { id: 'ai.togglePanel',       label: 'Agzos IA: Alternar Painel',                     hint: 'Ctrl+L',         run: () => aiDock()?.toggle({ focus: true }) },
+  { id: 'ai.moveLeft',          label: 'Agzos IA: Mover para Esquerda',                 hint: '',               run: () => moveAiDock('left') },
+  { id: 'ai.moveRight',         label: 'Agzos IA: Mover para Direita',                  hint: '',               run: () => moveAiDock('right') },
+  { id: 'ai.moveBottom',        label: 'Agzos IA: Mover para Embaixo',                  hint: '',               run: () => moveAiDock('bottom') },
   { id: 'ai.configure',         label: 'Agzos IA: Configurar Provedor (Wizard)',        hint: '',               run: () => import('./ai-wizard.js').then((m) => m.openAIWizard({ profileId: State.settings?.ai?.activeProfileId })) },
 
   // Ajuda & Atualizações
-  { id: 'help.checkUpdates',    label: 'Ajuda: Verificar Atualizações Agora (OTA)',     hint: '',               run: () => window.agzos.updater.check() },
+  { id: 'help.checkUpdates',    label: 'Ajuda: Verificar Atualizações Agora (OTA)',     hint: '',               run: () => window.agzos.update.check() },
   { id: 'help.about',           label: 'Ajuda: Sobre o Agzos Code',                     hint: '',               run: showAbout },
 ];
 
@@ -90,12 +109,20 @@ export async function showQuickOpen() {
   overlay.hidden = false;
   input.placeholder = 'Buscar arquivos por nome (digite > para comandos)…';
   input.value = '';
-
-  await ensureWorkspaceFilesLoaded();
-  currentResults = cachedFiles ? [...cachedFiles.slice(0, 50)] : [];
+  const seq = ++querySeq;
+  // Limpa a lista na hora (sem resultados de uma abertura anterior)
+  currentResults = [];
   activeIndex = 0;
   renderList();
   setTimeout(() => input.focus(), 20);
+
+  const files = await ensureWorkspaceFilesLoaded();
+  if (!isQuickOpenResultCurrent({
+    seq, currentSeq: querySeq, mode: currentMode, value: '', currentValue: input.value, visible: !overlay.hidden,
+  })) return;
+  currentResults = files.slice(0, 50);
+  activeIndex = 0;
+  renderList();
 }
 
 export function showCommandPalette() {
@@ -104,6 +131,7 @@ export function showCommandPalette() {
   if (!overlay || !input) return;
 
   currentMode = 'commands';
+  querySeq++;
   overlay.hidden = false;
   input.placeholder = 'Digite um comando…';
   input.value = '> ';
@@ -114,6 +142,46 @@ export function showCommandPalette() {
     input.focus();
     input.setSelectionRange(2, 2);
   }, 20);
+}
+
+/**
+ * Lista de escolha na paleta (ex.: perfis de terminal).
+ * items: [{ label, hint?, run }]
+ */
+export function showPicker({ placeholder = 'Escolha…', items = [] } = {}) {
+  const overlay = document.getElementById('cmd-overlay');
+  const input = document.getElementById('cmd-input');
+  if (!overlay || !input) return;
+  currentMode = 'pick';
+  querySeq++;
+  pickItems = items.slice();
+  overlay.hidden = false;
+  input.placeholder = placeholder;
+  input.value = '';
+  currentResults = [...pickItems];
+  activeIndex = 0;
+  renderList();
+  setTimeout(() => input.focus(), 20);
+}
+
+async function pickTerminalProfile() {
+  const m = await import('./terminal.js');
+  const { profiles, defaultId, fallback } = await m.getTerminalProfiles();
+  showPicker({
+    placeholder: 'Escolha o perfil do novo terminal',
+    items: profiles.map((p) => ({
+      label: p.label,
+      hint: p.id === defaultId && !fallback ? 'padrão' : (p.shell || ''),
+      run: () => m.createTerminal({ profileId: p.id }),
+    })),
+  });
+}
+
+async function showPorts() {
+  const m = await import('./terminal.js');
+  m.selectBottomTab('ports', { focus: false });
+  m.setBottomPanelVisible(true);
+  m.refreshPorts();
 }
 
 export function hideCommandPalette() {
@@ -128,8 +196,16 @@ export function setupCommandPalette() {
 
   input.addEventListener('input', async () => {
     const val = input.value;
+    const seq = ++querySeq;
 
-    if (val.startsWith('>')) {
+    if (currentMode === 'pick' && !val.startsWith('>')) {
+      const q = val.trim().toLowerCase();
+      currentResults = pickItems
+        .map((c) => ({ c, score: fuzzyScore(c.label, q) }))
+        .filter((r) => r.score >= 0)
+        .sort((a, b) => b.score - a.score)
+        .map((r) => r.c);
+    } else if (val.startsWith('>')) {
       // Modo comandos
       currentMode = 'commands';
       input.placeholder = 'Digite um comando…';
@@ -143,13 +219,17 @@ export function setupCommandPalette() {
       // Modo arquivos (Quick Open)
       currentMode = 'files';
       input.placeholder = 'Buscar arquivos por nome (digite > para comandos)…';
-      await ensureWorkspaceFilesLoaded();
+      const files = await ensureWorkspaceFilesLoaded();
+      // Outra tecla/modo chegou enquanto varria o disco: descarta este resultado
+      if (!isQuickOpenResultCurrent({
+        seq, currentSeq: querySeq, mode: currentMode, value: val, currentValue: input.value, visible: !overlay.hidden,
+      })) return;
 
       const q = val.trim().toLowerCase();
       if (!q) {
-        currentResults = (cachedFiles || []).slice(0, 50);
+        currentResults = files.slice(0, 50);
       } else {
-        currentResults = (cachedFiles || [])
+        currentResults = files
           .map((file) => ({
             file,
             score: Math.max(fuzzyScore(file.name, q) * 1.5, fuzzyScore(file.relativePath, q)),
@@ -177,15 +257,13 @@ export function setupCommandPalette() {
       renderList();
       e.preventDefault();
     } else if (e.key === 'Enter') {
+      e.preventDefault();
       const item = currentResults[activeIndex];
-      if (item) {
-        hideCommandPalette();
-        if (currentMode === 'commands') {
-          item.run();
-        } else {
-          import('./editor.js').then((m) => m.openFile(item.path));
-        }
-      }
+      const action = quickOpenEnterAction(currentMode === 'pick' ? 'commands' : currentMode, item);
+      if (!action) return;
+      hideCommandPalette();
+      if (action === 'run') item.run();
+      else import('./editor.js').then((m) => m.openFile(item.path));
     }
   });
 
@@ -194,28 +272,56 @@ export function setupCommandPalette() {
   });
 }
 
-async function ensureWorkspaceFilesLoaded() {
-  if (State.workspaceRoot !== lastWorkspaceRoot || !cachedFiles) {
-    lastWorkspaceRoot = State.workspaceRoot;
-    if (State.workspaceRoot && window.agzos.fs?.findFiles) {
-      try {
-        cachedFiles = await window.agzos.fs.findFiles(State.workspaceRoot, 1500);
-      } catch (err) {
-        console.error('Falha ao varrer arquivos para Quick Open:', err);
-        cachedFiles = [];
-      }
-    } else {
-      cachedFiles = (State.openFiles || []).map((p) => ({
-        name: p.split(/[\\/]/).pop(),
-        path: p,
-        relativePath: p,
-      }));
+function openFilesAsEntries() {
+  return [...State.files.keys()].map((p) => ({
+    name: p.split(/[\\/]/).pop(),
+    path: p,
+    relativePath: p,
+  }));
+}
+
+/**
+ * Lista de arquivos do workspace para o Quick Open. Cache por raiz com TTL de
+ * 30s; varreduras simultâneas compartilham a mesma promise (sem corrida).
+ */
+function ensureWorkspaceFilesLoaded() {
+  const root = State.workspaceRoot;
+  if (!root || !window.agzos.fs?.findFiles) return Promise.resolve(openFilesAsEntries());
+
+  const fresh = cachedFiles && root === lastWorkspaceRoot && Date.now() - cachedAt < QUICK_OPEN_TTL_MS;
+  if (fresh) return Promise.resolve(cachedFiles);
+  if (inflightScan && inflightScan.root === root && inflightScan.gen === cacheGen) return inflightScan.promise;
+
+  const gen = cacheGen;
+  const promise = (async () => {
+    let files;
+    try {
+      files = await window.agzos.fs.findFiles(root, 1500);
+    } catch (err) {
+      console.error('Falha ao varrer arquivos para Quick Open:', err);
+      files = [];
     }
-  }
+    if (!Array.isArray(files)) files = [];
+    // Só grava no cache se ninguém invalidou nem trocou de raiz durante a varredura
+    if (gen === cacheGen && State.workspaceRoot === root) {
+      cachedFiles = files;
+      cachedAt = Date.now();
+      lastWorkspaceRoot = root;
+    }
+    return files;
+  })();
+  inflightScan = { root, gen, promise };
+  promise.finally(() => {
+    if (inflightScan?.promise === promise) inflightScan = null;
+  });
+  return promise;
 }
 
 export function invalidateQuickOpenCache() {
   cachedFiles = null;
+  cachedAt = 0;
+  cacheGen++;
+  inflightScan = null;
 }
 
 function renderList() {
@@ -238,7 +344,7 @@ function renderList() {
     const li = document.createElement('li');
     if (idx === activeIndex) li.classList.add('active');
 
-    if (currentMode === 'commands') {
+    if (currentMode === 'commands' || currentMode === 'pick') {
       const label = document.createElement('span');
       label.textContent = item.label;
       const hint = document.createElement('span');
@@ -336,13 +442,14 @@ async function openFileDialog() {
 }
 
 async function saveFileAs() {
-  const defaultPath = State.activeFile || 'sem-titulo.txt';
+  const defaultPath = State.activePath || 'sem-titulo.txt';
   const targetPath = await window.agzos.dialog.saveFile(defaultPath);
   if (targetPath) {
     const editorMod = await import('./editor.js');
     const editor = editorMod.getActiveEditor();
     if (editor) {
       await window.agzos.fs.writeFile(targetPath, editor.getValue());
+      invalidateQuickOpenCache();
       await editorMod.openFile(targetPath);
       toast('Arquivo salvo com sucesso.', 'success', 1500);
     }
@@ -378,6 +485,16 @@ async function zoomFont(delta) {
   const editorMod = await import('./editor.js');
   editorMod.applyFontSize(next);
   toast(`Tamanho da fonte: ${next}px`, 'info', 1000);
+}
+
+// Dock do Agzos IA (ai-dock.js expõe window.AgzosAiDock no boot)
+const aiDock = () => window.AgzosAiDock || null;
+
+function moveAiDock(position) {
+  const dock = aiDock();
+  if (!dock) return;
+  dock.setPosition(position, { show: true });
+  dock.focusInput();
 }
 
 function switchView(view) {
@@ -423,15 +540,26 @@ async function setIconTheme(theme) {
 }
 
 async function importVSCodeDialog() {
-  const res = await window.agzos.settings.importVSCode();
-  if (res?.success) {
-    toast(`Importadas ${res.count} configurações do ${res.source}.`, 'success');
-  } else {
-    toast(`Nenhum arquivo de configuração encontrado: ${res?.error || ''}`, 'info');
+  try {
+    // IPC devolve { ok, imported: string[], path } ou { ok: false, reason, error?, path }
+    const res = await window.agzos.settings.importVSCode();
+    if (!res?.ok) {
+      const why = res?.reason === 'parse_error' ? `erro ao ler ${res.path}: ${res.error || ''}` : 'settings.json do VS Code não encontrado';
+      toast(`Importação não realizada: ${why}`, 'info', 4000);
+      return;
+    }
+    // O main gravou no disco: recarrega para o próximo save não sobrescrever a importação
+    Object.assign(State.settings, await window.agzos.settings.load());
+    const mod = await import('./settings-modal.js');
+    await mod.applySettingsLive();
+    const n = res.imported?.length || 0;
+    toast(n ? `Importadas ${n} configurações: ${res.imported.join(', ')}` : 'Nenhuma configuração compatível encontrada no VS Code.', n ? 'success' : 'info', 3500);
+  } catch (e) {
+    toast(`Erro na importação: ${e.message}`, 'error');
   }
 }
 
-function showShortcutsModal() {
+export function showShortcutsModal() {
   const shortcuts = [
     { key: 'Ctrl + P', desc: 'Quick Open: Busca rápida de arquivos' },
     { key: 'Ctrl + Shift + P', desc: 'Command Palette: Todos os comandos e atalhos' },
@@ -443,7 +571,12 @@ function showShortcutsModal() {
     { key: 'Alt + Z', desc: 'Editor: Alternar quebra de linha (Word Wrap)' },
     { key: 'Ctrl + S', desc: 'Arquivo: Salvar alterações' },
     { key: 'Ctrl + W', desc: 'Arquivo: Fechar editor/aba ativa' },
-    { key: 'Ctrl + `', desc: 'Exibir: Alternar Terminal Integrado' },
+    { key: 'Ctrl + K  Ctrl + W', desc: 'Arquivo: Fechar todos os editores' },
+    { key: 'Ctrl + K  Ctrl + S', desc: 'Preferências: Atalhos de Teclado' },
+    { key: "Ctrl + ` / Ctrl + '", desc: 'Exibir: Alternar Terminal Integrado' },
+    { key: 'Ctrl + Shift + `', desc: 'Terminal: Novo terminal' },
+    { key: 'Ctrl + Shift + 5', desc: 'Terminal: Dividir terminal' },
+    { key: 'Ctrl + PageUp / PageDown', desc: 'Terminal: Terminal anterior / próximo (foco no terminal)' },
     { key: 'Ctrl + B', desc: 'Exibir: Alternar Barra Lateral' },
     { key: 'Ctrl + Shift + E', desc: 'Exibir: Focar no Explorer de Arquivos' },
     { key: 'Ctrl + Shift + F', desc: 'Exibir: Focar na Busca no Projeto' },

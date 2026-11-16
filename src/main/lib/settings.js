@@ -17,6 +17,16 @@ const DEFAULT_SETTINGS = {
   onboardingSkipped: false,
   onboardingAnswers: null,
   ai: { activeProfileId: null, profiles: [], context: { file: true, selection: true, terminal: false } },
+  aiPanel: {
+    position: 'right', // left | right | bottom
+    width: 380,
+    visible: true,
+    fontSize: 13, // 11–18
+    density: 'comfortable', // compact | comfortable
+    showAvatars: true,
+    sendKey: 'enter', // enter | ctrlEnter
+    defaultContext: { file: true, selection: true, terminal: false },
+  },
   github: { accounts: [], repoAccounts: {} },
   editor: {
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
@@ -71,6 +81,36 @@ function deepMerge(target, source) {
   return output;
 }
 
+const AI_PANEL_WIDTH = { min: 240, max: 1600 };
+
+/** Valores inválidos de `aiPanel` voltam ao padrão (campo a campo). */
+function normalizeAiPanel(value, legacyContext) {
+  const def = DEFAULT_SETTINGS.aiPanel;
+  const v = isPlainObject(value) ? value : {};
+  const pick = (val, allowed, fallback) => (allowed.includes(val) ? val : fallback);
+  const int = (val, min, max, fallback) => {
+    const n = typeof val === 'number' ? val : Number.NaN;
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
+  };
+  const ctxSource = isPlainObject(v.defaultContext) ? v.defaultContext
+    : (isPlainObject(legacyContext) ? legacyContext : def.defaultContext);
+  const defaultContext = {};
+  for (const key of ['file', 'selection', 'terminal']) {
+    defaultContext[key] = typeof ctxSource[key] === 'boolean' ? ctxSource[key] : def.defaultContext[key];
+  }
+  return {
+    ...v,
+    position: pick(v.position, ['left', 'right', 'bottom'], def.position),
+    width: int(v.width, AI_PANEL_WIDTH.min, AI_PANEL_WIDTH.max, def.width),
+    visible: typeof v.visible === 'boolean' ? v.visible : def.visible,
+    fontSize: int(v.fontSize, 11, 18, def.fontSize),
+    density: pick(v.density, ['compact', 'comfortable'], def.density),
+    showAvatars: typeof v.showAvatars === 'boolean' ? v.showAvatars : def.showAvatars,
+    sendKey: pick(v.sendKey, ['enter', 'ctrlEnter'], def.sendKey),
+    defaultContext,
+  };
+}
+
 /**
  * Lê as settings. Arquivo ausente → defaults. JSON inválido → move o arquivo
  * para `settings.json.corrupt-<timestamp>` e retorna defaults.
@@ -98,7 +138,10 @@ function loadSettings(filePath) {
   }
 
   if (!isPlainObject(parsed)) return defaults();
-  return deepMerge(defaults(), parsed);
+  const merged = deepMerge(defaults(), parsed);
+  // Contexto padrão herda a escolha antiga (ai.context) de quem já usava o chat.
+  merged.aiPanel = normalizeAiPanel(parsed.aiPanel, parsed.ai?.context);
+  return merged;
 }
 
 /**
@@ -155,4 +198,4 @@ function migrateLegacySecrets(settings, store) {
   return { settings: out, changed };
 }
 
-module.exports = { DEFAULT_SETTINGS, loadSettings, saveSettings, migrateLegacySecrets };
+module.exports = { DEFAULT_SETTINGS, normalizeAiPanel, loadSettings, saveSettings, migrateLegacySecrets };

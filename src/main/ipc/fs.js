@@ -72,9 +72,11 @@ function register(ipcMain, { guard }) {
     return true;
   });
 
-  ipcMain.handle('fs:findFiles', async (_evt, dirPath, maxResults = 1000) => {
+  ipcMain.handle('fs:findFiles', async (_evt, dirPath, maxResultsArg = 1000) => {
     if (!dirPath) return [];
-    guard.assertAllowed(dirPath);
+    // Varre o caminho real validado pelo guard (não o dirPath cru do renderer).
+    const rootDir = guard.assertAllowed(dirPath);
+    const maxResults = Math.min(Math.max(Number(maxResultsArg) || 1000, 1), 5000);
 
     const results = [];
     const ignoredDirs = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', '.cache', 'coverage', '.vscode', '.idea']);
@@ -109,7 +111,7 @@ function register(ipcMain, { guard }) {
       }
     }
 
-    await scan(dirPath);
+    await scan(rootDir || dirPath);
     return results;
   });
 

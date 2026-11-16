@@ -10,9 +10,12 @@ function register(ipcMain, { app }) {
 
   ipcMain.handle('settings:load', () => loadSettings(settingsPath));
   // recentFolders é do main (ver ipc/workspace.js): mantém o valor do disco.
+  // Perfis de IA também são do main (ver ipc/ai.js): o renderer guarda uma cópia
+  // que pode estar velha, então perfis e perfil ativo vêm sempre do disco.
   ipcMain.handle('settings:save', (_evt, settings) => {
-    const { recentFolders } = loadSettings(settingsPath);
-    return saveSettings(settingsPath, { ...settings, recentFolders });
+    const { recentFolders, ai } = loadSettings(settingsPath);
+    const nextAi = { ...(settings?.ai || {}), profiles: ai?.profiles || [], activeProfileId: ai?.activeProfileId ?? null };
+    return saveSettings(settingsPath, { ...settings, recentFolders, ai: nextAi });
   });
   ipcMain.handle('settings:import-vscode', (_evt, editor = 'vscode') => {
     const { importFromVSCode } = require('../lib/import-vscode');

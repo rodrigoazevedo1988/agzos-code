@@ -161,3 +161,79 @@ test('macOS usa macOtaManager para check e download quando configurado', async (
 });
 
 
+
+function makeFakeMacOta(notifications) {
+  return {
+    checkCalls: 0,
+    downloadCalls: 0,
+    check() {
+      this.checkCalls++;
+      return Promise.resolve({ available: true, version: '0.4.0' });
+    },
+    download(res) {
+      this.downloadCalls++;
+      notifications.push({ type: 'ready', version: res.version });
+      return Promise.resolve(true);
+    },
+    install() { return true; },
+  };
+}
+
+test('macOS: check em segundo plano não envia toast "available", apenas "ready"', async () => {
+  const notifications = [];
+  const fakeMacOta = makeFakeMacOta(notifications);
+  const updater = createUpdater({
+    app: { isPackaged: true, getVersion: () => '0.3.0' },
+    platform: 'darwin',
+    macOtaManager: fakeMacOta,
+    notify: (n) => notifications.push(n),
+    getSettings: () => ({}),
+  });
+  assert.equal(await updater.checkForUpdates({ manual: false }), true);
+  assert.equal(fakeMacOta.downloadCalls, 1);
+  assert.ok(!notifications.some((n) => n.type === 'available'));
+  assert.ok(notifications.some((n) => n.type === 'ready'));
+});
+
+test('macOS: update.autoDownload=false não baixa e informa download manual', async () => {
+  const notifications = [];
+  const fakeMacOta = makeFakeMacOta(notifications);
+  const updater = createUpdater({
+    app: { isPackaged: true, getVersion: () => '0.3.0' },
+    platform: 'darwin',
+    macOtaManager: fakeMacOta,
+    notify: (n) => notifications.push(n),
+    getSettings: () => ({ update: { autoDownload: false } }),
+  });
+  assert.equal(await updater.checkForUpdates({ manual: false }), true);
+  assert.equal(fakeMacOta.downloadCalls, 0);
+  assert.equal(notifications.at(-1).type, 'manual-download');
+  assert.equal(notifications.at(-1).version, '0.4.0');
+});
+
+test('Win/Linux: update.autoDownload=false desliga autoDownload e avisa download manual', async () => {
+  const events = new EventEmitter();
+  const autoUpdater = Object.assign(events, {
+    autoDownload: null,
+    setFeedURL() {},
+    checkForUpdates() { return Promise.resolve({}); },
+  });
+  const notifications = [];
+  let prefs = { update: { autoDownload: false } };
+  const updater = createUpdater({
+    app: { isPackaged: true },
+    autoUpdater,
+    platform: 'linux',
+    notify: (n) => notifications.push(n),
+    getSettings: () => prefs,
+  });
+  updater.start({ checkOnStart: false });
+  assert.equal(autoUpdater.autoDownload, false);
+  autoUpdater.emit('update-available', { version: '1.2.0' });
+  assert.equal(notifications.at(-1).type, 'manual-download');
+
+  // Mudança de preferência é relida a cada verificação.
+  prefs = { update: { autoDownload: true } };
+  await updater.checkForUpdates({ manual: false });
+  assert.equal(autoUpdater.autoDownload, true);
+});

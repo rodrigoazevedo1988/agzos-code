@@ -6,20 +6,26 @@
 
 import { toast } from './toast.js';
 import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings } from './editor.js';
-import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette } from './command-palette.js';
-import { setupAI, focusChat, sendToChat } from './ai-chat.js';
+import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette, showShortcutsModal, invalidateQuickOpenCache } from './command-palette.js';
+import { setupAI, sendToChat } from './ai-chat.js';
 import { captureAITarget, setAITarget } from './ai-apply.js';
 import { setupSearch } from './search.js';
-import { initTerminal, toggleTerminal } from './terminal.js';
+import {
+  initTerminal, setupTerminalPanel, toggleTerminal, selectBottomTab, setBottomPanelVisible, getActiveBottomTab,
+  createTerminal, splitTerminal, focusNextTerminal,
+} from './terminal.js';
+import { setupAiDock } from './ai-dock.js';
 import { openWorkspace } from './file-tree.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
 import { startOnboarding, exitOnboarding } from './onboarding.js';
 import { setupSettingsModal, openSettingsModal, updateOTAProgress } from './settings-modal.js';
-import { closeTab } from './editor.js';
+import { closeTab, closeAllTabs } from './editor.js';
+import { createChord, matchShortcut, isEditableTarget, isMonacoTarget, shouldHandleInTarget } from './keymap.js';
 
 const State = window.AgzosState;
+let aiDock = null; // API do dock (ai-dock.js), definida no boot
 
 /* --------------------------------------------------------------------------
    Boot
@@ -59,8 +65,14 @@ async function boot() {
   // 7) Setup command palette
   setupCommandPalette();
 
-  // 8) Setup panels
-  setupAI();
+  // 8) Setup panels — o dock posiciona o #ai-panel antes de o chat renderizar nele
+  aiDock = setupAiDock({ switchSidebarView, selectBottomTab, setBottomPanelVisible, getActiveBottomTab });
+  try {
+    setupAI();
+  } catch (e) {
+    // Falha do chat não pode derrubar o boot (editor, terminal, atalhos).
+    console.error('[Agzos IA] setupAI falhou:', e);
+  }
   setupSearch();
 
   // 9) Welcome do editor (estado vazio)
@@ -88,25 +100,23 @@ async function boot() {
   document.getElementById('btn-open-folder-2').addEventListener('click', openFolderDialog);
   document.getElementById('btn-new-file').addEventListener('click', newFileInRoot);
   document.getElementById('btn-new-folder').addEventListener('click', newFolderInRoot);
-  document.getElementById('btn-close-bottom').addEventListener('click', () => {
-    document.getElementById('bottom-panel').hidden = true;
-    State.bottomHidden = true;
-  });
+  // Toolbar do painel (fechar, mover, maximizar, abas) e splitter: terminal.js
+  setupTerminalPanel();
 
   // 13) Activity bar
   document.querySelectorAll('.activity-btn').forEach((btn) => {
-    btn.addEventListener('click', () => switchSidebarView(btn.dataset.view));
-  });
-
-  // 14) Bottom tabs
-  document.querySelectorAll('.bottom-tab').forEach((t) => {
-    t.addEventListener('click', () => {
-      document.querySelectorAll('.bottom-tab').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.bottom-pane').forEach((p) => p.classList.remove('active'));
-      t.classList.add('active');
-      document.getElementById(`pane-${t.dataset.tab}`).classList.add('active');
+    btn.addEventListener('click', () => {
+      // Botão da IA: na sidebar abre a view; acoplada à direita/embaixo alterna o dock.
+      if (btn.dataset.view === 'ai') {
+        if (aiDock.getPosition() === 'left') aiDock.show({ focus: true });
+        else aiDock.toggle({ focus: true });
+        return;
+      }
+      switchSidebarView(btn.dataset.view);
     });
   });
+
+  // 14) Bottom tabs: ligadas em setupTerminalPanel() (terminal.js)
 
   // 15) Settings inputs
   bindSettingsInputs();
@@ -200,8 +210,6 @@ function hydrateLucideIcons() {
     'btn-new-file': 'file-plus',
     'btn-new-folder': 'folder-plus',
     'btn-open-folder': 'folder-open',
-    'btn-clear-terminal': 'trash-2',
-    'btn-restart-terminal': 'rotate-ccw',
     'btn-pos-terminal': 'panel-right',
     'btn-maximize-bottom': 'maximize-2',
     'btn-close-bottom': 'x',
@@ -273,117 +281,206 @@ function updateStatusAI() {
 /* --------------------------------------------------------------------------
    Atalhos
    -------------------------------------------------------------------------- */
+const isMacPlatform = () => /mac/i.test(navigator.platform || '') || State.platform === 'darwin';
+const shortcutChord = createChord();
+
+function saveSettingsAndApplyEditor() {
+  window.agzos.settings.save(State.settings);
+  applyEditorSettings(State.settings);
+}
+
+function runEditorAction(e, actionId, { focus = true } = {}) {
+  const editor = getActiveEditor();
+  if (!editor) return;
+  e.preventDefault();
+  if (focus) editor.focus();
+  editor.getAction(actionId)?.run();
+}
+
+function setFontSize(next, message) {
+  State.settings.fontSize = next;
+  saveSettingsAndApplyEditor();
+  toast(message, 'info', 800);
+}
+
+function runChordAction(action) {
+  if (action === 'shortcuts.show') showShortcutsModal();
+  else if (action === 'tabs.closeAll') closeAllTabs();
+}
+
 function bindShortcuts() {
   document.addEventListener('keydown', (e) => {
-    const ctrl = e.ctrlKey || e.metaKey;
     if (State.onboardingActive || State.welcomeOpen) {
-      // Bloqueia atalhos durante onboarding/welcome
-      if (e.key === 'Escape') {
-        // permite ESC pra fechar welcome
-        if (State.welcomeOpen && e.key === 'Escape') {
-          // não fecha, mas absorve
-          e.preventDefault();
-        }
-      }
+      // Bloqueia atalhos durante onboarding/welcome; ESC no welcome é absorvido
+      if (State.welcomeOpen && e.key === 'Escape') e.preventDefault();
       return;
     }
-    if (ctrl && e.shiftKey && e.key.toLowerCase() === 'a') {
-      e.preventDefault(); e.stopPropagation(); focusChat();
-    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'l') {
-      e.preventDefault(); e.stopPropagation();
-      const editor = getActiveEditor();
-      const selection = editor?.getSelection();
-      const text = selection && editor.getModel()?.getValueInRange(selection);
-      if (text) { setAITarget(captureAITarget()); sendToChat(text, { includeSelection: true }); }
-      focusChat();
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
-      e.preventDefault();
-      showCommandPalette();
-    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'p') {
-      e.preventDefault();
-      showQuickOpen();
-    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'w') {
-      e.preventDefault();
-      if (State.activeFile) closeTab(State.activeFile);
-    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'f') {
-      const editor = getActiveEditor();
-      if (editor) {
-        e.preventDefault();
-        editor.focus();
-        editor.getAction('actions.find')?.run();
+
+    // Terminal (xterm) e campos de texto fora do Monaco recebem as teclas;
+    // só atalhos globais (GLOBAL_IN_EDITABLE) passam.
+    const inEditable = isEditableTarget(e.target);
+    const inMonaco = isMonacoTarget(e.target);
+
+    // Chords Ctrl+K …: no Monaco, o próprio editor resolve (addCommand em
+    // editor.js) para não conflitar com os chords nativos dele (Ctrl+K Ctrl+C…).
+    if (!inEditable) {
+      const chord = shortcutChord.feed(e);
+      if (chord.handled) {
+        if (chord.action === 'chord.start') {
+          if (!inMonaco) e.preventDefault();
+        } else if (chord.action && !inMonaco) {
+          e.preventDefault();
+          e.stopPropagation();
+          runChordAction(chord.action);
+        }
+        return;
       }
-    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'h') {
-      const editor = getActiveEditor();
-      if (editor) {
-        e.preventDefault();
-        editor.focus();
-        editor.getAction('editor.action.startFindReplaceAction')?.run();
+    }
+
+    const action = matchShortcut(e, { isMac: isMacPlatform() });
+    if (!action) {
+      if (e.key === 'Escape') hideCommandPalette();
+      return;
+    }
+    // Ctrl+L / Ctrl+Shift+A valem também em inputs (inclusive na caixa do chat,
+    // para fechar), mas nunca no xterm: lá Ctrl+L é o "clear" do shell.
+    const aiAction = action === 'ai.sendSelection' || action === 'ai.focus';
+    if (aiAction) {
+      if (e.target?.closest?.('.xterm')) return;
+    } else if (!shouldHandleInTarget(action, inEditable)) return;
+    // Ctrl+PageUp/PageDown só trocam de terminal com foco no painel do terminal
+    // (no editor/inputs seguem o comportamento nativo).
+    if ((action === 'terminal.prev' || action === 'terminal.next') && !e.target?.closest?.('#pane-terminal')) return;
+
+    switch (action) {
+      case 'ai.focus':
+        e.preventDefault(); e.stopPropagation();
+        aiDock.show({ focus: true });
+        break;
+      case 'ai.sendSelection': {
+        // Ctrl+L (padrão VS Code/Cursor, sobrepõe o "expandir seleção de linha" do Monaco):
+        // com seleção no editor → envia ao chat; senão alterna o painel / foca a caixa.
+        e.preventDefault(); e.stopPropagation();
+        const editor = inMonaco ? getActiveEditor() : null;
+        const selection = editor?.getSelection();
+        const text = selection && !selection.isEmpty() ? editor.getModel()?.getValueInRange(selection) : '';
+        if (text) {
+          setAITarget(captureAITarget());
+          aiDock.show();
+          sendToChat(text, { includeSelection: true });
+          aiDock.focusInput();
+        } else {
+          toggleAiPanel(e.target);
+        }
+        break;
       }
-    } else if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'g') {
-      const editor = getActiveEditor();
-      if (editor) {
+      case 'palette.commands':
         e.preventDefault();
-        editor.focus();
-        editor.getAction('editor.action.gotoLine')?.run();
-      }
-    } else if (e.altKey && !ctrl && e.key.toLowerCase() === 'z') {
-      e.preventDefault();
-      const curr = State.settings?.editor?.wordWrap || 'off';
-      const next = curr === 'on' ? 'off' : 'on';
-      State.settings.editor = State.settings.editor || {};
-      State.settings.editor.wordWrap = next;
-      window.agzos.settings.save(State.settings);
-      applyEditorSettings(State.settings);
-      toast(`Quebra de linha: ${next.toUpperCase()}`, 'info', 1000);
-    } else if (e.shiftKey && e.altKey && e.key.toLowerCase() === 'f') {
-      const editor = getActiveEditor();
-      if (editor) {
+        showCommandPalette();
+        break;
+      case 'palette.quickOpen':
         e.preventDefault();
-        editor.getAction('editor.action.formatDocument')?.run();
+        showQuickOpen();
+        break;
+      case 'tab.close':
+        e.preventDefault();
+        if (State.activePath) closeTab(State.activePath);
+        break;
+      case 'editor.find':
+        runEditorAction(e, 'actions.find');
+        break;
+      case 'editor.replace':
+        runEditorAction(e, 'editor.action.startFindReplaceAction');
+        break;
+      case 'editor.gotoLine':
+        runEditorAction(e, 'editor.action.gotoLine');
+        break;
+      case 'editor.format':
+        runEditorAction(e, 'editor.action.formatDocument', { focus: false });
+        break;
+      case 'editor.toggleWordWrap': {
+        e.preventDefault();
+        const curr = State.settings?.editor?.wordWrap || 'off';
+        const next = curr === 'on' ? 'off' : 'on';
+        State.settings.editor = State.settings.editor || {};
+        State.settings.editor.wordWrap = next;
+        saveSettingsAndApplyEditor();
+        toast(`Quebra de linha: ${next.toUpperCase()}`, 'info', 1000);
+        break;
       }
-    } else if (ctrl && (e.key === '=' || e.key === '+')) {
-      e.preventDefault();
-      const next = Math.min(32, (State.settings.fontSize || 14) + 1);
-      State.settings.fontSize = next;
-      window.agzos.settings.save(State.settings);
-      applyEditorSettings(State.settings);
-      toast(`Fonte: ${next}px`, 'info', 800);
-    } else if (ctrl && e.key === '-') {
-      e.preventDefault();
-      const next = Math.max(8, (State.settings.fontSize || 14) - 1);
-      State.settings.fontSize = next;
-      window.agzos.settings.save(State.settings);
-      applyEditorSettings(State.settings);
-      toast(`Fonte: ${next}px`, 'info', 800);
-    } else if (ctrl && e.key === '0') {
-      e.preventDefault();
-      State.settings.fontSize = 14;
-      window.agzos.settings.save(State.settings);
-      applyEditorSettings(State.settings);
-      toast('Fonte resetada: 14px', 'info', 800);
-    } else if (ctrl && e.key === '`') {
-      e.preventDefault();
-      toggleTerminal();
-    } else if (ctrl && e.key.toLowerCase() === 'b') {
-      e.preventDefault();
-      document.body.classList.toggle('sidebar-hidden');
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'e') {
-      e.preventDefault();
-      switchSidebarView('explorer');
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
-      e.preventDefault();
-      switchSidebarView('search');
-      setTimeout(() => document.getElementById('search-text')?.focus(), 50);
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'g') {
-      e.preventDefault();
-      switchSidebarView('git');
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'x') {
-      e.preventDefault();
-      switchSidebarView('extensions');
-    } else if (e.key === 'Escape') {
-      hideCommandPalette();
+      case 'zoom.in': {
+        e.preventDefault();
+        const next = Math.min(32, (State.settings.fontSize || 14) + 1);
+        setFontSize(next, `Fonte: ${next}px`);
+        break;
+      }
+      case 'zoom.out': {
+        e.preventDefault();
+        const next = Math.max(8, (State.settings.fontSize || 14) - 1);
+        setFontSize(next, `Fonte: ${next}px`);
+        break;
+      }
+      case 'zoom.reset':
+        e.preventDefault();
+        setFontSize(14, 'Fonte resetada: 14px');
+        break;
+      case 'terminal.toggle':
+        e.preventDefault();
+        toggleTerminal();
+        break;
+      case 'terminal.new':
+        e.preventDefault(); e.stopPropagation();
+        createTerminal();
+        break;
+      case 'terminal.split':
+        e.preventDefault(); e.stopPropagation();
+        splitTerminal();
+        break;
+      case 'terminal.prev':
+      case 'terminal.next':
+        e.preventDefault(); e.stopPropagation();
+        focusNextTerminal(action === 'terminal.next' ? 1 : -1);
+        break;
+      case 'sidebar.toggle':
+        e.preventDefault();
+        document.body.classList.toggle('sidebar-hidden');
+        break;
+      case 'view.explorer':
+        e.preventDefault();
+        switchSidebarView('explorer');
+        break;
+      case 'view.search':
+        e.preventDefault();
+        switchSidebarView('search');
+        setTimeout(() => document.getElementById('search-text')?.focus(), 50);
+        break;
+      case 'view.git':
+        e.preventDefault();
+        switchSidebarView('git');
+        break;
+      case 'view.extensions':
+        e.preventDefault();
+        switchSidebarView('extensions');
+        break;
+      // 'settings.open' é tratado em settings-modal.js (abre de forma idempotente)
+      default:
+        break;
     }
   }, true);
+}
+
+// Ctrl+L sem seleção: fechado → abre e foca; aberto com foco fora → foca;
+// aberto com foco dentro do chat → fecha e devolve o foco ao editor.
+function toggleAiPanel(target) {
+  const inPanel = !!target?.closest?.('#ai-panel');
+  if (!aiDock.isVisible()) {
+    aiDock.show({ focus: true });
+  } else if (!inPanel) {
+    if (!aiDock.focusInput()) aiDock.hide();
+  } else {
+    aiDock.hide();
+    getActiveEditor()?.focus();
+  }
 }
 
 function switchSidebarView(view) {
@@ -427,6 +524,7 @@ async function newFileInRoot() {
   const newPath = State.workspaceRoot + sep() + name;
   try {
     await window.agzos.fs.writeFile(newPath, '');
+    invalidateQuickOpenCache();
     const mod = await import('./file-tree.js');
     mod.refreshTree();
     await openFile(newPath);
@@ -439,6 +537,7 @@ async function newFolderInRoot() {
   const newPath = State.workspaceRoot + sep() + name;
   try {
     await window.agzos.fs.mkdir(newPath);
+    invalidateQuickOpenCache();
     const mod = await import('./file-tree.js');
     mod.refreshTree();
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }

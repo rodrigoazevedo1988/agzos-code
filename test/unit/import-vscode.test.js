@@ -25,6 +25,43 @@ test('stripJsonComments remove comentários de linha, bloco e trailing commas', 
   assert.equal(parsed['editor.tabSize'], 4);
 });
 
+test('parseJsonc preserva // e /* dentro de strings (URLs e globs)', () => {
+  const jsonc = `{
+    // proxy
+    "http.proxy": "http://proxy.local:8080",
+    "files.exclude": { "**/*.js": true, "src/**/*.map": false },
+    "search.exclude": { "**/node_modules": true, /* bloco */ }
+  }`;
+  const parsed = parseJsonc(jsonc);
+  assert.equal(parsed['http.proxy'], 'http://proxy.local:8080');
+  assert.deepEqual(parsed['files.exclude'], { '**/*.js': true, 'src/**/*.map': false });
+  assert.deepEqual(parsed['search.exclude'], { '**/node_modules': true });
+});
+
+test('parseJsonc lida com aspas e barras escapadas dentro de strings', () => {
+  const jsonc = String.raw`{
+    "a": "diz \"oi\" // não é comentário",
+    "b": "C:\\path\\",
+    "c": "/* também não */", // comentário real
+  }`;
+  const parsed = parseJsonc(jsonc);
+  assert.equal(parsed.a, 'diz "oi" // não é comentário');
+  assert.equal(parsed.b, 'C:\\path\\');
+  assert.equal(parsed.c, '/* também não */');
+});
+
+test('parseJsonc remove trailing commas em objetos e arrays, inclusive antes de comentários', () => {
+  const jsonc = `{
+    "list": [1, 2, 3,],
+    "nested": { "x": ",}", },
+    "last": true, // fim
+  }`;
+  const parsed = parseJsonc(jsonc);
+  assert.deepEqual(parsed.list, [1, 2, 3]);
+  assert.deepEqual(parsed.nested, { x: ',}' });
+  assert.equal(parsed.last, true);
+});
+
 test('mapVSCodeSettings mapeia corretamente configurações do VS Code para Agzos Code', () => {
   const vscode = {
     'editor.fontSize': 17,

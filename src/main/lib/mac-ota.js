@@ -59,20 +59,22 @@ function parseLatestMacYaml(yamlContent) {
   return { version, files };
 }
 
+/**
+ * Escolhe o ZIP compatível com a arquitetura.
+ * - arm64: prefere ZIP arm64; aceita ZIP x64/universal como fallback (Rosetta).
+ * - x64: NUNCA escolhe ZIP arm64 (não roda em Intel).
+ * Retorna null quando não há ZIP compatível.
+ */
 function selectMacArtifact(manifest, arch = process.arch) {
   if (!manifest || !Array.isArray(manifest.files) || manifest.files.length === 0) return null;
-  const isArm = arch === 'arm64';
+  const zips = manifest.files.filter((f) => f && typeof f.url === 'string' && /\.zip$/i.test(f.url));
+  const isArmZip = (f) => /arm64/i.test(f.url);
+  const nonArmZip = zips.find((f) => !isArmZip(f)) || null;
 
-  if (isArm) {
-    const armFile = manifest.files.find((f) => /arm64.*\.zip$/i.test(f.url));
-    if (armFile) return armFile;
-  } else {
-    const intelFile = manifest.files.find((f) => !/arm64/i.test(f.url) && /\.zip$/i.test(f.url));
-    if (intelFile) return intelFile;
+  if (arch === 'arm64') {
+    return zips.find(isArmZip) || nonArmZip;
   }
-
-  // Fallback para qualquer .zip
-  return manifest.files.find((f) => /\.zip$/i.test(f.url)) || manifest.files[0];
+  return nonArmZip;
 }
 
 function compareSemver(v1, v2) {
@@ -141,7 +143,9 @@ function createMacOtaManager({
 
       const artifact = selectMacArtifact(manifest, arch);
       if (!artifact) {
-        throw new Error(`Nenhum artefato ZIP compatível para arquitetura ${arch}`);
+        throw new Error(
+          `Nenhum artefato ZIP compatível com a arquitetura ${arch} no manifesto da versão ${manifest.version}`
+        );
       }
 
       return {
@@ -156,29 +160,62 @@ function createMacOtaManager({
 
   async function download(checkResult) {
     if (isDownloading) return false;
+    const { version, artifact } = checkResult;
+
+    // Já baixado (mesma versão e arquivo ainda presente): não baixa de novo.
+    if (downloadedVersion === version && downloadedZipPath && fs.existsSync(downloadedZipPath)) {
+      notify({
+        type: 'ready',
+        version,
+        message: 'A atualização foi baixada e está pronta para instalar.',
+      });
+      return true;
+    }
+
     isDownloading = true;
+    let targetZip = null;
+    let fileStream = null;
 
     try {
-      const { version, artifact } = checkResult;
       const downloadUrl = artifact.url.startsWith('http')
         ? artifact.url
         : `${feedUrl.replace(/\/+$/, '')}/${artifact.url}`;
 
-      const targetZip = path.join(tempDir, `agzos-update-${version}-${Date.now()}.zip`);
       const res = await fetchImpl(downloadUrl);
       if (!res.ok) throw new Error(`Falha ao baixar ZIP da versão ${version}: HTTP ${res.status}`);
 
       const total = parseInt(res.headers.get('content-length') || String(artifact.size || 0), 10);
       let transferred = 0;
 
-      const fileStream = fs.createWriteStream(targetZip);
+      targetZip = path.join(tempDir, `agzos-update-${version}-${Date.now()}.zip`);
+      fileStream = fs.createWriteStream(targetZip);
+
+      // Listeners anexados ANTES de escrever: erro de disco não fica sem handler.
+      let streamError = null;
+      const finished = new Promise((resolve, reject) => {
+        fileStream.on('finish', resolve);
+        fileStream.on('error', (err) => {
+          streamError = err;
+          reject(err);
+        });
+      });
+      finished.catch(() => {});
+
+      const writeChunk = (chunk) => new Promise((resolve, reject) => {
+        if (streamError) return reject(streamError);
+        if (fileStream.write(chunk)) return resolve();
+        const onDrain = () => { fileStream.off('error', onError); resolve(); };
+        const onError = (err) => { fileStream.off('drain', onDrain); reject(err); };
+        fileStream.once('drain', onDrain);
+        fileStream.once('error', onError);
+      });
 
       if (res.body && typeof res.body.getReader === 'function') {
         const reader = res.body.getReader();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          fileStream.write(value);
+          await writeChunk(value);
           transferred += value.length;
           if (total > 0) {
             notify({
@@ -191,23 +228,23 @@ function createMacOtaManager({
         }
       } else {
         const buffer = await res.arrayBuffer();
-        fileStream.write(Buffer.from(buffer));
+        await writeChunk(Buffer.from(buffer));
         transferred = buffer.byteLength;
       }
       fileStream.end();
-
-      await new Promise((resolve, reject) => {
-        fileStream.on('finish', resolve);
-        fileStream.on('error', reject);
-      });
+      await finished;
 
       // Validação do hash SHA-512
       if (artifact.sha512) {
         const digest = await sha512File(targetZip);
         if (digest !== artifact.sha512) {
-          fs.unlinkSync(targetZip);
           throw new Error('Integridade SHA-512 do pacote macOS não confere com o manifesto');
         }
+      }
+
+      // Remove ZIP de versão anterior, se houver.
+      if (downloadedZipPath && downloadedZipPath !== targetZip) {
+        try { fs.unlinkSync(downloadedZipPath); } catch { /* ignora */ }
       }
 
       downloadedZipPath = targetZip;
@@ -223,6 +260,10 @@ function createMacOtaManager({
       return true;
     } catch (err) {
       isDownloading = false;
+      if (fileStream && !fileStream.destroyed) fileStream.destroy();
+      if (targetZip) {
+        try { fs.unlinkSync(targetZip); } catch { /* arquivo parcial já ausente */ }
+      }
       throw err;
     }
   }
@@ -259,8 +300,23 @@ ditto -x -k "$ZIP" "$EXTRACT"
 NEW_APP=$(find "$EXTRACT" -maxdepth 1 -name "*.app" | head -n 1)
 if [ -n "$NEW_APP" ] && [ -d "$NEW_APP" ]; then
   xattr -cr "$NEW_APP" 2>/dev/null || true
-  rm -rf "$TARGET"
-  mv "$NEW_APP" "$TARGET"
+  BACKUP="$TARGET.bak"
+  rm -rf "$BACKUP"
+  if [ -e "$TARGET" ]; then
+    mv "$TARGET" "$BACKUP"
+  fi
+  if mv "$NEW_APP" "$TARGET"; then
+    rm -rf "$BACKUP"
+  else
+    # Falha na troca: restaura o bundle anterior
+    rm -rf "$TARGET"
+    if [ -e "$BACKUP" ]; then
+      mv "$BACKUP" "$TARGET"
+    fi
+    open -n "$TARGET" || true
+    rm -rf "$EXTRACT"
+    exit 1
+  fi
   open -n "$TARGET"
 fi
 

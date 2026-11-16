@@ -62,3 +62,54 @@ test('saveSettings grava e loadSettings lê de volta, sem sobrar .tmp', () => {
   assert.equal(loadSettings(p).theme, 'agzos-light');
   assert.ok(!fs.existsSync(p + '.tmp'));
 });
+
+test('aiPanel: defaults e normalização de valores inválidos', () => {
+  const { normalizeAiPanel } = require('../../src/main/lib/settings');
+  assert.deepEqual(normalizeAiPanel(undefined), DEFAULT_SETTINGS.aiPanel);
+  const out = normalizeAiPanel({
+    position: 'top', width: 'x', visible: 'sim', fontSize: 40, density: 'huge',
+    showAvatars: 0, sendKey: 'alt', defaultContext: { file: false, terminal: 'y' },
+  });
+  assert.equal(out.position, 'right');
+  assert.equal(out.width, 380);
+  assert.equal(out.visible, true);
+  assert.equal(out.fontSize, 18);
+  assert.equal(out.density, 'comfortable');
+  assert.equal(out.showAvatars, true);
+  assert.equal(out.sendKey, 'enter');
+  assert.deepEqual(out.defaultContext, { file: false, selection: true, terminal: false });
+  assert.equal(normalizeAiPanel({ fontSize: 5 }).fontSize, 11);
+  assert.equal(normalizeAiPanel({ width: 99999 }).width, 1600);
+  const ok = normalizeAiPanel({ position: 'bottom', density: 'compact', sendKey: 'ctrlEnter', showAvatars: false, fontSize: 15 });
+  assert.equal(ok.position, 'bottom');
+  assert.equal(ok.density, 'compact');
+  assert.equal(ok.sendKey, 'ctrlEnter');
+  assert.equal(ok.showAvatars, false);
+  assert.equal(ok.fontSize, 15);
+});
+
+test('aiPanel: loadSettings normaliza e herda ai.context antigo', () => {
+  const p = tmpFile();
+  fs.writeFileSync(p, JSON.stringify({ ai: { context: { file: false, selection: false, terminal: true } }, aiPanel: { position: 'nada' } }));
+  const s = loadSettings(p);
+  assert.equal(s.aiPanel.position, 'right');
+  assert.deepEqual(s.aiPanel.defaultContext, { file: false, selection: false, terminal: true });
+  fs.writeFileSync(p, JSON.stringify({ ai: { context: { file: false } }, aiPanel: { defaultContext: { file: true, selection: true, terminal: true } } }));
+  assert.deepEqual(loadSettings(p).aiPanel.defaultContext, { file: true, selection: true, terminal: true });
+});
+
+test('settings:save mantém perfis de IA do disco (cópia do renderer pode estar velha)', () => {
+  const { register } = require('../../src/main/ipc/settings');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-settings-ipc-'));
+  const handlers = {};
+  register({ handle: (name, fn) => { handlers[name] = fn; } }, { app: { getPath: () => dir } });
+  const file = path.join(dir, 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ ai: { activeProfileId: 'p1', profiles: [{ id: 'p1', label: 'X' }] } }));
+  handlers['settings:save'](null, { theme: 'monokai', ai: { profiles: [], activeProfileId: null, context: { file: false } }, aiPanel: { position: 'left' } });
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.theme, 'monokai');
+  assert.equal(saved.ai.activeProfileId, 'p1');
+  assert.equal(saved.ai.profiles.length, 1);
+  assert.deepEqual(saved.ai.context, { file: false });
+  assert.equal(saved.aiPanel.position, 'left');
+});

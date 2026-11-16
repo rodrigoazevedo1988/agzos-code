@@ -77,7 +77,8 @@ body {
   background: var(--bg);
   color: var(--fg);
   display: grid;
-  grid-template-rows: 40px 1fr 22px;
+  /* minmax(0, 1fr): o conteúdo do workbench não pode esticar a linha e empurrar a statusbar */
+  grid-template-rows: 40px minmax(0, 1fr) 22px;
   grid-template-areas:
     "top"
     "main"
@@ -150,10 +151,57 @@ body {
 #main {
   grid-area: main;
   display: grid;
-  grid-template-columns: 50px 260px 1fr;
+  /* activity | sidebar | workbench | dock direito da IA (auto: 0 quando oculto) */
+  grid-template-columns: 50px 260px minmax(0, 1fr) auto;
+  min-height: 0;
+  /* clip (e não hidden): foco no xterm/Monaco não consegue rolar o container */
+  overflow: clip;
+}
+body.sidebar-hidden #main { grid-template-columns: 50px 0 minmax(0, 1fr) auto; }
+
+/* -------------------------------------------------------------------------
+   Dock do Agzos IA (ai-dock.js move o #ai-panel entre os hosts:
+   #panel-ai na sidebar, #right-dock-host e #pane-ai no painel inferior)
+   ------------------------------------------------------------------------- */
+#right-dock {
+  display: flex;
+  flex-direction: row;
+  width: 380px;            /* sobrescrito inline pela largura salva */
+  min-width: 280px;
+  max-width: 60vw;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-soft);
+  border-left: 1px solid var(--line);
+}
+#right-dock[hidden] { display: none; }
+.right-dock-resizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s ease;
+  z-index: 10;
+}
+.right-dock-resizer:hover, body.resizing-ai-dock .right-dock-resizer { background: var(--accent); }
+body.resizing-ai-dock { cursor: col-resize; user-select: none; }
+.right-dock-host {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#ai-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
-body.sidebar-hidden #main { grid-template-columns: 50px 0 1fr; }
+#pane-ai.active { display: flex; flex-direction: column; }
+.bottom-tab[hidden] { display: none; }
 
 /* -------------------------------------------------------------------------
    Activity Bar
@@ -384,9 +432,11 @@ body.sidebar-hidden #main { grid-template-columns: 50px 0 1fr; }
    ------------------------------------------------------------------------- */
 #editor-area {
   display: flex; flex-direction: column;
+  flex: 1 1 0;
   background: var(--bg);
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
 }
 
 #tabs {
@@ -476,11 +526,10 @@ kbd {
    ------------------------------------------------------------------------- */
 #workbench-body {
   display: flex;
-  flex: 1;
-  overflow: hidden;
+  overflow: clip;
   position: relative;
-  height: 100%;
-  width: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 #workbench-body.panel-bottom {
   flex-direction: column;
@@ -524,6 +573,7 @@ kbd {
   background: var(--bg);
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   overflow: hidden;
   z-index: 5;
 }
@@ -577,7 +627,6 @@ kbd {
 .bottom-content { flex: 1; overflow: hidden; position: relative; }
 .bottom-pane { position: absolute; inset: 0; display: none; }
 .bottom-pane.active { display: block; }
-#terminal-host { width: 100%; height: 100%; padding: 6px 8px; background: var(--bg); }
 .output-pre { margin: 0; padding: 10px 14px; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: var(--fg-dim); }
 
 /* -------------------------------------------------------------------------
@@ -757,19 +806,6 @@ kbd {
 .search-hit .file { color: var(--accent); }
 .search-hit .line { color: var(--fg-dim); white-space: pre-wrap; word-break: break-all; }
 
-.ai-mock {
-  background: var(--bg-soft2);
-  border-radius: 4px;
-  padding: 10px;
-  font-size: 12px;
-  margin-top: 8px;
-  max-height: 300px;
-  overflow: auto;
-}
-.ai-msg { padding: 4px 0; }
-.ai-system { color: var(--fg-mute); font-style: italic; }
-.ai-user { color: var(--fg); }
-.ai-assistant { color: var(--accent); }
 
 /* -------------------------------------------------------------------------
    Welcome pop-up
@@ -1121,24 +1157,6 @@ body.perf-high .welcome-actions button { transition: all 0.1s; }
 
 /* Chat de IA */
 #panel-ai:not([hidden]) { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.ai-chat { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
-.ai-chat[hidden], .ai-empty[hidden] { display: none; }
-.ai-toolbar { display: flex; flex-direction: column; gap: 6px; }
-.ai-toolbar label { display: flex; flex-direction: column; gap: 3px; }
-.ai-toolbar select, .ai-compose textarea { width: 100%; background: var(--bg-soft3); border: 1px solid var(--line); color: var(--fg); border-radius: 3px; padding: 6px; }
-.ai-context-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.ai-context-chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; background: var(--bg-soft3); color: var(--fg); cursor: pointer; font-size: 11px; }
-.ai-context-chip[aria-pressed="true"] { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 18%, var(--bg-soft3)); }
-.ai-messages { flex: 1; min-height: 80px; overflow-y: auto; overflow-wrap: anywhere; }
-.ai-msg { padding: 8px; margin: 6px 0; border-radius: 4px; }
-.ai-user { background: var(--bg-soft3); white-space: pre-wrap; }
-.ai-assistant pre { overflow-x: auto; white-space: pre; background: var(--bg-soft3); padding: 8px; }
-.ai-assistant img { max-width: 100%; }
-.ai-code-actions { display: flex; justify-content: flex-end; gap: 4px; }
-.ai-code-actions + pre { margin-top: 0; }
-.ai-compose { display: flex; flex-direction: column; gap: 6px; }
-.ai-compose textarea { resize: vertical; font: inherit; }
-.ai-error { color: #ef7777; }
 
 .diff-overlay { position: fixed; inset: 0; z-index: 10000; background: #000b; display: flex; align-items: center; justify-content: center; }
 .diff-dialog { width: 90vw; height: 85vh; background: var(--bg-panel, #181818); color: var(--text-primary, #eee); display: flex; flex-direction: column; padding: 16px; gap: 12px; }

@@ -21,6 +21,9 @@ import { toast } from './toast.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { applyTheme, applyFontSize, applyEditorSettings } from './editor.js';
+import { applyTerminalFontSize } from './terminal.js';
+import { matchShortcut } from './keymap.js';
+import { clampNumber, resetModalOwnedSettings } from './ui-utils.js';
 
 const State = window.AgzosState;
 
@@ -59,7 +62,22 @@ const DEFAULTS = {
     autoDownload: true,
     channel: 'stable',
   },
+  aiPanel: {
+    position: 'right',
+    width: 380,
+    visible: true,
+    fontSize: 13,
+    density: 'comfortable',
+    showAvatars: true,
+    sendKey: 'enter',
+    defaultContext: { file: true, selection: true, terminal: false },
+  },
 };
+
+/** Avisa o painel de chat para reaplicar fonte/densidade/avatares/atalho. */
+function notifyAiPanel() {
+  window.dispatchEvent(new CustomEvent('agzos:ai-panel-settings'));
+}
 
 const CATEGORIES = [
   { id: 'commonlyUsed', label: 'Comumente Usados', icon: 'sliders' },
@@ -298,7 +316,7 @@ const SETTINGS_DEF = [
     type: 'number',
     min: 10,
     max: 24,
-    apply: () => {},
+    apply: (val) => applyTerminalFontSize(Number(val)),
   },
   {
     key: 'terminal.scrollback',
@@ -309,6 +327,87 @@ const SETTINGS_DEF = [
     min: 100,
     max: 10000,
     apply: () => {},
+  },
+
+  // Agzos IA — personalização do painel (aplicação ao vivo)
+  {
+    key: 'aiPanel.position',
+    title: 'Agzos IA: Posição do Painel',
+    desc: 'Onde o painel de chat fica acoplado. A conversa e uma resposta em andamento são mantidas ao mover.',
+    categories: ['ai'],
+    type: 'select',
+    options: [
+      { value: 'right', label: 'Direita (ao lado do editor)' },
+      { value: 'left', label: 'Esquerda (na barra lateral)' },
+      { value: 'bottom', label: 'Embaixo (aba do painel inferior)' },
+    ],
+    apply: (val) => window.AgzosAiDock?.setPosition?.(val),
+  },
+  {
+    key: 'aiPanel.fontSize',
+    title: 'Agzos IA: Tamanho da Fonte',
+    desc: 'Tamanho do texto das mensagens e da caixa de mensagem, em pixels (11 a 18).',
+    categories: ['ai'],
+    type: 'number',
+    min: 11,
+    max: 18,
+    apply: notifyAiPanel,
+  },
+  {
+    key: 'aiPanel.density',
+    title: 'Agzos IA: Densidade',
+    desc: 'Espaçamento entre mensagens e margens do painel.',
+    categories: ['ai'],
+    type: 'select',
+    options: [
+      { value: 'comfortable', label: 'Confortável' },
+      { value: 'compact', label: 'Compacta' },
+    ],
+    apply: notifyAiPanel,
+  },
+  {
+    key: 'aiPanel.showAvatars',
+    title: 'Agzos IA: Avatar nas Respostas',
+    desc: 'Mostra a marca Agzos ao lado de cada resposta da IA.',
+    categories: ['ai'],
+    type: 'boolean',
+    apply: notifyAiPanel,
+  },
+  {
+    key: 'aiPanel.sendKey',
+    title: 'Agzos IA: Tecla de Envio',
+    desc: 'Atalho que envia a mensagem. A outra combinação quebra a linha.',
+    categories: ['ai'],
+    type: 'select',
+    options: [
+      { value: 'enter', label: 'Enter envia (Shift+Enter quebra linha)' },
+      { value: 'ctrlEnter', label: 'Ctrl/Cmd+Enter envia (Enter quebra linha)' },
+    ],
+    apply: notifyAiPanel,
+  },
+  {
+    key: 'aiPanel.defaultContext.file',
+    title: 'Agzos IA: Enviar Arquivo Atual por Padrão',
+    desc: 'Envia o arquivo aberto junto com cada nova conversa.',
+    categories: ['ai'],
+    type: 'boolean',
+    apply: notifyAiPanel,
+  },
+  {
+    key: 'aiPanel.defaultContext.selection',
+    title: 'Agzos IA: Enviar Seleção por Padrão',
+    desc: 'Envia o trecho selecionado no editor junto com cada nova conversa.',
+    categories: ['ai'],
+    type: 'boolean',
+    apply: notifyAiPanel,
+  },
+  {
+    key: 'aiPanel.defaultContext.terminal',
+    title: 'Agzos IA: Enviar Terminal por Padrão',
+    desc: 'Envia a saída recente do terminal junto com cada nova conversa.',
+    categories: ['ai'],
+    type: 'boolean',
+    apply: notifyAiPanel,
   },
 
   // Atualizações (OTA)
@@ -349,13 +448,12 @@ export function setupSettingsModal() {
   });
 
   window.addEventListener('keydown', (e) => {
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    const ctrl = isMac ? e.metaKey : e.ctrlKey;
-    if (ctrl && e.key === ',') {
+    // Só abre (idempotente): no macOS o accelerator CmdOrCtrl+, do menu nativo
+    // também dispara menu:open-settings; um toggle aqui abriria e fecharia.
+    if (matchShortcut(e) === 'settings.open') {
       e.preventDefault();
       e.stopPropagation();
-      if (!overlay.hidden) closeSettingsModal();
-      else openSettingsModal();
+      openSettingsModal();
     } else if (e.key === 'Escape' && !overlay.hidden) {
       e.preventDefault();
       closeSettingsModal();
@@ -363,12 +461,21 @@ export function setupSettingsModal() {
   }, true);
 }
 
-export function openSettingsModal(category = 'commonlyUsed') {
+export function openSettingsModal(category = 'commonlyUsed', { json = false } = {}) {
   const overlay = document.getElementById('settings-modal-overlay');
   if (!overlay) return;
+  // Já aberto: não reseta categoria/busca (Ctrl+, e o menu nativo podem chegar juntos)
+  if (!overlay.hidden) {
+    if (json && !isJsonMode) {
+      isJsonMode = true;
+      renderModal();
+    }
+    document.getElementById(isJsonMode ? 'settings-json-textarea' : 'settings-search-input')?.focus();
+    return;
+  }
   activeCategory = category;
   searchQuery = '';
-  isJsonMode = false;
+  isJsonMode = !!json;
   renderModal();
   overlay.hidden = false;
   overlay.classList.add('active');
@@ -535,7 +642,7 @@ function renderSettingItemHtml(item) {
     `;
   } else if (item.type === 'number') {
     controlHtml = `
-      <input type="number" class="settings-control-input" data-key="${item.key}" min="${item.min || 0}" max="${item.max || 9999}" value="${currentVal ?? ''}" />
+      <input type="number" class="settings-control-input" data-key="${item.key}" min="${item.min ?? 0}" max="${item.max ?? 9999}" value="${escapeHtml(String(currentVal ?? ''))}" />
     `;
   } else if (item.type === 'text') {
     controlHtml = `
@@ -734,12 +841,20 @@ function bindContentEvents() {
     inp.addEventListener('change', async (e) => {
       const key = e.target.dataset.key;
       let val = e.target.value;
-      if (inp.type === 'number') val = Number(val);
+      if (inp.type === 'number') {
+        const def = SETTINGS_DEF.find((d) => d.key === key);
+        val = clampNumber(val, def?.min, def?.max);
+        if (val === null) {
+          // Vazio/inválido: ignora e volta ao valor atual
+          e.target.value = String(getNestedValue(State.settings, key) ?? '');
+          return;
+        }
+      }
       await updateSetting(key, val);
     });
   });
 
-  document.querySelectorAll('.settings-switch input').forEach((chk) => {
+  document.querySelectorAll('.settings-control-checkbox').forEach((chk) => {
     chk.addEventListener('change', async (e) => {
       const key = e.target.dataset.key;
       await updateSetting(key, e.target.checked);
@@ -787,11 +902,14 @@ function bindContentEvents() {
   if (btnImportVSCode) {
     btnImportVSCode.addEventListener('click', async () => {
       try {
+        // IPC devolve { ok, imported: string[], path } ou { ok: false, reason, … }
         const res = await window.agzos.settings.importVSCode?.();
-        if (res && res.imported && res.imported.length > 0) {
-          toast(`Configurações importadas com sucesso: ${res.imported.join(', ')}`, 'success', 3500);
+        if (res?.ok) {
           const s = await window.agzos.settings.load();
           Object.assign(State.settings, s);
+          await applySettingsLive();
+          const n = res.imported?.length || 0;
+          toast(n ? `Configurações importadas com sucesso: ${res.imported.join(', ')}` : 'Nenhuma configuração compatível encontrada no VS Code.', n ? 'success' : 'info', 3500);
           renderContent();
         } else {
           toast('Nenhuma configuração do VS Code foi encontrada neste sistema.', 'info', 3000);
@@ -816,11 +934,11 @@ function bindContentEvents() {
   if (btnResetAll) {
     btnResetAll.addEventListener('click', async () => {
       if (confirm('Tem certeza que deseja restaurar todas as configurações para o padrão original?')) {
-        State.settings = structuredClone(DEFAULTS);
+        // Só as chaves deste modal: preserva perfis de IA, contas GitHub, onboarding, recentes…
+        const next = resetModalOwnedSettings(State.settings, DEFAULTS);
+        Object.assign(State.settings, next);
         await window.agzos.settings.save(State.settings);
-        applyTheme(State.settings.theme);
-        applyFontSize(State.settings.fontSize);
-        applyEditorSettings(State.settings.editor);
+        await applySettingsLive();
         toast('Todas as configurações foram restauradas.', 'success', 2500);
         renderContent();
       }
@@ -840,6 +958,7 @@ function bindContentEvents() {
         applyTheme(State.settings.theme || 'agzos-dark');
         applyFontSize(State.settings.fontSize || 14);
         applyEditorSettings(State.settings.editor || {});
+        notifyAiPanel();
         toast('settings.json salvo com sucesso!', 'success', 2000);
         isJsonMode = false;
         renderModal();
@@ -848,6 +967,27 @@ function bindContentEvents() {
       }
     });
   }
+}
+
+/**
+ * Aplica ao vivo as configurações atuais de State.settings (tema, ícones,
+ * performance, editor, terminal). Usado após importar do VS Code e no reset.
+ */
+export async function applySettingsLive() {
+  const s = State.settings;
+  const theme = s.theme || DEFAULTS.theme;
+  applyTheme(theme);
+  document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${theme}`;
+  for (const key of ['performanceMode', 'iconTheme']) {
+    const def = SETTINGS_DEF.find((d) => d.key === key);
+    try { await def?.apply(s[key]); } catch (e) { console.warn(`[settings] erro ao aplicar ${key}:`, e); }
+  }
+  applyEditorSettings(s.editor || {});
+  const termSize = Number(s.terminal?.fontSize);
+  if (Number.isFinite(termSize)) applyTerminalFontSize(termSize);
+  const aiPosition = s.aiPanel?.position;
+  if (aiPosition && window.AgzosAiDock?.getPosition?.() !== aiPosition) window.AgzosAiDock?.setPosition?.(aiPosition);
+  notifyAiPanel();
 }
 
 async function updateSetting(key, val) {

@@ -1,4 +1,5 @@
 const DEFAULT_FEED_URL = 'https://code.rsolutionsbr.com/release';
+const path = require('path');
 const { createMacOtaManager } = require('./lib/mac-ota');
 
 /**
@@ -16,6 +17,7 @@ function createUpdater({
   feedUrl = process.env.AGZOS_UPDATE_URL || DEFAULT_FEED_URL,
   notify = () => {},
   logger = console,
+  getSettings,
 } = {}) {
   let autoUpdater = injectedUpdater;
   let macOtaManager = injectedMacOta;
@@ -43,6 +45,27 @@ function createUpdater({
       reportedErrors.add(err);
       safeNotify({ type: 'error', message: err.message });
     }
+  }
+
+  /**
+   * Lê as preferências `update.*` das settings persistidas. Sem `getSettings`
+   * injetado, carrega userData/settings.json (mesmo arquivo do IPC de settings).
+   * Qualquer falha cai nos defaults (autoDownload ligado).
+   */
+  function readUpdatePrefs() {
+    let settings = null;
+    try {
+      if (typeof getSettings === 'function') {
+        settings = getSettings();
+      } else if (app && typeof app.getPath === 'function') {
+        const { loadSettings } = require('./lib/settings');
+        settings = loadSettings(path.join(app.getPath('userData'), 'settings.json'));
+      }
+    } catch (error) {
+      logError('[updater] falha ao ler settings de atualização:', error);
+    }
+    const update = (settings && typeof settings.update === 'object' && settings.update) || {};
+    return { autoDownload: update.autoDownload !== false };
   }
 
   function resolveUpdater() {
@@ -89,7 +112,7 @@ function createUpdater({
 
     autoUpdater.on('update-available', (info = {}) => {
       // Se não houver macOta configurado e for Mac legado
-      if (isMac && !macOtaManager) {
+      if ((isMac && !macOtaManager) || autoUpdater.autoDownload === false) {
         safeNotify({
           type: 'manual-download',
           version: info.version,
@@ -134,7 +157,18 @@ function createUpdater({
             manualCheckActive = false;
             return true;
           }
-          safeNotify({ type: 'available', version: checkRes.version });
+          if (!readUpdatePrefs().autoDownload) {
+            safeNotify({
+              type: 'manual-download',
+              version: checkRes.version,
+              url: feedUrl,
+              message: 'Uma atualização está disponível. Baixe a nova versão manualmente.',
+            });
+            manualCheckActive = false;
+            return true;
+          }
+          // Toast "Baixando…" só em verificação manual (igual Win/Linux).
+          if (manualCheckActive) safeNotify({ type: 'available', version: checkRes.version });
           await macOta.download(checkRes);
           manualCheckActive = false;
           return true;
@@ -149,6 +183,7 @@ function createUpdater({
     // Fluxo padrão electron-updater (Windows e Linux)
     if (!resolveUpdater()) return false;
     installListeners();
+    autoUpdater.autoDownload = !isMac && readUpdatePrefs().autoDownload;
     try {
       await autoUpdater.checkForUpdates();
       return true;
@@ -172,7 +207,7 @@ function createUpdater({
 
     if (!resolveUpdater()) return false;
     installListeners();
-    autoUpdater.autoDownload = !isMac;
+    autoUpdater.autoDownload = !isMac && readUpdatePrefs().autoDownload;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
 

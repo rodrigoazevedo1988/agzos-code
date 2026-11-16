@@ -1,6 +1,6 @@
 # Publicação OTA na VPS
 
-Este runbook prepara releases imutáveis do Agzos Code em `/var/www/agzos-code-releases` e move o symlink `current` para uma versão completa. O endereço público previsto é `https://code.rsolutionsbr.com/release/`. A publicação é local à VPS: o script não faz upload, não apaga releases anteriores e recusa sobrescrever uma versão existente.
+Este runbook prepara releases imutáveis do Agzos Code em `/var/www/agzos-code-releases` e move o symlink `current` para uma versão completa. O endereço público previsto é `https://code.rsolutionsbr.com/release/`. A publicação é local à VPS: o script não faz upload, recusa sobrescrever uma versão existente e, após a troca do `current`, mantém só as 2 releases mais novas (`--keep <n>` altera).
 
 ## Estado atual do projeto
 
@@ -54,7 +54,7 @@ node tools/publish-vps-release.js \
 
 Se `--version` for omitida, o script usa `package.json`. Ele verifica a versão SemVer, recusa symlinks e diretórios no lugar de artefatos, exige ao menos um `latest*.yml` e um instalador reconhecido, calcula SHA-256, grava `SHA256SUMS` e `release-manifest.json`, instala a pasta completa em `releases/<versão>` e atualiza `current` com `rename` atômico. O lock `.publish.lock` impede publicações concorrentes. Releases existentes não são sobrescritas; um lock remanescente após interrupção deve ser investigado antes de qualquer remoção manual.
 
-O diretório de destino deve ser um diretório real, não um symlink. A troca atômica exige que `current` (se existir) seja symlink para uma versão dentro de `releases/`. Faça rollback apontando `current` para uma release anterior somente após confirmar a integridade e compatibilidade dela; não apague versões antigas como parte da publicação.
+O diretório de destino deve ser um diretório real, não um symlink. A troca atômica exige que `current` (se existir) seja symlink para uma versão dentro de `releases/`. Faça rollback apontando `current` para uma release anterior somente após confirmar a integridade e compatibilidade dela; o rollback só é possível para a release anterior que a retenção mantém.
 
 ## Verificar
 
@@ -69,6 +69,6 @@ Confira também os manifestos e instaladores específicos de cada plataforma pel
 ## Limites operacionais
 
 - A publicação atômica muda somente `current`; leitores veem a release anterior ou a nova release completa.
-- Releases antigas ficam em `releases/` para permitir rollback e não são removidas pelo script.
+- Retenção: o script mantém em `releases/` apenas as 2 versões mais novas (padrão de `--keep`) e nunca remove a versão apontada por `current`. A anterior fica para rollback.
 - O script só copia arquivos no mesmo host. Ele não instala o vhost, não configura DNS/TLS, não executa builds nem publica um release remoto.
 - O primeiro instalador de cada plataforma precisa ser instalado manualmente; as versões posteriores podem usar o OTA.

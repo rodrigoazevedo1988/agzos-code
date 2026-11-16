@@ -9,7 +9,7 @@ function needsNoSandbox() {
   return process.platform === 'linux' && typeof process.getuid === 'function' && process.getuid() === 0;
 }
 
-async function launchApp({ userData, settings } = {}) {
+async function launchApp({ userData, settings, env: extraEnv } = {}) {
   const dir = userData || fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-e2e-'));
   if (settings) {
     fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2));
@@ -20,6 +20,7 @@ async function launchApp({ userData, settings } = {}) {
 
   const env = { ...process.env, AGZOS_USER_DATA: dir, AGZOS_TEST: '1', AGZOS_TEST_SAFESTORAGE: 'fake' };
   delete env.ELECTRON_RUN_AS_NODE;
+  if (extraEnv) Object.assign(env, extraEnv);
 
   const app = await electron.launch({
     args,

@@ -3,11 +3,13 @@
 
 /**
  * Prepare an immutable electron-builder release on a VPS and atomically point
- * `current` at it. This script never uploads files and never removes releases.
+ * `current` at it. This script never uploads files. After a successful switch it
+ * prunes old releases, keeping only the newest `--keep` versions (default 2).
  *
  * Usage:
  *   node tools/publish-vps-release.js --source dist --destination /var/www/agzos-code-releases
  *   node tools/publish-vps-release.js --source dist --destination /var/www/agzos-code-releases --version 1.2.3
+ *   node tools/publish-vps-release.js --source dist --destination /var/www/agzos-code-releases --keep 3
  */
 
 const crypto = require('node:crypto');
@@ -17,7 +19,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PACKAGE = require(path.join(ROOT, 'package.json'));
 
 function usage() {
-  console.error('Uso: node tools/publish-vps-release.js --source <dist> --destination <diretório> [--version <semver>]');
+  console.error('Uso: node tools/publish-vps-release.js --source <dist> --destination <diretório> [--version <semver>] [--keep <n>]');
   process.exitCode = 2;
 }
 
@@ -25,7 +27,7 @@ function parseArgs(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
-    if (!['--source', '--destination', '--version'].includes(key) || options[key]) {
+    if (!['--source', '--destination', '--version', '--keep'].includes(key) || options[key]) {
       throw new Error(`Opção inválida ou repetida: ${key}`);
     }
     const value = argv[index + 1];
@@ -38,7 +40,56 @@ function parseArgs(argv) {
     source: path.resolve(options['--source']),
     destination: path.resolve(options['--destination']),
     version: options['--version'] || PACKAGE.version,
+    keep: parseKeep(options['--keep']),
   };
+}
+
+const DEFAULT_KEEP = 2;
+
+function parseKeep(value) {
+  if (value === undefined) return DEFAULT_KEEP;
+  const keep = Number(value);
+  if (!Number.isInteger(keep) || keep < 1) throw new Error(`--keep precisa ser um inteiro >= 1: ${value}`);
+  return keep;
+}
+
+function compareSemver(a, b) {
+  const parse = (v) => {
+    const [core, pre] = v.split('+')[0].split(/-(.*)/s);
+    return { nums: core.split('.').map(Number), pre: pre || null };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < 3; i += 1) {
+    if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] - pb.nums[i];
+  }
+  if (pa.pre === pb.pre) return 0;
+  if (pa.pre === null) return 1;
+  if (pb.pre === null) return -1;
+  return pa.pre < pb.pre ? -1 : 1;
+}
+
+/**
+ * Remove releases antigas, mantendo as `keep` versões mais novas (SemVer).
+ * Nunca remove a versão apontada por `current` nem entradas que não sejam
+ * diretórios de versão válidos.
+ */
+async function pruneReleases(destination, keep, currentVersion) {
+  const releasesDir = path.join(destination, 'releases');
+  const entries = await fs.readdir(releasesDir, { withFileTypes: true });
+  const versions = entries
+    .filter((e) => e.isDirectory() && !e.isSymbolicLink() && safeVersion(e.name))
+    .map((e) => e.name)
+    .sort((a, b) => compareSemver(b, a));
+  const keepSet = new Set(versions.slice(0, keep));
+  keepSet.add(currentVersion);
+  const removed = [];
+  for (const version of versions) {
+    if (keepSet.has(version)) continue;
+    await fs.rm(path.join(releasesDir, version), { recursive: true, force: true });
+    removed.push(version);
+  }
+  return removed;
 }
 
 function safeVersion(version) {
@@ -91,6 +142,46 @@ async function verifyManifestReferences(source, artifacts) {
   }
 }
 
+function isManifestName(name) {
+  return /^latest[^/]*\.yml$/i.test(name);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function nameContainsVersion(name, version) {
+  // Evita falso positivo: 0.4.0 não pode casar dentro de 10.4.0 nem de 0.4.01.
+  return new RegExp(`(?<![0-9.])${escapeRegExp(version)}(?![0-9]|\\.[0-9])`).test(name);
+}
+
+/**
+ * Recusa instaladores/zips/blockmaps cujo nome não contém a versão da release
+ * (sobras de builds antigos em dist/). Manifestos latest*.yml são checados
+ * pelo conteúdo em verifyManifestVersions.
+ */
+function verifyArtifactNames(artifacts, version) {
+  const stale = artifacts.filter((name) => !isManifestName(name) && !nameContainsVersion(name, version));
+  if (stale.length) {
+    throw new Error(
+      `Artefatos que não pertencem à versão ${version} encontrados na origem: ${stale.join(', ')}. Limpe o diretório antes de publicar.`
+    );
+  }
+}
+
+async function verifyManifestVersions(source, artifacts, version) {
+  for (const manifestName of artifacts.filter(isManifestName)) {
+    const raw = await fs.readFile(path.join(source, manifestName), 'utf-8');
+    const match = raw.match(/^version:\s*['"]?([^\s'"#]+)['"]?\s*(?:#.*)?$/m);
+    if (!match) throw new Error(`O manifesto ${manifestName} não declara 'version:'.`);
+    if (match[1] !== version) {
+      throw new Error(
+        `O manifesto ${manifestName} declara a versão ${match[1]}, mas a release é ${version}. Regere os manifestos antes de publicar.`
+      );
+    }
+  }
+}
+
 async function sha256(filePath) {
   const hash = crypto.createHash('sha256');
   const stream = require('node:fs').createReadStream(filePath);
@@ -121,7 +212,7 @@ async function exists(filePath) {
   }
 }
 
-async function publish({ source, destination, version }) {
+async function publish({ source, destination, version, keep = DEFAULT_KEEP }) {
   if (!safeVersion(version)) throw new Error(`Versão inválida: ${version}`);
   if (version !== PACKAGE.version) {
     throw new Error(`A versão solicitada (${version}) não corresponde à versão do package.json (${PACKAGE.version}).`);
@@ -131,6 +222,8 @@ async function publish({ source, destination, version }) {
   }
 
   const artifacts = await listArtifacts(source);
+  await verifyManifestVersions(source, artifacts, version);
+  verifyArtifactNames(artifacts, version);
   await verifyManifestReferences(source, artifacts);
   await fs.mkdir(destination, { recursive: true, mode: 0o755 });
   const destinationStat = await fs.lstat(destination);
@@ -198,6 +291,8 @@ async function publish({ source, destination, version }) {
     console.log(`Release ${version} preparada em ${releaseDir}`);
     console.log(`Ponteiro atômico atualizado: ${current} -> releases/${version}`);
     console.log(`Arquivos: ${records.length}; checksums: ${path.join(releaseDir, 'SHA256SUMS')}`);
+    const removed = await pruneReleases(destination, keep, version);
+    console.log(removed.length ? `Releases antigas removidas (mantendo ${keep}): ${removed.join(', ')}` : `Nenhuma release antiga a remover (mantendo ${keep}).`);
   } finally {
     if (stageCreated) await fs.rm(stageDir, { recursive: true, force: true });
     await fs.rmdir(lockPath).catch(() => {});
@@ -225,4 +320,21 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  parseArgs,
+  parseKeep,
+  compareSemver,
+  pruneReleases,
+  safeVersion,
+  isReleaseArtifact,
+  listArtifacts,
+  nameContainsVersion,
+  verifyArtifactNames,
+  verifyManifestVersions,
+  verifyManifestReferences,
+  publish,
+};

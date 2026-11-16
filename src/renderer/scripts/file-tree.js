@@ -13,6 +13,7 @@
 import { toast } from './toast.js';
 import { openFile } from './editor.js';
 import { renderFileIcon, renderFolderIcon } from './icon-theme.js';
+import { invalidateQuickOpenCache } from './command-palette.js';
 
 const State = window.AgzosState;
 
@@ -281,6 +282,8 @@ if (ctx) {
 
 function invalidateTree() {
   treeRoot = null;
+  // create/rename/delete mudam a lista de arquivos do Quick Open
+  invalidateQuickOpenCache();
 }
 
 /* --------------------------------------------------------------------------

@@ -12,14 +12,14 @@ test('refatora seleção, revisa diff e aplica sem salvar, com desfazer', async 
       await window.AgzosEditor.openFile('/workspace/a.js', 'function soma(a,b){return a+b}');
     }, fake.baseUrl);
     await expect(page.locator('#ai-chat')).toHaveCount(1);
-    await expect.poll(() => page.evaluate(() => document.querySelector('#ai-profile').options.length)).toBeGreaterThan(0);
+    await expect(page.locator('.ai-pill-model')).toHaveText('fake-1');
     await page.evaluate(async () => {
       const { getActiveEditor } = await import('./scripts/editor.js');
       const editor = getActiveEditor();
       editor.setSelection(editor.getModel().getFullModelRange());
       await editor.getAction('agzos-ai.refactor').run();
     });
-    await expect(page.locator('#ai-send')).toHaveText('Enviar');
+    await expect(page.locator('#ai-send')).toHaveAttribute('data-state', 'send');
     await expect(page.locator('[data-code-action="apply"]')).toBeVisible();
     await page.locator('[data-code-action="apply"]').click();
     await expect(page.locator('.diff-overlay')).toBeVisible();

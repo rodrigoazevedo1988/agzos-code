@@ -8,6 +8,8 @@
   <title>Agzos Code</title>
   <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg" />
   <link rel="stylesheet" href="styles/app.css" />
+  <link rel="stylesheet" href="styles/ai-panel.css" />
+  <link rel="stylesheet" href="styles/terminal.css" />
 </head>
 
 <body class="theme-agzos-dark">
@@ -66,32 +68,10 @@
         <div class="panel" id="panel-extensions" hidden>
           <p class="hint">Extensões — Open VSX será plugado na próxima fase.</p>
         </div>
+        <!-- Host "left" do Agzos IA. O #ai-panel é movido entre hosts por ai-dock.js
+             (sidebar, #right-dock, #pane-ai) e preenchido por ai-chat.js. -->
         <div class="panel" id="panel-ai" hidden>
-          <div id="ai-empty" class="ai-empty" hidden>
-            <p>Configure um provider para começar a conversar.</p>
-            <button id="ai-configure" class="primary-btn">Configurar IA</button>
-          </div>
-          <div id="ai-chat" class="ai-chat" hidden>
-            <div class="ai-toolbar">
-              <label>Perfil <select id="ai-profile"></select></label>
-              <label>Modelo <select id="ai-chat-model"></select></label>
-              <button id="ai-new-chat">Nova conversa</button>
-            </div>
-            <div class="ai-context-chips" role="group" aria-label="Contexto enviado à IA">
-              <button type="button" class="ai-context-chip" data-context="file" aria-pressed="true">Arquivo</button>
-              <button type="button" class="ai-context-chip" data-context="selection"
-                aria-pressed="true">Seleção</button>
-              <button type="button" class="ai-context-chip" data-context="terminal"
-                aria-pressed="false">Terminal</button>
-            </div>
-            <div id="ai-error" class="ai-error" role="status"></div>
-            <div id="ai-messages" class="ai-messages" aria-live="polite"></div>
-            <div class="ai-compose">
-              <textarea id="ai-input" rows="3" placeholder="Pergunte algo ao Agzos IA…"
-                aria-label="Mensagem"></textarea>
-              <button id="ai-send" class="primary-btn">Enviar</button>
-            </div>
-          </div>
+          <section id="ai-panel" class="ai-panel" aria-label="Agzos IA"></section>
         </div>
       </div>
     </aside>
@@ -109,21 +89,45 @@
       <div id="panel-resizer" class="panel-resizer" hidden></div>
 
       <!-- BOTTOM / SIDE PANEL: Terminal -->
-      <section id="bottom-panel" hidden>
+      <section id="bottom-panel" data-active-tab="terminal" hidden>
         <div class="bottom-tabs">
-          <button class="bottom-tab active" data-tab="terminal">TERMINAL</button>
-          <button class="bottom-tab" data-tab="output">OUTPUT</button>
-          <button class="bottom-tab" data-tab="problems">PROBLEMAS</button>
+          <div class="bottom-tab-strip" role="tablist">
+          <button class="bottom-tab active" data-tab="terminal" role="tab" aria-selected="true">TERMINAL</button>
+          <button class="bottom-tab" data-tab="ports" role="tab" aria-selected="false">PORTAS<span class="bottom-tab-count" hidden></span></button>
+          <button class="bottom-tab" data-tab="output" role="tab" aria-selected="false">OUTPUT</button>
+          <button class="bottom-tab" data-tab="problems" role="tab" aria-selected="false">PROBLEMAS</button>
+          <button class="bottom-tab" data-tab="ai" role="tab" aria-selected="false" hidden>AGZOS IA</button>
+          </div>
           <div class="bottom-spacer"></div>
-          <button class="icon-btn icon-host" id="btn-clear-terminal" title="Limpar Terminal"></button>
-          <button class="icon-btn icon-host" id="btn-restart-terminal" title="Reiniciar Shell"></button>
-          <button class="icon-btn icon-host" id="btn-pos-terminal" title="Mover Terminal para a Direita"></button>
+          <!-- Ações da aba TERMINAL (somem nas outras abas) -->
+          <div class="panel-actions" data-for="terminal">
+            <span class="term-active" id="term-active"><span class="term-active-icon" id="term-active-icon"></span><span class="term-active-name" id="term-active-name">Terminal</span></span>
+            <div class="term-new-group">
+              <button class="icon-btn" id="btn-term-new" title="Novo Terminal (Ctrl+Shift+`)" aria-label="Novo terminal"></button>
+              <button class="icon-btn term-new-caret" id="btn-term-profiles" title="Novo Terminal com Perfil…" aria-label="Escolher perfil do novo terminal" aria-haspopup="menu" aria-expanded="false"></button>
+            </div>
+            <button class="icon-btn" id="btn-term-split" title="Dividir Terminal (Ctrl+Shift+5)" aria-label="Dividir terminal"></button>
+            <button class="icon-btn" id="btn-term-kill" title="Matar Terminal" aria-label="Matar terminal"></button>
+            <button class="icon-btn" id="btn-term-more" title="Mais Ações…" aria-label="Mais ações do terminal" aria-haspopup="menu" aria-expanded="false"></button>
+            <span class="panel-actions-sep" aria-hidden="true"></span>
+          </div>
+          <!-- Ações da aba PORTAS -->
+          <div class="panel-actions" data-for="ports">
+            <button class="icon-btn" id="btn-ports-refresh" title="Atualizar Portas" aria-label="Atualizar portas"></button>
+            <span class="panel-actions-sep" aria-hidden="true"></span>
+          </div>
+          <button class="icon-btn icon-host" id="btn-pos-terminal" title="Mover Painel para a Direita"></button>
           <button class="icon-btn icon-host" id="btn-maximize-bottom" title="Maximizar Painel"></button>
           <button class="icon-btn icon-host" id="btn-close-bottom" title="Fechar (Esc)"></button>
         </div>
         <div class="bottom-content">
           <div class="bottom-pane active" id="pane-terminal">
+            <!-- Grupos de sessões (.term-group > .term-instance), montados por terminal.js -->
             <div id="terminal-host"></div>
+            <div id="term-sessions" class="term-sessions" role="listbox" aria-label="Sessões de terminal" hidden></div>
+          </div>
+          <div class="bottom-pane" id="pane-ports">
+            <div class="ports-view" id="ports-view"></div>
           </div>
           <div class="bottom-pane" id="pane-output">
             <pre id="output-pre" class="output-pre">Sem saída ainda.</pre>
@@ -131,9 +135,18 @@
           <div class="bottom-pane" id="pane-problems">
             <div class="empty-state">Sem problemas.</div>
           </div>
+          <!-- Host "bottom" do Agzos IA -->
+          <div class="bottom-pane" id="pane-ai"></div>
         </div>
       </section>
     </div>
+
+    <!-- Host "right" do Agzos IA (coluna à direita do workbench) -->
+    <aside id="right-dock" hidden>
+      <div id="right-dock-resizer" class="right-dock-resizer" role="separator" aria-orientation="vertical"
+        aria-label="Redimensionar painel Agzos IA"></div>
+      <div id="right-dock-host" class="right-dock-host"></div>
+    </aside>
   </div>
 
   <!-- STATUS BAR -->

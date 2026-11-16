@@ -231,6 +231,7 @@ const guard = createPathGuard();
 require('./ipc/fs').register(ipcMain, { guard });
 require('./ipc/dialog').register(ipcMain, { ...deps, guard });
 require('./ipc/term').register(ipcMain);
+require('./ipc/ports').register(ipcMain);
 const settingsStore = require('./ipc/settings').register(ipcMain, deps);
 require('./ipc/workspace').register(ipcMain, {
   guard,

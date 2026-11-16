@@ -37,10 +37,13 @@ contextBridge.exposeInMainWorld('agzos', {
 
   // Terminal
   term: {
+    profiles: () => ipcRenderer.invoke('term:profiles'),
     create: (cols, rows, options) => ipcRenderer.invoke('term:create', cols, rows, options),
     write: (id, data) => ipcRenderer.invoke('term:write', id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke('term:resize', id, cols, rows),
     kill: (id) => ipcRenderer.invoke('term:kill', id),
+    clipboardRead: () => ipcRenderer.invoke('term:clipboard:read'),
+    clipboardWrite: (text) => ipcRenderer.invoke('term:clipboard:write', text),
     onData: (cb) => {
       const handler = (_e, id, data) => cb(id, data);
       ipcRenderer.on('term:data', handler);
@@ -51,6 +54,11 @@ contextBridge.exposeInMainWorld('agzos', {
       ipcRenderer.on('term:exit', handler);
       return () => ipcRenderer.removeListener('term:exit', handler);
     },
+  },
+
+  // Portas TCP em escuta (aba PORTAS do painel).
+  ports: {
+    list: () => ipcRenderer.invoke('ports:list'),
   },
 
   // Segredos (cofre do SO). Não há get: o valor nunca vai para o renderer.
@@ -89,8 +97,9 @@ contextBridge.exposeInMainWorld('agzos', {
   },
 
   chat: {
+    // Histórico por workspace: { conversations: [{ id, title, updatedAt, messages }], activeId }
     loadHistory: (root) => ipcRenderer.invoke('chat:history:load', root),
-    saveHistory: (root, messages) => ipcRenderer.invoke('chat:history:save', root, messages),
+    saveHistory: (root, history) => ipcRenderer.invoke('chat:history:save', root, history),
   },
 
   update: {

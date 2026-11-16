@@ -15,19 +15,10 @@ let monaco = null;
 let activeEditor = null;
 let currentModel = null;
 let saveHandler = null;
-let autoSaveTimer = null;
+const autoSaveTimers = new Map(); // path -> timeout (afterDelay)
 
-if (typeof self !== 'undefined' && !self.MonacoEnvironment) {
-  self.MonacoEnvironment = {
-    getWorkerUrl: function (_moduleId, label) {
-      if (label === 'json') return 'vendor/monaco/vs/language/json/jsonWorker.js';
-      if (label === 'css' || label === 'scss' || label === 'less') return 'vendor/monaco/vs/language/css/cssWorker.js';
-      if (label === 'html' || label === 'handlebars' || label === 'razor') return 'vendor/monaco/vs/language/html/htmlWorker.js';
-      if (label === 'typescript' || label === 'javascript') return 'vendor/monaco/vs/language/typescript/tsWorker.js';
-      return 'vendor/monaco/vs/base/worker/workerMain.js';
-    },
-  };
-}
+// Workers: o loader AMD do Monaco resolve vs/base/worker/workerMain.js sozinho.
+// Apontar direto para tsWorker.js/jsonWorker.js quebra (são módulos AMD: "define is not defined").
 
 /* --------------------------------------------------------------------------
    Loader
@@ -172,23 +163,35 @@ export async function setupEditor() {
         renderTabs();
       }
     }
-    if (State.settings.editor?.autoSave === 'afterDelay') {
-      clearTimeout(autoSaveTimer);
-      autoSaveTimer = setTimeout(() => {
-        saveActive();
-      }, Number(State.settings.editor?.autoSaveDelay) || 1000);
+    if (State.settings.editor?.autoSave === 'afterDelay' && State.activePath) {
+      // Captura o arquivo agora: se o usuário trocar de aba, salva ESTE arquivo
+      const path = State.activePath;
+      clearTimeout(autoSaveTimers.get(path));
+      autoSaveTimers.set(path, setTimeout(() => {
+        autoSaveTimers.delete(path);
+        if (State.files.get(path)?.dirty) saveFile(path);
+      }, Number(State.settings.editor?.autoSaveDelay) || 1000));
     }
   });
 
   activeEditor.onDidBlurEditorWidget(() => {
-    if (State.settings.editor?.autoSave === 'onFocusChange') {
+    if (State.settings.editor?.autoSave === 'onFocusChange' && State.files.get(State.activePath)?.dirty) {
       saveActive();
     }
   });
 
-  // Ctrl+S → salvar
+  // Chords Ctrl+K … com foco no Monaco: registrados no próprio editor para não
+  // brigar com os chords nativos (Ctrl+K Ctrl+C etc.). Fora dele: app.js.
+  const { KeyMod, KeyCode } = monaco;
+  activeEditor.addCommand(KeyMod.chord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyW), () => { closeAllTabs(); });
+  activeEditor.addCommand(KeyMod.chord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyS), () => {
+    import('./command-palette.js').then((m) => m.showShortcutsModal());
+  });
+
+  // Ctrl+S → salvar (ignora se o Monaco já consumiu, ex.: Ctrl+K Ctrl+S)
   saveHandler = (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    if (e.defaultPrevented) return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key.toLowerCase() === 's' || e.code === 'KeyS')) {
       e.preventDefault();
       saveActive();
     }
@@ -233,21 +236,31 @@ function setModel(file) {
 
 export async function saveActive() {
   if (!State.activePath) return;
-  const file = State.files.get(State.activePath);
+  await saveFile(State.activePath);
+}
+
+/**
+ * Salva um arquivo aberto. Se for o ativo, usa o conteúdo do editor (e formata
+ * se formatOnSave); senão, o conteúdo guardado em State.files.
+ */
+export async function saveFile(filePath) {
+  const file = State.files.get(filePath);
   if (!file) return;
-  if (State.settings.editor?.formatOnSave && activeEditor) {
+  const isActive = filePath === State.activePath && !!activeEditor && !!currentModel;
+  if (isActive && State.settings.editor?.formatOnSave) {
     try {
       await activeEditor.getAction('editor.action.formatDocument')?.run();
     } catch { }
   }
-  const content = activeEditor.getValue();
+  const stillActive = isActive && filePath === State.activePath;
+  const content = stillActive ? activeEditor.getValue() : file.content;
   try {
-    await window.agzos.fs.writeFile(State.activePath, content);
-    file.content = content;
-    file.dirty = false;
+    await window.agzos.fs.writeFile(filePath, content);
+    // Só limpa o dirty se nada mudou durante a escrita
+    if (file.content === content) file.dirty = false;
     file.mtime = Date.now();
     renderTabs();
-    toast(`Salvo: ${basename(State.activePath)}`, 'success', 1800);
+    toast(`Salvo: ${basename(filePath)}`, 'success', 1800);
   } catch (e) {
     toast(`Erro ao salvar: ${e.message}`, 'error');
   }
@@ -277,6 +290,19 @@ export async function closeTab(filePath) {
     }
   }
   renderTabs();
+}
+
+/**
+ * Fecha todos os editores. Arquivos sujos pedem confirmação (como closeTab);
+ * os recusados continuam abertos. Fecha os inativos primeiro para não
+ * reabrir modelos à toa.
+ */
+export async function closeAllTabs() {
+  const paths = [...State.files.keys()];
+  const ordered = [...paths.filter((p) => p !== State.activePath), ...paths.filter((p) => p === State.activePath)];
+  for (const p of ordered) {
+    if (State.files.has(p)) await closeTab(p);
+  }
 }
 
 // Welcome do editor só aparece sem arquivos abertos
