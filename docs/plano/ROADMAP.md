@@ -1,8 +1,9 @@
 # Roadmap — Agzos Code
 
-**Atualizado:** 16/11/2026
+**Atualizado:** 17/11/2026
 **Base:** Electron + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md).
-**Estado atual:** Fase 2 concluída e v0.4.0 entregue (Settings Modal no padrão VS Code + OTA Multiplataforma + Workers Monaco + Importador VS Code/Cursor). Próxima: Fase 3 — Git e GitHub.
+**Estado atual:** **v1.0.0 entregue** (16/11/2026) e publicada no OTA — Agzos IA agêntico, Git/GitHub, terminal multi-sessão com PTY e painel de IA acoplável. Próximo: validação em Windows/GitHub/modelos reais e itens pendentes abaixo.
+**Infra:** testes, builds e publicação rodam só na VPS (GitHub Actions removido em 17/11/2026).
 
 Planos detalhados, tarefa a tarefa, para o executor: [`execucao/`](execucao/00-guia-do-executor.md).
 Relatórios de cada fase: [`relatorios/`](relatorios/).
@@ -26,7 +27,7 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [x] Pasta `docs/` organizada
 - [x] Explorer com ícones de arquivo e quatro estilos de ícones selecionáveis
 
-## Fase 1 — Fundação (1–1,5 semana) · [plano](execucao/fase-1-fundacao.md)
+## Fase 1 — Fundação (1–1,5 semana) ✅ · [plano](execucao/fase-1-fundacao.md)
 
 - [x] T1 Lint e testes unitários
 - [x] T2 E2E com Playwright e `userData` isolado
@@ -35,10 +36,10 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [x] T5 Secrets no cofre do SO + migração
 - [x] T6 Acesso a arquivos restrito à pasta aberta
 - [x] T7 Bugs da Fase 0 (tema do onboarding, boas-vindas do editor, rótulos pt-BR, terminal)
-- [x] T8 CI no GitHub Actions
+- [x] T8 CI no GitHub Actions (removido em 17/11/2026; checagens rodam na VPS)
 - [x] T9 Docs
 
-## Fase 2 — IA (3 semanas) · [plano](execucao/fase-2-ia.md)
+## Fase 2 — IA (3 semanas) ✅ · [plano](execucao/fase-2-ia.md)
 
 - [x] T1 Parser de SSE
 - [x] T2 Provider compatível com OpenAI (OpenAI, Groq, OpenRouter, Gemini, Ollama, custom)
@@ -52,41 +53,60 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [x] T10 Comandos rápidos e aplicar código com diff
 - [x] T11 Docs + relatório
 
-## Fase 3 — Git e GitHub multi-conta (2 semanas) · [plano](execucao/fase-3-git-github.md)
+## Fase 3 — Git e GitHub multi-conta (2 semanas) ✅ · [plano](execucao/fase-3-git-github.md)
 
-- [ ] T1 Runner de git e parser de status
-- [ ] T2 Operações git e IPC
-- [ ] T3 Painel Git e branch na status bar
-- [ ] T4 Contas GitHub e associação por repositório
-- [ ] T5 (opcional) Login GitHub via Device Flow — precisa de OAuth App da Agzos
-- [ ] T6 Docs + relatório
+- [x] T1 Runner de git e parser de status (v1.0.0)
+- [x] T2 Operações git e IPC (v1.0.0)
+- [x] T3 Painel Git e branch na status bar (v1.0.0)
+- [x] T4 Contas GitHub por token (PAT) e associação por repositório (v1.0.0)
+- [ ] T5 (opcional) Login GitHub via Device Flow — precisa do Client ID de um OAuth App da Agzos
+- [x] T6 Docs (spec em [`superpowers/specs`](../superpowers/specs/2026-11-16-agente-e-git-1.0.0-design.md) e CHANGELOG); relatório de fase não gerado
 
-## Fase 4 — Editor completo (2 semanas) · [plano](execucao/fase-4-editor.md)
+## Fase 4 — Editor completo (2 semanas) 🚧 · [plano](execucao/fase-4-editor.md)
 
 - [x] T1 IntelliSense TS/JS/JSON/CSS/HTML (workers do Monaco configurados na v0.4.0)
-- [ ] T2 Terminal com node-pty
-- [ ] T3 Busca e Quick Open com ripgrep
-- [ ] T4 Recarregar arquivos alterados fora + restaurar sessão
+- [x] T2 Terminal com node-pty (v0.5.0) + multi-sessão, perfis de shell, divisão e aba PORTAS (v0.7.0)
+- [ ] T3 Busca e Quick Open com ripgrep (Quick Open recursivo existe, ainda sem ripgrep)
+- [ ] T4 Recarregar arquivos alterados fora (✅ v1.0.0) + restaurar sessão (pendente)
 - [ ] T5 Modos de performance com efeito
 - [x] T6 Importar configurações do VS Code / Cursor (entregue na v0.4.0)
 - [ ] T7 Docs + relatório
 
-## Fase 5 — Distribuição e v1.0 (1–1,5 semana) · [plano](execucao/fase-5-distribuicao.md)
+## Fase 5 — Distribuição e v1.0 (1–1,5 semana) ✅ · [plano](execucao/fase-5-distribuicao.md)
 
-- [x] T1 Release multiplataforma por tag (workflow de matriz GitHub Actions na v0.4.0)
+- [x] T1 Release multiplataforma — builds Windows/Linux na VPS (`electron-builder` + wine) e `tools/publish-vps-release.js`, mantendo as 2 últimas releases; macOS depende de host macOS
 - [x] T2 Auto-update (multiplataforma Windows/Linux/macOS in-app via mac-ota entregue na v0.4.0)
-- [ ] T3 Tela de privacidade
+- [x] T3 Tela de privacidade (categoria Privacidade & Dados nas Configurações; telemetria desligada)
 - [ ] T4 Assinatura opcional por secrets + guia de compra dos certificados
-- [ ] T5 v1.0.0 + relatório
+- [x] T5 v1.0.0 publicada (16/11/2026); relatório de fase não gerado
 
 ---
 
-## Pós-v1.0 (planejar após a v1.0)
+## Entregas além do plano (v0.5.0 → v1.0.0)
 
-- **Integrações Agzos:** Agzos Key (SSO), Agzos Browser (links e preview), Agzos Project/Hub (contexto no chat).
+- **v0.6.0** — Agzos IA premium: painel acoplável (esquerda/direita/embaixo), várias conversas por workspace, personalização.
+- **v0.6.1** — Ambiente limpo do registro no terminal do Windows; copiar/colar no terminal.
+- **v1.0.0** — Modo Agente: ferramentas de arquivo, pasta, busca e comando; 3 modos de autonomia; aprovação com diff; desfazer por checkpoint.
+
+## Pós-v1.0
+
+**Validação (prioridade)**
+- [ ] Testar em Windows real, contra o github.com e com modelos de IA reais.
+- [ ] Build e teste de macOS.
+
+**Pendências da v1.0**
+- [ ] Device Flow do GitHub (Fase 3 T5).
+- [ ] ripgrep na busca e restaurar sessão (Fase 4 T3/T4).
+- [ ] Assinatura de código Windows/macOS (Fase 5 T4).
+- [ ] Cabeçalho da sidebar com botões por view (hoje mostra os do Explorer em Git/IA).
+- [ ] Cartão de aprovação do agente sem rolagem com o painel embaixo.
+
+**Próximas features**
+- **Git:** merge/rebase com resolução de conflitos, stash, blame.
+- **Agente:** indexação do código, tarefas em segundo plano, uso de tokens/custo, aprovar parte do diff, MCP.
 - **IntelliSense de outras linguagens:** `monaco-languageclient` + servidores LSP (Python, Go, PHP).
-- **Agent:** IA editando vários arquivos e rodando comandos com aprovação.
-- **Freemium:** agentes em background, indexação de codebase, colaboração, créditos de modelos.
+- **Integrações Agzos:** Agzos Key (SSO), Agzos Browser (links e preview), Agzos Project/Hub (contexto no chat).
+- **Freemium:** agentes em background, colaboração, créditos de modelos.
 
 ## Fora do escopo atual
 

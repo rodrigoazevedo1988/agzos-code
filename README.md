@@ -78,7 +78,7 @@ Versão atual: **1.0.0** — editor completo, IA agêntica que edita o projeto e
 | **1 — Fundação** | ✅ | Testes, segurança, modularização e CI |
 | **2 — IA** | ✅ | Providers, streaming, wizard e painel de chat |
 | **3 — Git e GitHub** | ✅ | Git integrado e contas GitHub (Device Flow pendente) |
-| **4 — Editor completo** | ✅ | IntelliSense, terminal PTY, busca, recarga de arquivos |
+| **4 — Editor completo** | 🚧 | IntelliSense, terminal PTY e recarga feitos; ripgrep e restaurar sessão pendentes |
 | **5 — Distribuição e v1.0** | ✅ | Releases e atualização automática (assinatura pendente) |
 | **Pós-v1.0** | ⏳ | Agente avançado, LSP de outras linguagens, integrações Agzos |
 
