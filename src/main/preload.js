@@ -189,6 +189,11 @@ contextBridge.exposeInMainWorld('agzos', {
     undo: (...args) => ipcRenderer.invoke('envvault:undo', ...args),
   },
 
+  // Agzos Árvore (ipc/tree.js): generate(dir, opções) → { text, count, truncated }.
+  tree: {
+    generate: (dir, opts) => ipcRenderer.invoke('tree:generate', dir, opts),
+  },
+
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
   git: {
     available: () => ipcRenderer.invoke('git:available'),

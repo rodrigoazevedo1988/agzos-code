@@ -92,6 +92,7 @@ const DEFAULTS = {
       allowlist: [],
       revealTimeoutSec: 10,
     },
+    tree: { enabled: true },
   },
 };
 
@@ -553,6 +554,17 @@ const SETTINGS_DEF = [
     type: 'number',
     min: 3,
     max: 120,
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Árvore
+  {
+    key: 'modules.tree.enabled',
+    title: 'Agzos Árvore: Habilitada',
+    desc: 'Gera a árvore de pastas em texto (menu de contexto de pasta, paleta e ferramenta project_tree do agente).',
+    categories: ['modules'],
+    section: 'Agzos Árvore',
+    type: 'boolean',
     apply: notifyModules,
   },
 

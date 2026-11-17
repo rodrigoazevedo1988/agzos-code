@@ -25,6 +25,7 @@ import { setupModulesHub } from './modules-hub.js';
 import { setupBroom } from './broom.js';
 import { setupEnvVault } from './envvault.js';
 import { setupSsh } from './ssh.js';
+import { setupTree } from './mods/tree.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -114,6 +115,15 @@ async function boot() {
     console.error('[Módulos] setupModulesHub falhou:', e);
   }
   for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh]]) {
+    try {
+      setup();
+    } catch (e) {
+      console.error(`[Módulos] ${name} falhou:`, e);
+    }
+  }
+
+  // 8c) Módulos Agzos de ferramentas (1.2.0): Árvore, Snap e Ao Vivo.
+  for (const [name, setup] of [['Agzos Árvore', setupTree]]) {
     try {
       setup();
     } catch (e) {

@@ -132,6 +132,7 @@ test('modules: defaults de modules', () => {
       allowlist: [],
       revealTimeoutSec: 10,
     },
+    tree: { enabled: true },
   });
   const { normalizeModules } = require('../../src/main/lib/settings');
   assert.deepEqual(normalizeModules(undefined), DEFAULT_SETTINGS.modules);

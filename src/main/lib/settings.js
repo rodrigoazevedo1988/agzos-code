@@ -83,6 +83,8 @@ const DEFAULT_SETTINGS = {
       allowlist: [], // valores/hashes de valores que nunca bloqueiam
       revealTimeoutSec: 10, // 3–120
     },
+    // Módulos de ferramentas (1.2.0). Normalização em normalizeToolModules.
+    tree: { enabled: true },
   },
 };
 
@@ -186,6 +188,17 @@ function isValidRegex(src) {
   }
 }
 
+/** Agzos Árvore, Snap e Ao Vivo (1.2.0): campo a campo, como normalizeModules. */
+function normalizeToolModules(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const obj = (x) => (isPlainObject(x) ? x : {});
+  const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
+  const tree = obj(v.tree);
+  return {
+    tree: { ...tree, enabled: bool(tree.enabled, def.tree.enabled) },
+  };
+}
+
 /** Valores inválidos de `modules` voltam ao padrão (campo a campo; listas item a item). */
 function normalizeModules(value) {
   const def = DEFAULT_SETTINGS.modules;
@@ -233,6 +246,7 @@ function normalizeModules(value) {
       allowlist,
       revealTimeoutSec,
     },
+    ...normalizeToolModules(v),
   };
 }
 

@@ -22,7 +22,9 @@ test('hub lista 5 cards, 3 "Em breve"', async () => {
     await expect(panel).not.toContainText('Open VSX');
 
     const cards = panel.locator('.module-card');
-    await expect(cards).toHaveCount(5);
+    // 1.2.0: módulos novos acrescentam cards (Árvore, Snap, Ao Vivo…); os 5 originais continuam.
+    await expect(cards.first()).toBeVisible();
+    expect(await cards.count()).toBeGreaterThanOrEqual(5);
     await expect(panel.locator('.module-card.coming-soon')).toHaveCount(3);
     await expect(panel.locator('.module-card[data-module="broom"]')).toContainText('Vassoura de Produção');
     await expect(panel.locator('.module-card[data-module="envVault"]')).toContainText('Cofre .env');
@@ -60,19 +62,19 @@ test('abrir card e voltar com ← Módulos', async () => {
     await expect(panel.locator('.module-card')).toHaveCount(0);
     await expect(panel.locator('.module-view[data-module="broom"]')).toBeVisible();
     await back.click();
-    await expect(panel.locator('.module-card')).toHaveCount(5);
+    await expect(panel.locator('.module-card[data-module="broom"]')).toBeVisible();
 
     // card "Em breve" não abre
     // aria-disabled: Playwright não clica em elemento desabilitado; dispara o evento direto
     await panel.locator('.module-card[data-module="sandbox"]').dispatchEvent('click');
-    await expect(panel.locator('.module-card')).toHaveCount(5);
+    await expect(panel.locator('.module-card[data-module="broom"]')).toBeVisible();
     await expect(back).toHaveCount(0);
 
     // API: openModule / showModulesHub
     await page.evaluate(() => import('./scripts/modules-hub.js').then((m) => m.openModule('envVault')));
     await expect(panel.locator('.module-view[data-module="envVault"]')).toBeVisible();
     await page.evaluate(() => import('./scripts/modules-hub.js').then((m) => m.showModulesHub()));
-    await expect(panel.locator('.module-card')).toHaveCount(5);
+    await expect(panel.locator('.module-card[data-module="broom"]')).toBeVisible();
   } finally {
     await app.close();
   }
