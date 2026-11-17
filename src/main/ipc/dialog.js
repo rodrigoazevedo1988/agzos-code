@@ -1,9 +1,13 @@
 /**
- * IPC: diálogos nativos (dialog:*). Caminho escolhido pelo usuário é liberado no guard.
+ * IPC: diálogos nativos (dialog:*). Caminho escolhido pelo usuário é liberado no guard
+ * da janela que abriu o diálogo (só nela).
  */
 
+const { guardResolver } = require('../lib/window-guards');
+
 // Diálogo modal na janela que pediu (várias janelas).
-function register(ipcMain, { dialog, getWindowFor, guard }) {
+function register(ipcMain, { dialog, getWindowFor, guard, guardFor }) {
+  const guardOf = guardResolver({ guard, guardFor });
   ipcMain.handle('dialog:openFolder', async (evt) => {
     const win = getWindowFor(evt);
     if (!win) return null;
@@ -12,7 +16,7 @@ function register(ipcMain, { dialog, getWindowFor, guard }) {
       title: 'Abrir Pasta',
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    guard.allow(result.filePaths[0]);
+    guardOf(evt?.sender).allow(result.filePaths[0]);
     return result.filePaths[0];
   });
 
@@ -24,7 +28,7 @@ function register(ipcMain, { dialog, getWindowFor, guard }) {
       title: 'Abrir Arquivo',
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    guard.allow(result.filePaths[0]);
+    guardOf(evt?.sender).allow(result.filePaths[0]);
     return result.filePaths[0];
   });
 
@@ -36,7 +40,7 @@ function register(ipcMain, { dialog, getWindowFor, guard }) {
       defaultPath,
     });
     if (result.canceled || !result.filePath) return null;
-    guard.allow(result.filePath);
+    guardOf(evt?.sender).allow(result.filePath);
     return result.filePath;
   });
 }

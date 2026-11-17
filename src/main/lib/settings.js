@@ -52,6 +52,10 @@ const DEFAULT_SETTINGS = {
     sidebarPosition: 'left', // left | right
     statusBarVisible: true,
   },
+  // Janela/app: Ctrl+Q e Arquivo › Sair pedem confirmação (ver lib/quit-confirm.js).
+  window: {
+    confirmBeforeQuit: true,
+  },
   terminal: {
     fontSize: 13,
     scrollback: 1000,
@@ -135,6 +139,13 @@ function normalizeAiPanel(value, legacyContext) {
 function normalizeAiAgent(value) {
   const v = isPlainObject(value) ? value : {};
   return { ...v, mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode };
+}
+
+/** `window.confirmBeforeQuit` não booleano volta ao padrão (true). */
+function normalizeWindow(value) {
+  const v = isPlainObject(value) ? value : {};
+  const c = v.confirmBeforeQuit;
+  return { ...v, confirmBeforeQuit: typeof c === 'boolean' ? c : DEFAULT_SETTINGS.window.confirmBeforeQuit };
 }
 
 const BROOM_RULES = ['console', 'comments', 'unusedImports', 'deadCode'];
@@ -231,6 +242,7 @@ function loadSettings(filePath) {
   merged.aiPanel = normalizeAiPanel(parsed.aiPanel, parsed.ai?.context);
   merged.aiAgent = normalizeAiAgent(parsed.aiAgent);
   merged.modules = normalizeModules(parsed.modules);
+  merged.window = normalizeWindow(parsed.window);
   return merged;
 }
 
@@ -289,5 +301,5 @@ function migrateLegacySecrets(settings, store) {
 }
 
 module.exports = {
-  DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, normalizeModules, loadSettings, saveSettings, migrateLegacySecrets,
+  DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, normalizeModules, normalizeWindow, loadSettings, saveSettings, migrateLegacySecrets,
 };

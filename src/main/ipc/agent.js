@@ -6,7 +6,7 @@
  * Ferramentas que leem o editor (read_terminal, get_problems): o main pergunta ao
  * renderer pelo canal 'agent:query' (queryId, what, args) e espera 'agent:query:reply'.
  *
- * Raiz do agente: payload.root (se liberada no guard) ou a pasta da janela que
+ * Raiz do agente: payload.root (se liberada no guard da janela que pediu) ou a pasta da janela que
  * pediu (getWindowRoot(sender), várias janelas). Sem getWindowRoot, cai na pasta
  * aberta por último (recentFolders[0], gravada pelo workspace:open). Sempre liberada.
  * A chave da API vem do cofre (como ipc/ai.js) e nunca vai ao renderer nem ao modelo.
@@ -20,13 +20,14 @@ const { MODES } = require('../agent/loop');
 const fs = require('fs');
 const { randomUUID } = require('crypto');
 const { getModuleTools } = require('../modules/agent-tools');
+const { guardResolver } = require('../lib/window-guards');
 const { loadSkills, describeSkill, SKILL_TEMPLATE } = require('../agent/skills');
 const { createRendererTools } = require('../agent/renderer-tools');
 
 const QUERY_TIMEOUT = 5000;
 
 function register(ipcMain, {
-  settingsStore, store, guard, userDataDir, fetchImpl = fetch, getWindowRoot,
+  settingsStore, store, guard, guardFor, userDataDir, fetchImpl = fetch, getWindowRoot,
   checkpoints = createCheckpointStore({ dir: userDataDir ? path.join(userDataDir, 'agent-checkpoints') : null }),
   sessionOptions = {}, attachments = null, shell = null,
 }) {
@@ -48,6 +49,7 @@ function register(ipcMain, {
       sender.send('agent:query', id, what, args || {});
     });
   }
+  const guardOf = guardResolver({ guard, guardFor });
 
   function findProfile(id) {
     const settings = settingsStore.load();
@@ -64,8 +66,9 @@ function register(ipcMain, {
       const recent = settingsStore.load().recentFolders;
       if (Array.isArray(recent) && typeof recent[0] === 'string') candidates.push(recent[0]);
     }
+    const g = guardOf(sender);
     for (const candidate of candidates) {
-      if (path.isAbsolute(candidate) && guard.isAllowed(candidate) && isDirectory(candidate)) return path.resolve(candidate);
+      if (path.isAbsolute(candidate) && g.isAllowed(candidate) && isDirectory(candidate)) return path.resolve(candidate);
     }
     return null;
   }
@@ -121,10 +124,10 @@ function register(ipcMain, {
     const root = getRoot(payload || {}, event.sender);
     const { skills, warnings } = skillsFor(root);
     // Skills do usuário podem ser abertas no editor a partir das Configurações.
-    if (skillsDir && fs.existsSync(skillsDir)) guard.allow(skillsDir);
+    if (skillsDir && fs.existsSync(skillsDir)) guardOf(event?.sender).allow(skillsDir);
     return { skills: skills.map(describeSkill), warnings, userDir: skillsDir, projectDir: root ? path.join(root, '.agzos', 'skills') : null };
   });
-  ipcMain.handle('agent:skills:new', () => {
+  ipcMain.handle('agent:skills:new', (event) => {
     if (!skillsDir) return null;
     fs.mkdirSync(skillsDir, { recursive: true });
     let n = 1;
@@ -132,13 +135,13 @@ function register(ipcMain, {
     while (fs.existsSync(file)) { n++; file = path.join(skillsDir, `minha-skill-${n}.md`); }
     const id = n === 1 ? 'minha-skill' : `minha-skill-${n}`;
     fs.writeFileSync(file, SKILL_TEMPLATE.replace('id: minha-skill', `id: ${id}`), 'utf8');
-    guard.allow(skillsDir);
+    guardOf(event?.sender).allow(skillsDir);
     return file;
   });
-  ipcMain.handle('agent:skills:openFolder', async () => {
+  ipcMain.handle('agent:skills:openFolder', async (event) => {
     if (!skillsDir) return false;
     fs.mkdirSync(skillsDir, { recursive: true });
-    guard.allow(skillsDir);
+    guardOf(event?.sender).allow(skillsDir);
     if (shell?.openPath) await shell.openPath(skillsDir);
     return skillsDir;
   });

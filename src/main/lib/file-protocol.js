@@ -7,6 +7,10 @@
  *   Windows: agzos-file://local/C%3A/Users/u/a.png
  * A query (?v=mtime) é ignorada (só serve para furar cache).
  *
+ * Várias janelas: o host é o token da janela (lib/window-guards.js, entregue só a
+ * ela pelo preload) e o handler usa o guard daquela janela (guardForHost). Token
+ * desconhecido ou de outra janela → 403. `guard` + host `local` = modo antigo (testes).
+ *
  * Sem dependência do Electron: o handler recebe { url, method, headers } e
  * devolve um Response (global do Node 18+/Electron).
  */
@@ -37,11 +41,22 @@ function mimeForPath(p) {
   return MIME[base.slice(dot + 1).toLowerCase()] || 'application/octet-stream';
 }
 
-/** Caminho absoluto do arquivo pedido, ou null se a URL não é válida. */
-function urlToPath(url, platform = process.platform) {
+/** { host, path } da URL, ou null se não é válida. */
+function parseFileUrl(url, platform = process.platform) {
   let u;
   try { u = new URL(url); } catch { return null; }
-  if (u.protocol !== `${SCHEME}:` || u.hostname !== HOST) return null;
+  if (u.protocol !== `${SCHEME}:` || !u.hostname) return null;
+  const p = pathFromUrl(u, platform);
+  return p ? { host: u.hostname, path: p } : null;
+}
+
+/** Caminho absoluto do arquivo pedido (host `local`), ou null se a URL não é válida. */
+function urlToPath(url, platform = process.platform) {
+  const parsed = parseFileUrl(url, platform);
+  return parsed && parsed.host === HOST ? parsed.path : null;
+}
+
+function pathFromUrl(u, platform) {
   let decoded;
   try { decoded = decodeURIComponent(u.pathname); } catch { return null; }
   if (!decoded || decoded.includes('\0')) return null;
@@ -80,10 +95,15 @@ function parseRange(header, size) {
 
 const text = (status, body) => new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
 
-function createFileProtocolHandler({ guard, platform = process.platform, fsImpl = fs }) {
+function createFileProtocolHandler({ guard: fallbackGuard, guardForHost, platform = process.platform, fsImpl = fs }) {
   return async function handle(request) {
-    const filePath = urlToPath(request.url, platform);
-    if (!filePath) return text(400, 'URL inválida');
+    const parsed = parseFileUrl(request.url, platform);
+    if (!parsed) return text(400, 'URL inválida');
+    const filePath = parsed.path;
+    const guard = typeof guardForHost === 'function'
+      ? guardForHost(parsed.host)
+      : (parsed.host === HOST ? fallbackGuard : null);
+    if (!guard) return text(403, 'Acesso negado');
     let real;
     try {
       if (!guard.isAllowed(filePath)) return text(403, 'Acesso negado');
@@ -119,4 +139,4 @@ function createFileProtocolHandler({ guard, platform = process.platform, fsImpl 
   };
 }
 
-module.exports = { SCHEME, HOST, urlToPath, mimeForPath, parseRange, createFileProtocolHandler };
+module.exports = { SCHEME, HOST, urlToPath, parseFileUrl, mimeForPath, parseRange, createFileProtocolHandler };

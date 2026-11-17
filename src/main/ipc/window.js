@@ -1,9 +1,11 @@
 /**
  * IPC: janelas (window:*) e app:quit. Cada ação vale para a janela que pediu
  * (evt.sender), nunca para uma "janela principal" global.
+ * app:quit pergunta antes (confirmQuit(janela) → boolean, lib/quit-confirm.js);
+ * window:close não pergunta.
  */
 
-function register(ipcMain, { createWindow, fromWebContents, quit }) {
+function register(ipcMain, { createWindow, fromWebContents, quit, confirmQuit }) {
   const winOf = (evt) => (evt?.sender ? fromWebContents(evt.sender) : null);
 
   ipcMain.handle('window:new', () => {
@@ -29,7 +31,8 @@ function register(ipcMain, { createWindow, fromWebContents, quit }) {
     return true;
   });
 
-  ipcMain.handle('app:quit', () => {
+  ipcMain.handle('app:quit', async (evt) => {
+    if (typeof confirmQuit === 'function' && !(await confirmQuit(winOf(evt)))) return false;
     quit();
     return true;
   });

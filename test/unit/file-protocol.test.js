@@ -113,9 +113,30 @@ test('handler atende Range com 206 e 416', async () => {
   fs.rmSync(base, { recursive: true, force: true });
 });
 
-test('handler recusa diretório e host inválido', async () => {
+test('handler recusa diretório e host desconhecido', async () => {
   const { ws, handler, url, base } = setup();
   assert.equal((await handler(req(url(ws)))).status, 404);
-  assert.equal((await handler(req('agzos-file://outro/x'))).status, 400);
+  assert.equal((await handler(req('agzos-file://outro/x'))).status, 403); // host desconhecido = sem janela dona
+  fs.rmSync(base, { recursive: true, force: true });
+});
+
+test('guardForHost: host = token da janela; token de outra janela ou desconhecido → 403', async () => {
+  const { createWindowGuards } = require('../../src/main/lib/window-guards');
+  const { EventEmitter } = require('node:events');
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-proto-tok-')));
+  const img = path.join(base, 'img.png');
+  fs.writeFileSync(img, Buffer.from([1, 2, 3]));
+  const reg = createWindowGuards();
+  const wc = (id) => Object.assign(new EventEmitter(), { id, isDestroyed: () => false });
+  const a = wc(1);
+  const b = wc(2);
+  reg.guardFor(a).allow(base);
+  reg.guardFor(b);
+  const handler = createFileProtocolHandler({ guardForHost: reg.guardForToken });
+  const u = (host) => `agzos-file://${host}` + img.split('/').map(encodeURIComponent).join('/');
+  assert.equal((await handler(req(u(reg.tokenFor(a))))).status, 200);
+  assert.equal((await handler(req(u(reg.tokenFor(b))))).status, 403);
+  assert.equal((await handler(req(u('local')))).status, 403);
+  assert.equal((await handler(req(u('0123456789abcdef0123456789abcdef')))).status, 403);
   fs.rmSync(base, { recursive: true, force: true });
 });

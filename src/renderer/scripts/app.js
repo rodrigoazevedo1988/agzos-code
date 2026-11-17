@@ -43,6 +43,13 @@ async function boot() {
   // 1) Carrega settings
   const s = await window.agzos.settings.load();
   Object.assign(State.settings, s);
+  // Outra janela salvou settings: atualiza a cópia local e reaplica tema/editor.
+  window.agzos.settings.onChanged?.((next) => {
+    const before = JSON.stringify(State.settings);
+    Object.assign(State.settings, next);
+    if (JSON.stringify(State.settings) === before) return;
+    import('./settings-modal.js').then((m) => m.applySettingsLive()).catch((e) => console.warn('[settings] sync', e));
+  });
 
   // 2) Carrega app info
   const info = await window.agzos.app.info();

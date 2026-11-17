@@ -5,17 +5,20 @@ const { PRESETS } = require('../ai/presets');
 const { upsertProfile, removeProfile, setActiveProfile, getActiveProfile, createProviderForProfile } = require('../ai/profiles');
 const { createChatSessions } = require('../ai/sessions');
 const { loadSkills } = require('../agent/skills');
+const { guardResolver } = require('../lib/window-guards');
 
 const MAX_ATTACH_READ = 30 * 1024 * 1024;
 
 function register(ipcMain, {
-  settingsStore, store, fetchImpl = fetch, attachments = null, guard = null, dialog = null, getMainWindow = () => null,
-  userDataDir = null,
+  settingsStore, store, fetchImpl = fetch, attachments = null, guard = null, guardFor = null, dialog = null,
+  getMainWindow = () => null, getWindowFor = null, userDataDir = null,
 }) {
   const sessions = new Map();
+  // Guard da janela que pediu (várias janelas: lib/window-guards.js).
+  const guardOf = guardResolver({ guard, guardFor });
 
   /** Mensagens do chat: anexos (refs) viram conteúdo; skill de chat vira system prompt. */
-  function prepareMessages(payload) {
+  function prepareMessages(payload, sender) {
     const list = Array.isArray(payload?.messages) ? payload.messages : [];
     const messages = list.map((m) => {
       if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length || !attachments) {
@@ -25,7 +28,7 @@ function register(ipcMain, {
     });
     const skillId = typeof payload?.skill === 'string' ? payload.skill : null;
     if (skillId) {
-      const root = typeof payload.root === 'string' && guard?.isAllowed?.(payload.root) ? payload.root : null;
+      const root = typeof payload.root === 'string' && guardOf(sender)?.isAllowed?.(payload.root) ? payload.root : null;
       try {
         const skill = loadSkills({ userDir: userDataDir ? path.join(userDataDir, 'skills') : null, projectRoot: root })
           .skills.find((item) => item.id === skillId);
@@ -95,7 +98,7 @@ function register(ipcMain, {
   });
   ipcMain.handle('ai:chat', (event, requestId, payload) => {
     const profile = findProfile(payload.profileId);
-    forSender(event.sender).start(requestId, { ...payload, model: payload.model || profile?.model, messages: prepareMessages(payload) });
+    forSender(event.sender).start(requestId, { ...payload, model: payload.model || profile?.model, messages: prepareMessages(payload, event.sender) });
   });
 
   // Anexos: o renderer manda bytes (imagens já reduzidas); aqui classifica, extrai e guarda.
@@ -108,11 +111,13 @@ function register(ipcMain, {
     }
   });
   // Lê arquivos para anexar: sem caminhos → diálogo nativo; com caminhos (Explorer) → só os liberados no guard.
-  ipcMain.handle('ai:attach:read', async (_event, paths) => {
+  ipcMain.handle('ai:attach:read', async (event, paths) => {
+    const g = guardOf(event?.sender);
     let list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && path.isAbsolute(p)) : null;
     if (!list) {
       if (!dialog?.showOpenDialog) return [];
-      const win = getMainWindow();
+      // Diálogo modal na janela que pediu.
+      const win = typeof getWindowFor === 'function' ? getWindowFor(event) : getMainWindow();
       const options = {
         title: 'Anexar arquivos', properties: ['openFile', 'multiSelections'],
         filters: [
@@ -122,7 +127,7 @@ function register(ipcMain, {
       const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       if (result.canceled) return [];
       list = result.filePaths;
-    } else if (!guard || list.some((p) => !guard.isAllowed(p))) {
+    } else if (!g || list.some((p) => !g.isAllowed(p))) {
       return list.map((p) => ({ name: path.basename(p), error: 'Fora das pastas liberadas.' }));
     }
     const out = [];

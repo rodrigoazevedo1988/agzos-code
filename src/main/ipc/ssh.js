@@ -15,10 +15,12 @@ const os = require('os');
 const path = require('path');
 const { collectHosts, appendHost, parseTarget, isSafeAlias } = require('../lib/ssh-config');
 const { findSsh } = require('./term');
+const { guardResolver } = require('../lib/window-guards');
 
 const IS_WIN = process.platform === 'win32';
 
-function register(ipcMain, { guard, home = () => os.homedir() } = {}) {
+function register(ipcMain, { guard, guardFor, home = () => os.homedir() } = {}) {
+  const guardOf = guardResolver({ guard, guardFor });
   const sshDir = () => path.join(home(), '.ssh');
   const configPath = () => path.join(sshDir(), 'config');
 
@@ -91,9 +93,11 @@ function register(ipcMain, { guard, home = () => os.homedir() } = {}) {
     }
   });
 
-  ipcMain.handle('ssh:configPath', async () => {
+  // Libera só na janela que pediu (seletor SSH daquela janela).
+  ipcMain.handle('ssh:configPath', async (evt) => {
     const p = await ensureConfig();
-    if (guard) guard.allow(p);
+    const g = guardOf(evt?.sender);
+    if (g) g.allow(p);
     return p;
   });
 }
