@@ -26,11 +26,11 @@
 
 **Agzos Code** é um editor de código desktop construído com [Electron](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/), o componente de edição também usado pelo VS Code. A base é um aplicativo próprio, sem fork do Code-OSS e sem suporte à API de extensões do VS Code ([ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md)).
 
-Versão atual: **1.0.0** — editor completo, IA agêntica que edita o projeto e roda comandos, Git/GitHub integrados, terminal multi-sessão e atualização automática.
+Versão atual: **1.1.0** — editor completo com barra de menus e várias janelas, IA agêntica com modos e skills, Módulos Agzos nativos (Vassoura de Produção e Cofre .env), visualizadores de PDF/Office/mídia, Git/GitHub, SSH, terminal multi-sessão e atualização automática.
 
 **Diferencial intencional:** desenhado para o ecossistema Agzos (IA, ferramentas internas, identidade visual) e com privacidade por padrão (telemetria desligada, segredos no cofre do sistema).
 
-## 🎯 Funcionalidades (v1.0.0)
+## 🎯 Funcionalidades (v1.1.0)
 
 ### Editor
 - **Monaco** com IntelliSense de TS/JS/JSON/CSS/HTML (workers), multi-cursor, minimap, bracket pair colorization, formatar (`Alt+Shift+F`), quebra de linha (`Alt+Z`), localizar/substituir, ir para linha.
@@ -40,6 +40,20 @@ Versão atual: **1.0.0** — editor completo, IA agêntica que edita o projeto e
 - **Explorer** com árvore lazy, menu de contexto (criar, renomear, excluir, revelar no SO) e cores de status do Git.
 - **Quick Open** (`Ctrl+P`) com busca recursiva, **Buscar em arquivos** (`Ctrl+Shift+F`) e **Command Palette** (`Ctrl+Shift+P`).
 - **Configurações** em modal no padrão VS Code, com busca, e importação de configurações do VS Code / Cursor.
+- **Barra de menus** em pt-BR (Arquivo, Editar, Seleção, Ver, Ir, Executar, Terminal, Ajuda), com navegação por `Alt`; itens futuros aparecem como "Em breve".
+- **Várias janelas** (`Ctrl+Shift+N`), cada uma com sua pasta e permissões isoladas; `Ctrl+Q` pede confirmação.
+- **Executar Arquivo Ativo** e **Executar Tarefa** (scripts do `package.json`) no terminal.
+
+### Visualizadores
+- Imagens com zoom (png, jpg, gif, webp, avif, bmp, ico, svg), vídeo, áudio e PDF.
+- **DOCX**, **XLSX/XLS/ODS** (abas e rolagem virtual) e CSV/TSV em tabela.
+- **Markdown** com pré-visualização ao lado (`Ctrl+Shift+V`), atualizando ao digitar.
+- Demais formatos: "Abrir no app padrão" e "Revelar na pasta".
+
+### Módulos Agzos (nativos, sem extensões)
+- Hub em `Ctrl+Shift+X`.
+- **Vassoura de Produção:** remove `console.*`, comentários, imports não usados e código morto, com preview em diff, Desfazer e contador na barra de status.
+- **Cofre .env:** valores mascarados, comparação com `.env.example`, detecção de segredos e **bloqueio de commit com segredo**, com hook pre-commit opcional.
 
 ### Agzos IA
 - **Painel acoplável** à esquerda, direita (padrão) ou embaixo, redimensionável; trocar de posição não perde a conversa nem o streaming.
@@ -49,6 +63,10 @@ Versão atual: **1.0.0** — editor completo, IA agêntica que edita o projeto e
   - Modos de autonomia: **Perguntar tudo**, **Edição livre** (padrão) e **Automático**.
   - Comandos de risco sempre pedem confirmação; nada fora da pasta do projeto.
   - Cartões por ação, aprovação com diff inline e **Desfazer tudo** por checkpoint.
+- **Modos com skills:** Agente, Chat, Plan, Debugger de Erros, Criador de Sites e Cyber Security; skills próprias em `.agzos/skills/`.
+- **Fila de mensagens** durante a execução, com "Enviar agora" sem cancelar o que está rodando.
+- **Anexos:** imagens (visão), arquivos de texto/código e PDF; colar print com `Ctrl+V`.
+- **Histórico** de todas as conversas, com busca, e **exportar** em Markdown ou PDF.
 - **Personalização:** fonte, densidade, avatar, tecla de envio, contexto padrão.
 
 ### Git e GitHub
@@ -65,6 +83,7 @@ Versão atual: **1.0.0** — editor completo, IA agêntica que edita o projeto e
 - Copiar/colar (`Ctrl+C` com seleção, `Ctrl+Shift+C/V`, `Ctrl+V`, botão direito).
 - Windows: ambiente limpo lido do registro a cada shell (como o Windows Terminal); `AGZOS_TERM_INHERIT_ENV=1` volta a herdar.
 - **Aba PORTAS:** portas TCP em escuta com processo e PID, abrir no navegador.
+- **SSH:** botão remoto na barra de status conecta a hosts do `~/.ssh/config` num terminal SSH (pasta remota completa na 1.2.0).
 
 ### Distribuição
 - Instaladores Windows (NSIS + portátil), Linux (AppImage, DEB, RPM) e macOS (DMG/ZIP, requer host macOS).
@@ -86,13 +105,13 @@ Detalhes em [docs/plano/ROADMAP.md](docs/plano/ROADMAP.md) e no [CHANGELOG](CHAN
 
 ## 🚀 Quick start
 
-### Downloads — v1.0.0
+### Downloads — v1.1.0
 
-- [Windows — instalador](https://code.rsolutionsbr.com/release/Agzos%20Code%20Setup%201.0.0.exe)
-- [Windows — portátil](https://code.rsolutionsbr.com/release/Agzos%20Code%201.0.0.exe)
-- [Linux — AppImage](https://code.rsolutionsbr.com/release/Agzos%20Code-1.0.0.AppImage)
-- [Linux — .deb](https://code.rsolutionsbr.com/release/agzos-code_1.0.0_amd64.deb)
-- [Linux — .rpm](https://code.rsolutionsbr.com/release/agzos-code-1.0.0.x86_64.rpm)
+- [Windows — instalador](https://code.rsolutionsbr.com/release/Agzos%20Code%20Setup%201.1.0.exe)
+- [Windows — portátil](https://code.rsolutionsbr.com/release/Agzos%20Code%201.1.0.exe)
+- [Linux — AppImage](https://code.rsolutionsbr.com/release/Agzos%20Code-1.1.0.AppImage)
+- [Linux — .deb](https://code.rsolutionsbr.com/release/agzos-code_1.1.0_amd64.deb)
+- [Linux — .rpm](https://code.rsolutionsbr.com/release/agzos-code-1.1.0.x86_64.rpm)
 
 Builds de macOS dependem de um host macOS e não acompanham esta release. Enquanto o app não estiver assinado/notarizado, o macOS informa novas versões para download manual.
 
@@ -140,6 +159,11 @@ npm run build:icons
 
 | Atalho | Ação |
 |--------|------|
+| `Ctrl+N` / `Ctrl+Shift+N` | Novo arquivo de texto / Nova janela |
+| `Ctrl+O` | Abrir pasta |
+| `Ctrl+Q` | Sair (pede confirmação) |
+| `Ctrl+Shift+V` | Pré-visualização de Markdown ao lado |
+| `Ctrl+Shift+B` | Executar tarefa de build |
 | `Ctrl+P` | Quick Open |
 | `Ctrl+Shift+P` | Command Palette |
 | `Ctrl+Shift+F` | Buscar nos arquivos |
@@ -157,7 +181,7 @@ npm run build:icons
 | `Ctrl+PageUp/PageDown` | Sessão de terminal anterior/seguinte |
 | `Ctrl+L` | Agzos IA: abrir/fechar (com seleção, envia a seleção) |
 | `Ctrl+Shift+A` | Focar Agzos IA |
-| `Ctrl+Shift+E/F/G/X` | Explorer / Buscar / Git / Extensões |
+| `Ctrl+Shift+E/F/G/X` | Explorer / Buscar / Git / Módulos Agzos |
 | `Ctrl+Enter` (painel Git) | Commit |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom |
 

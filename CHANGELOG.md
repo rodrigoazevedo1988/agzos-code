@@ -1,8 +1,58 @@
 # Changelog
 
-## Não lançado
+## 1.1.0 — 2026-11-17
 
-- Removidos os workflows do GitHub Actions (`ci.yml`, `release.yml`): testes, builds e publicação rodam na VPS (`npm run check`, `xvfb-run -a npx playwright test`, `electron-builder`, `tools/publish-vps-release.js`).
+### Módulos Agzos (utilidades nativas, sem extensões)
+
+- O botão Extensões virou **Módulos Agzos** (`Ctrl+Shift+X`): hub com Vassoura de Produção e Cofre .env; Snippets, Sandbox e Git Slider aparecem como "Em breve".
+- **Vassoura de Produção:** remove `console.*` (mantém `console.error`/`warn` por padrão), comentários (mantém JSDoc, diretivas e licença), imports não usados e código morto simples, sem tocar em strings e templates. Arquivo com erro de sintaxe nunca é alterado.
+  - Preview em diff, limpeza do workspace com progresso e cancelar, Desfazer, contador 🧹 na barra de status, badges no Explorer e menu de contexto.
+  - Ferramenta `clean_code` para o agente. A análise roda num processo separado que encerra sozinho após 20 s ocioso.
+- **Cofre .env:** lista os `.env*` com valores mascarados (revelar com clique longo ou `Alt`), compara com o `.env.example`, aponta segredos (AWS, Stripe, OpenAI, Anthropic, GitHub, Google, Slack, JWT, chaves privadas, URLs com senha) e gera o `.env.example`.
+  - **Bloqueia commit com segredo** no painel Git e no `git commit` do agente; "Ignorar uma vez" fica registrado num log sem o valor. Hook pre-commit opcional para commits feitos no terminal.
+  - Editar, adicionar e remover chaves com Desfazer. Ferramenta `env_check` para o agente, que nunca recebe valores.
+- Configurações → Módulos Agzos.
+
+### Agzos IA
+
+- **Fila de mensagens:** enquanto o agente trabalha, o que você envia entra na fila e sai sozinho no fim; "Enviar agora" injeta a mensagem na execução em andamento sem cancelar.
+- **Anexos:** clipe, colar print (`Ctrl+V`) e arrastar arquivos. Imagens vão como visão; texto/código como conteúdo; PDF com texto extraído.
+- **Modos com skills:** Agente, Chat, Plan (só leitura, com "Executar plano"), Debugger de Erros, Criador de Sites e Cyber Security (auditoria defensiva). Cada modo é uma skill em Markdown que funciona com qualquer provedor; skills próprias em `.agzos/skills/` do projeto ou na pasta do usuário.
+- **Histórico** de todas as conversas, de todas as pastas, com busca, renomear, apagar e exportar.
+- **Exportar conversa** em Markdown ou PDF, com as ações do agente e segredos redigidos.
+- Correção: "Nova conversa" e histórico ficavam sem resposta depois de uma resposta interrompida.
+
+### Barra de menus e janelas
+
+- **Barra de menus** em pt-BR (Arquivo, Editar, Seleção, Ver, Ir, Executar, Terminal, Ajuda), discreta, com navegação por teclado (`Alt`). O que ainda não existe aparece como "Em breve" (lista no [BACKLOG](docs/plano/BACKLOG.md)).
+  - Novo Arquivo de Texto, Abrir Recente, Salvar Todos, Reverter Arquivo, Fechar Pasta, Executar Arquivo Ativo, Executar Tarefa (scripts do `package.json`), Executar Texto Selecionado e ações de seleção/navegação do editor.
+- **Várias janelas** (`Ctrl+Shift+N`), cada uma com sua pasta e **permissões isoladas como no VS Code**: uma janela não acessa arquivos da pasta aberta em outra. Configurações sincronizadas entre janelas.
+- **Sair** (`Ctrl+Q`) pede confirmação, com "Não perguntar novamente".
+
+### Visualizadores de arquivos
+
+- Imagens (png, jpg, gif, webp, avif, bmp, ico, svg) com zoom; vídeo e áudio; PDF; **DOCX**; **XLSX/XLS/ODS** com abas e rolagem virtual; CSV/TSV em tabela; pré-visualização de **Markdown** ao lado (`Ctrl+Shift+V`), atualizando ao digitar.
+- Formatos sem pré-visualização (heic, tiff, psd, pptx…) e binários mostram "Abrir no app padrão" e "Revelar na pasta".
+- Arquivos servidos por um protocolo próprio restrito à pasta da janela.
+
+### SSH
+
+- Botão remoto na barra de status: conecta a hosts do `~/.ssh/config` num terminal SSH, adiciona hosts e abre o arquivo de configuração. A pasta remota completa (SSH/SFTP) vem na 1.2.0.
+
+### Explorer
+
+- Cabeçalho com Novo Arquivo, Nova Pasta, Atualizar e Recolher Pastas, só na view do Explorer.
+
+### Interno
+
+- Testes, builds e publicação rodam só na VPS (workflows do GitHub Actions removidos).
+- `tools/measure-ram.js` mede a RAM em repouso e com os módulos ativos.
+
+### Limitações conhecidas
+
+- Testado em Linux; falta validação em Windows real e macOS (hook pre-commit, SSH e PDF incluídos).
+- Durante a análise do workspace, a Vassoura usa cerca de 150 MB a mais (o compilador TypeScript), liberados quando o processo encerra.
+- Sair pelo Dock do macOS ou pelo logout do sistema não pergunta.
 
 ## 1.0.0 — 2026-11-16
 

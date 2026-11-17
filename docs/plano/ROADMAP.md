@@ -2,7 +2,7 @@
 
 **Atualizado:** 17/11/2026
 **Base:** Electron + Monaco próprio, sem fork do VS Code — [ADR-0001](../decisoes/ADR-0001-base-do-editor.md).
-**Estado atual:** **v1.0.0 entregue** (16/11/2026) e publicada no OTA — Agzos IA agêntico, Git/GitHub, terminal multi-sessão com PTY e painel de IA acoplável. Próximo: validação em Windows/GitHub/modelos reais e itens pendentes abaixo.
+**Estado atual:** **v1.1.0 entregue** (17/11/2026): Onda 1 do PRD de módulos nativos (Vassoura de Produção e Cofre .env), Agzos IA com modos/skills, fila, anexos e histórico global, barra de menus, várias janelas isoladas, visualizadores (PDF, Office, mídia, Markdown) e atalho de SSH. Próximo: **1.2.0** (Snippets, Git Slider com histórico local e pasta remota via SSH/SFTP) e **1.3.0** (Sandbox de Componentes).
 **Infra:** testes, builds e publicação rodam só na VPS (GitHub Actions removido em 17/11/2026).
 
 Planos detalhados, tarefa a tarefa, para o executor: [`execucao/`](execucao/00-guia-do-executor.md).
@@ -87,6 +87,14 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - **v0.6.0** — Agzos IA premium: painel acoplável (esquerda/direita/embaixo), várias conversas por workspace, personalização.
 - **v0.6.1** — Ambiente limpo do registro no terminal do Windows; copiar/colar no terminal.
 - **v1.0.0** — Modo Agente: ferramentas de arquivo, pasta, busca e comando; 3 modos de autonomia; aprovação com diff; desfazer por checkpoint.
+
+## v1.1 → v1.3 — Módulos nativos (PRD v1.1)
+
+Spec: [`superpowers/specs/2026-11-17-modulos-nativos-1.1.0-design.md`](../superpowers/specs/2026-11-17-modulos-nativos-1.1.0-design.md) · Plano: [`superpowers/plans/2026-11-17-modulos-nativos-1.1.0.md`](../superpowers/plans/2026-11-17-modulos-nativos-1.1.0.md) · Relatórios: `relatorios/v1.1.0-*.md`
+
+- [x] **1.1.0** — Base dos módulos, Vassoura de Produção, Cofre .env; Agzos IA (modos/skills, fila, anexos, histórico, exportar); barra de menus; várias janelas com permissões isoladas; visualizadores; atalho SSH; spike do Sandbox ([resultado](../superpowers/specs/2026-11-17-sandbox-spike.md)).
+- [ ] **1.2.0** — Snippets de Agência (JSON no userData), Git Slider + histórico local, pasta remota via SSH/SFTP (`ssh2`, sem servidor no host).
+- [ ] **1.3.0** — Sandbox de Componentes (esbuild nativo, iframe sandbox, Tailwind do projeto).
 
 ## Pós-v1.0
 
