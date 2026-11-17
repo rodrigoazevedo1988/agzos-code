@@ -12,7 +12,7 @@
  *   rodar o git log de novo a cada leitura.
  * createLru({ maxBytes }) → cache de conteúdos (por janela, 50 MB no IPC).
  *
- * O git roda com cwd = pasta do arquivo e pathspec = nome do arquivo; os caminhos do
+ * O git roda com cwd = pasta do arquivo e pathspec literal = nome do arquivo; os caminhos do
  * `--name-only` são relativos à raiz do repositório, como `git show <sha>:<caminho>` espera.
  */
 
@@ -28,8 +28,10 @@ const LOCAL_RE = /^local:(\d{10,16}(?:-\d{1,4})?)$/;
 const GIT_RE = /^git:([0-9a-f]{40}|[0-9a-f]{64}):(.+)$/s;
 
 function gitLogArgs(pathspec, maxCommits) {
+  // --literal-pathspecs: nome de arquivo como `:(top)x` ou `:!x` não vira pathspec magic
+  // (que alcançaria outros arquivos do repositório, fora da raiz liberada).
   return [
-    '-c', 'core.quotePath=false', 'log', '--follow', '-n', String(maxCommits),
+    '--literal-pathspecs', '-c', 'core.quotePath=false', 'log', '--follow', '-n', String(maxCommits),
     `--format=${RS}%H${US}%an${US}%at${US}%s`, '--name-only', '--', pathspec,
   ];
 }
@@ -100,8 +102,6 @@ async function readVersion(absPath, versionId, { store, runGitFor, cache, maxCom
     if (!store) throw new Error('Histórico local indisponível');
     return store.read(absPath, v.id);
   }
-  const hit = cache?.get(versionId);
-  if (hit) return hit;
   let ids = known?.get(absPath);
   if (!ids || !ids.has(versionId)) {
     const tl = await buildTimeline(absPath, { store: null, runGitFor, maxCommits });
@@ -109,9 +109,16 @@ async function readVersion(absPath, versionId, { store, runGitFor, cache, maxCom
     known?.set(absPath, ids);
   }
   if (!ids.has(versionId)) throw new Error('Versão não encontrada na linha do tempo do arquivo');
-  const { stdout } = await runGitFor(pathMod(absPath).dirname(absPath), ['show', `${v.sha}:${v.rel}`]);
+  // Cache por arquivo + versão: o mesmo versionId pedido para outro arquivo não devolve o conteúdo
+  // deste (e `known` é checado antes do cache).
+  const key = `${absPath}\0${versionId}`;
+  const hit = cache?.get(key);
+  if (hit) return hit;
+  // `<sha>:<caminho>` nomeia um objeto (não é pathspec): o caminho é literal, relativo à raiz do
+  // repositório, mesmo começando com `:`. E o caminho só chega aqui se veio do git log deste arquivo.
+  const { stdout } = await runGitFor(pathMod(absPath).dirname(absPath), ['--literal-pathspecs', 'show', `${v.sha}:${v.rel}`]);
   const buf = Buffer.from(stdout, 'utf8');
-  cache?.set(versionId, buf);
+  cache?.set(key, buf);
   return buf;
 }
 
