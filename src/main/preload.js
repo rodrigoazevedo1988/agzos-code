@@ -200,6 +200,20 @@ contextBridge.exposeInMainWorld('agzos', {
     exportImage: (payload, action) => ipcRenderer.invoke('snap:export', payload, action),
   },
 
+  // Agzos Ao Vivo (ipc/live.js): servidor local com recarga; onChanged(cb(status)).
+  live: {
+    start: (target, opts) => ipcRenderer.invoke('live:start', target, opts),
+    stop: () => ipcRenderer.invoke('live:stop'),
+    status: () => ipcRenderer.invoke('live:status'),
+    open: () => ipcRenderer.invoke('live:open'),
+    fileSaved: (p) => ipcRenderer.invoke('live:fileSaved', p),
+    onChanged: (cb) => {
+      const handler = (_e, status) => cb(status);
+      ipcRenderer.on('live:changed', handler);
+      return () => ipcRenderer.removeListener('live:changed', handler);
+    },
+  },
+
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
   git: {
     available: () => ipcRenderer.invoke('git:available'),

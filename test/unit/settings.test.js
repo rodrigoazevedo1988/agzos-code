@@ -134,6 +134,7 @@ test('modules: defaults de modules', () => {
     },
     tree: { enabled: true },
     snap: { enabled: true, watermark: true },
+    liveServer: { enabled: true, startPort: 5500 },
   });
   const { normalizeModules } = require('../../src/main/lib/settings');
   assert.deepEqual(normalizeModules(undefined), DEFAULT_SETTINGS.modules);

@@ -86,6 +86,7 @@ const DEFAULT_SETTINGS = {
     // Módulos de ferramentas (1.2.0). Normalização em normalizeToolModules.
     tree: { enabled: true },
     snap: { enabled: true, watermark: true },
+    liveServer: { enabled: true, startPort: 5500 }, // 1024–65535
   },
 };
 
@@ -196,9 +197,16 @@ function normalizeToolModules(v) {
   const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
   const tree = obj(v.tree);
   const snap = obj(v.snap);
+  const live = obj(v.liveServer);
+  const port = live.startPort;
   return {
     tree: { ...tree, enabled: bool(tree.enabled, def.tree.enabled) },
     snap: { ...snap, enabled: bool(snap.enabled, def.snap.enabled), watermark: bool(snap.watermark, def.snap.watermark) },
+    liveServer: {
+      ...live,
+      enabled: bool(live.enabled, def.liveServer.enabled),
+      startPort: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : def.liveServer.startPort,
+    },
   };
 }
 

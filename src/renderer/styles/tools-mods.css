@@ -43,3 +43,8 @@
 }
 .snap-info { font-size: 11px; color: var(--fg-mute); min-height: 14px; }
 .snap-measure { position: absolute; left: -100000px; top: 0; visibility: hidden; white-space: pre; }
+
+/* Agzos Ao Vivo */
+#status-live { cursor: pointer; color: var(--accent-2, #ff3b42); font-weight: 600; }
+#status-live[hidden] { display: none; }
+.live-actions { display: flex; gap: 8px; flex-wrap: wrap; }

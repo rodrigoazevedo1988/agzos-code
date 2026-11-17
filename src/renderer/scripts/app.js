@@ -27,6 +27,7 @@ import { setupEnvVault } from './envvault.js';
 import { setupSsh } from './ssh.js';
 import { setupTree } from './mods/tree.js';
 import { setupSnap } from './mods/snap.js';
+import { setupLive } from './mods/live.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -124,7 +125,7 @@ async function boot() {
   }
 
   // 8c) Módulos Agzos de ferramentas (1.2.0): Árvore, Snap e Ao Vivo.
-  for (const [name, setup] of [['Agzos Árvore', setupTree], ['Agzos Snap', setupSnap]]) {
+  for (const [name, setup] of [['Agzos Árvore', setupTree], ['Agzos Snap', setupSnap], ['Agzos Ao Vivo', setupLive]]) {
     try {
       setup();
     } catch (e) {

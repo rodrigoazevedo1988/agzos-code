@@ -94,6 +94,7 @@ const DEFAULTS = {
     },
     tree: { enabled: true },
     snap: { enabled: true, watermark: true },
+    liveServer: { enabled: true, startPort: 5500 },
   },
 };
 
@@ -586,6 +587,28 @@ const SETTINGS_DEF = [
     categories: ['modules'],
     section: 'Agzos Snap',
     type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Ao Vivo
+  {
+    key: 'modules.liveServer.enabled',
+    title: 'Agzos Ao Vivo: Habilitado',
+    desc: 'Servidor local (127.0.0.1) que serve a pasta do projeto e recarrega o navegador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Ao Vivo',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.liveServer.startPort',
+    title: 'Agzos Ao Vivo: Porta inicial',
+    desc: 'Primeira porta tentada; se estiver ocupada, usa a próxima livre (1024 a 65535).',
+    categories: ['modules'],
+    section: 'Agzos Ao Vivo',
+    type: 'number',
+    min: 1024,
+    max: 65535,
     apply: notifyModules,
   },
 
