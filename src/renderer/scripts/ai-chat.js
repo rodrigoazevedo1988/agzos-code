@@ -1177,6 +1177,11 @@ function agentContext(message, live) {
 const CONTINUE_PROMPT = 'Continue a tarefa de onde parou. Não refaça o que já foi feito; confira o estado atual dos arquivos antes de seguir.';
 function continueRun() {
   if (request) return;
+  // Tarefa longa: compacta antes de continuar se o histórico passou do limite.
+  if (shouldAutoCompact({ content: CONTINUE_PROMPT })) {
+    compactConversation({ auto: true }).then((result) => { if (result !== 'cancelled' && !request) runAgent(CONTINUE_PROMPT); });
+    return;
+  }
   runAgent(CONTINUE_PROMPT);
 }
 

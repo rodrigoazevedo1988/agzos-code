@@ -8,11 +8,11 @@ const { startFakeOpenAI } = require('./fake-openai');
 
 const SUMMARY = '## Objetivo\nResumo fake da conversa.';
 
-async function setup({ script = [], aiPanel = {}, reply = SUMMARY, delayMs = 5 } = {}) {
+async function setup({ script = [], aiPanel = {}, reply = SUMMARY, delayMs = 5, aiAgent = {} } = {}) {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-compact-'));
   const fake = await startFakeOpenAI({ script, reply, delayMs });
   const launched = await launchApp({
-    settings: { welcomeSeen: true, onboardingCompleted: true, aiAgent: { mode: 'auto' }, aiPanel: { visible: true, ...aiPanel } },
+    settings: { welcomeSeen: true, onboardingCompleted: true, aiAgent: { mode: 'auto', ...aiAgent }, aiPanel: { visible: true, ...aiPanel } },
   });
   const { app, page } = launched;
   await app.evaluate((_electron, d) => global.__agzosAllowRoot(d), workspace);
@@ -225,6 +225,30 @@ test('execução longa do agente: saídas antigas compactadas no laço e selo di
     expect(tools.slice(-10).every((m) => m.content.includes('z'.repeat(100)))).toBe(true);
     // compactação do laço não chama o modelo para resumir
     expect(summaryBodies(fake)).toHaveLength(0);
+  } finally { await env.close(); }
+});
+
+test('"Continuar" depois do limite de passos compacta antes quando o histórico passou do limite', async () => {
+  const listTurn = { toolCalls: [{ name: 'list_dir', arguments: { path: '.' } }] };
+  const env = await setup({
+    aiAgent: { maxSteps: 25 },
+    aiPanel: { autoCompact: true, compactThresholdTokens: 8000 },
+    script: [...Array(26).fill(listTurn), { text: 'Terminei o que faltava.' }],
+  });
+  const { page, fake } = env;
+  try {
+    await page.locator('#ai-input').fill(`Tarefa longa ${'w'.repeat(34000)}`);
+    await page.locator('#ai-input').press('Enter');
+    await idle(page);
+    await page.locator('.ag-continue').last().click();
+    await expect(page.locator('.ai-compact-marker')).toHaveCount(1, { timeout: 15000 });
+    await idle(page);
+    await expect(page.locator('.ai-msg').last()).toContainText('Terminei o que faltava.');
+    expect(summaryBodies(fake)).toHaveLength(1);
+    const users = userTexts(agentBodies(fake).at(-1));
+    expect(users).toHaveLength(2);
+    expect(users[0]).toContain('Resumo fake da conversa.');
+    expect(users[1]).toContain('Continue a tarefa de onde parou');
   } finally { await env.close(); }
 });
 
