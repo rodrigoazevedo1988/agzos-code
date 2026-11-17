@@ -6,7 +6,7 @@
  *   reveal(path, key) → { value }            ← ÚNICO canal que devolve um valor ao renderer
  *   copy(path, key) → { ok: true }           (clipboard no main; o valor não passa pelo renderer)
  *   setValue(path, key, value) · addKey(path, key, value) · removeKey(path, key) → { checkpointId }
- *   undo(checkpointId) → { restored, errors }   (ainda não exposto no preload)
+ *   undo(checkpointId) → { restored, errors }
  *   generateExample(path) → { path, created, added, checkpointId }
  *   scanStaged(root?) → { findings, envFiles }
  *   installHook(root?) · removeHook(root?) · hookStatus(root?)
@@ -33,7 +33,7 @@ const { guardResolver } = require('../lib/window-guards');
 
 const CHANNELS = [
   'list', 'reveal', 'setValue', 'addKey', 'removeKey', 'generateExample', 'copy', 'scanStaged',
-  'installHook', 'removeHook', 'hookStatus', 'gitignoreStatus', 'addToGitignore',
+  'installHook', 'removeHook', 'hookStatus', 'gitignoreStatus', 'addToGitignore', 'undo',
 ];
 
 const GITIGNORE_LINES = ['.env', '.env*.local'];

@@ -3,12 +3,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { launchApp } = require('./helpers');
+const { writeDocx, writeXlsx, writeLargeXlsx, writeOds } = require('./office-fixtures');
 
 const FIX = path.join(__dirname, 'fixtures', 'viewers');
 
 let ctx;
 
-function makeWorkspace() {
+async function makeWorkspace() {
   const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-viewers-')));
   for (const f of fs.readdirSync(FIX)) fs.copyFileSync(path.join(FIX, f), path.join(ws, f));
   fs.writeFileSync(path.join(ws, 'logo.svg'),
@@ -23,14 +24,23 @@ function makeWorkspace() {
   fs.writeFileSync(path.join(ws, 'dados.bin2'), rnd);
   fs.writeFileSync(path.join(ws, 'foto.heic'), Buffer.from([0, 0, 0, 24, 102, 116, 121, 112]));
   fs.writeFileSync(path.join(ws, 'app.js'), 'console.log(1);\n');
+  await writeDocx(path.join(ws, 'relatorio.docx'), fs.readFileSync(path.join(FIX, 'tiny.png')));
+  writeXlsx(path.join(ws, 'planilha.xlsx'));
+  writeLargeXlsx(path.join(ws, 'grande.xlsx'));
+  writeOds(path.join(ws, 'calc.ods'));
+  fs.writeFileSync(path.join(ws, 'antigo.doc'), Buffer.from([0xd0, 0xcf, 0x11, 0xe0]));
   return ws;
 }
 
 test.beforeAll(async () => {
-  const ws = makeWorkspace();
+  const ws = await makeWorkspace();
   const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-outside-')));
   fs.writeFileSync(path.join(outside, 'segredo.png'), fs.readFileSync(path.join(FIX, 'tiny.png')));
   const launched = await launchApp({ settings: { welcomeSeen: true, onboardingCompleted: true } });
+  launched.cspErrors = [];
+  launched.page.on('console', (m) => {
+    if (/Content Security Policy/i.test(m.text())) launched.cspErrors.push(m.text());
+  });
   await launched.app.evaluate((_e, d) => global.__agzosAllowRoot(d), ws);
   await launched.page.evaluate(async (dir) => {
     const mod = await import('./scripts/file-tree.js');
@@ -162,9 +172,9 @@ test('csv vira tabela', async () => {
   const table = page.locator('#viewer-host .viewer-sheet table');
   await expect(table).toBeVisible();
   await expect(table.locator('thead th')).toContainText(['nome', 'obs', 'valor']);
-  await expect(table.locator('tbody tr')).toHaveCount(2);
-  await expect(table.locator('tbody tr').first()).toContainText('x, y');
-  await expect(table.locator('tbody tr').nth(1)).toContainText('diz "oi"');
+  await expect(table.locator('tbody tr[data-row]')).toHaveCount(2);
+  await expect(table.locator('tbody tr[data-row="0"]')).toContainText('x, y');
+  await expect(table.locator('tbody tr[data-row="1"]')).toContainText('diz "oi"');
 });
 
 test('arquivo binário desconhecido mostra a tela "Arquivo binário"', async () => {
@@ -202,6 +212,63 @@ test('protocolo agzos-file: 200 dentro do workspace, 403 fora', async () => {
   expect(await status(url(path.join(ws, 'tiny.png'), '0'.repeat(32)))).toBe(403);
 });
 
-test('sem erros de página', async () => {
+test('docx renderizado com docx-preview (texto, tabela, imagem, zoom)', async () => {
+  const { page, ws } = ctx;
+  await open(path.join(ws, 'relatorio.docx'));
+  const viewer = page.locator('#viewer-host .viewer-docx');
+  await expect(viewer).toBeVisible();
+  const body = viewer.locator('.docx-wrapper');
+  await expect(body).toContainText('Relatório Agzos', { timeout: 10000 });
+  await expect(body).toContainText('Parágrafo de teste');
+  await expect(body.locator('table td').nth(2)).toHaveText('Parafuso');
+  await expect.poll(() => body.locator('img').first().evaluate((el) => el.naturalWidth)).toBeGreaterThan(0);
+  expect(await body.locator('img').first().getAttribute('src')).toMatch(/^data:image\/png/);
+  const before = await viewer.getAttribute('data-zoom');
+  await viewer.locator('[data-action="zoom-in"]').click();
+  await expect.poll(() => viewer.getAttribute('data-zoom')).not.toBe(before);
+  // Link do documento não navega a janela.
+  await body.locator('a', { hasText: 'link externo' }).click();
+  expect(page.url()).toMatch(/index\.html$/);
+});
+
+test('xlsx com 2 abas: troca de aba e cabeçalho de colunas', async () => {
+  const { page, ws } = ctx;
+  await open(path.join(ws, 'planilha.xlsx'));
+  const viewer = page.locator('#viewer-host .viewer-sheet');
+  await expect(viewer).toBeVisible();
+  const tabs = viewer.locator('.sheet-tab');
+  await expect(tabs).toHaveText(['Vendas', 'Notas']);
+  await expect(viewer.locator('thead th')).toContainText(['#', 'A', 'B']);
+  await expect(viewer.locator('tbody tr[data-row]')).toHaveCount(3);
+  await expect(viewer.locator('tbody tr[data-row="1"]')).toContainText('Café');
+  await expect(viewer.locator('tbody tr[data-row="1"]')).toContainText('12.5');
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(viewer.locator('tbody tr[data-row="1"]')).toContainText('segunda aba');
+  await expect(viewer.locator('[data-action="open-external"]')).toBeVisible();
+});
+
+test('xlsx grande: aviso de células e rolagem virtual', async () => {
+  const { page, ws } = ctx;
+  await open(path.join(ws, 'grande.xlsx'));
+  const viewer = page.locator('#viewer-host .viewer-sheet');
+  await expect(viewer.locator('.viewer-warning')).toContainText('60.000 células', { timeout: 10000 });
+  const rendered = await viewer.locator('tbody tr[data-row]').count();
+  expect(rendered).toBeGreaterThan(5);
+  expect(rendered).toBeLessThan(200);
+  await viewer.locator('.viewer-grid').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect(viewer.locator('tbody tr[data-row="5999"]')).toBeVisible();
+});
+
+test('ods abre pelo SheetJS; doc antigo continua no fallback', async () => {
+  const { page, ws } = ctx;
+  await open(path.join(ws, 'calc.ods'));
+  await expect(page.locator('#viewer-host .viewer-sheet tbody tr[data-row="0"]')).toContainText('ods');
+  await open(path.join(ws, 'antigo.doc'));
+  await expect(page.locator('#viewer-host .viewer-fallback')).toContainText('Formato sem pré-visualização');
+});
+
+test('sem erros de página nem violações de CSP', async () => {
   expect(ctx.errors).toEqual([]);
+  expect(ctx.cspErrors).toEqual([]);
 });

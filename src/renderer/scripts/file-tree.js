@@ -76,6 +76,15 @@ function buildNode(node, depth) {
   row.title = node.path;
   const gitKind = gitStatusFor(node.path);
   if (gitKind) row.dataset.git = gitKind;
+  if (!node.isDirectory) {
+    // Arrastar um arquivo para o Agzos IA anexa (o main confere o caminho no guard).
+    row.draggable = true;
+    row.addEventListener('dragstart', (event) => {
+      event.dataTransfer.setData('application/x-agzos-path', node.path);
+      event.dataTransfer.setData('text/plain', node.path);
+      event.dataTransfer.effectAllowed = 'copy';
+    });
+  }
 
   if (State.activePath === node.path && !node.isDirectory) {
     row.classList.add('selected', 'active-file');

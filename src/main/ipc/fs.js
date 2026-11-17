@@ -21,6 +21,8 @@ async function looksBinary(filePath) {
   }
 }
 
+const MAX_BINARY_BYTES = 50 * 1024 * 1024;
+
 function register(ipcMain, { guard, guardFor, shell }) {
   // Guard da janela que pediu (várias janelas: lib/window-guards.js).
   const guardOf = guardResolver({ guard, guardFor });
@@ -54,6 +56,18 @@ function register(ipcMain, { guard, guardFor, shell }) {
     const result = { content, size: stat.size, mtime: stat.mtimeMs };
     if (detect) result.binary = false;
     return result;
+  });
+
+  // Visualizadores de documentos (docx/xlsx): bytes crus, só dentro do guard.
+  ipcMain.handle('fs:readBinary', async (evt, p) => {
+    if (typeof p !== 'string' || !p) throw new Error('path required');
+    const real = guardOf(evt?.sender).assertAllowed(p);
+    const stat = await fsp.stat(real);
+    if (stat.size > MAX_BINARY_BYTES) {
+      throw new Error(`Arquivo muito grande para pré-visualizar (>${MAX_BINARY_BYTES / 1024 / 1024}MB).`);
+    }
+    const buf = await fsp.readFile(real);
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
   });
 
   // Visualizadores: abrir no app padrão do SO / revelar na pasta (só dentro do guard).

@@ -60,11 +60,10 @@ Itens que aparecem na barra de menus (v1.1.0) desabilitados, com o selo "Em brev
 
 ## Visualizadores — Em breve
 
-Entrega atual (v1.1.0): imagens comuns, vídeo/áudio nativos do Chromium, PDF embutido, CSV/TSV em tabela,
-pré-visualização de Markdown e telas de fallback ("Abrir no app padrão" / "Revelar na pasta").
+Entrega atual (v1.1.0): imagens comuns, vídeo/áudio nativos do Chromium, PDF embutido, DOCX (docx-preview),
+XLSX/XLS/ODS e CSV/TSV em grade virtual, pré-visualização de Markdown e telas de fallback
+("Abrir no app padrão" / "Revelar na pasta").
 
-- **DOCX renderizado** — `docx-preview` (Apache-2.0) ou `mammoth` (BSD-2) para ler .docx na aba. **M**
-- **XLSX/XLS/ODS renderizados** — SheetJS Community (Apache-2.0, via cdn.sheetjs.com; a versão do npm tem CVEs) com abas de planilha. **M**
 - **PPTX/ODP** — sem lib JS madura; avaliar conversão para PDF via LibreOffice instalado ou só miniatura. **G**
 - **DOC/PPT/ODT legados** — conversão via LibreOffice (`soffice --convert-to pdf`) quando instalado. **M**
 - **TIFF** — `utif` (MIT, ~30 KB minificado) decodificando para canvas. **P**
@@ -79,5 +78,26 @@ pré-visualização de Markdown e telas de fallback ("Abrir no app padrão" / "R
 - **Mermaid/KaTeX na pré-visualização** — diagramas e fórmulas. **M**
 - **Comparar imagens no diff do Git** — lado a lado / sobreposição para PNG/JPG alterados. **M**
 - **Hex viewer para binários** — em vez de só "Abrir mesmo assim como texto". **M**
-- **CSV grande com rolagem virtual** — hoje mostra até 5000 linhas e limite de 5 MB de leitura. **P**
+- **CSV acima de 5 MB** — hoje o limite de leitura de texto (5 MB) vale também para a grade; ler em streaming. **P**
+- **Planilhas: fórmulas, formatação e células mescladas** — hoje só valores formatados, sem cores/mesclas. **M**
+- **DOCX: busca no documento e cópia com formatação** — o render é somente leitura e sem Ctrl+F. **P**
+- **Tirar xlsx/docx-preview/jszip do pacote** — o renderer usa só as cópias em `vendor/`; excluir de `build.files` (≈ 11 MB). **P**
 - **Soltar pasta do SO abre workspace** — hoje só arquivos são abertos ao arrastar. **P**
+
+## Agzos IA — Em breve
+
+- **Anexos DOCX/XLSX/PPTX (e ODT/ODS).** Hoje são recusados com "ainda não suportado — veja
+  o backlog". Ideia: extrair texto no main (docx → XML de `word/document.xml`; xlsx → planilhas
+  como CSV) sem dependência pesada, no mesmo limite de 200 KB de texto. Mora em
+  `src/main/ai/attachments.js`.
+- **PDF digitalizado (OCR).** PDF sem texto extraível é recusado. Precisaria de OCR local.
+- **Detecção automática de visão por modelo.** O perfil aceita `vision: true|false|auto`
+  (Configurações → Agzos IA); em `auto` o erro do provider vira mensagem clara. Falta uma tabela
+  de modelos conhecidos para avisar antes de enviar.
+- **Steer no meio de um lote de ferramentas.** "Enviar agora" entra depois de terminar todas
+  as chamadas de ferramenta da resposta atual do modelo (ponto seguro), não entre duas delas.
+- **Fila persistente.** A fila de mensagens vive só na sessão do painel (some ao trocar de
+  pasta ou reiniciar).
+- **Renomear/apagar várias conversas de uma vez e exportar todas** no histórico global.
+- **Exportar com diffs completos.** O transcript traz o resumo das ações (+/− linhas, exit
+  code); os diffs inteiros não são guardados no histórico.

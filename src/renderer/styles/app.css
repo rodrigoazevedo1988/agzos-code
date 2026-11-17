@@ -1125,6 +1125,9 @@ kbd {
 }
 .toast.success { border-left-color: #2EA043; }
 .toast.error { border-left-color: var(--accent-2); }
+.toast-action { display: flex; align-items: center; gap: 10px; }
+.toast-action-btn { background: transparent; border: 1px solid var(--line-2, #444); color: var(--fg); border-radius: 4px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.toast-action-btn:hover { background: var(--hover); }
 @keyframes toastIn { from { transform: translateX(20px); opacity: 0; } }
 @keyframes fadeIn { from { opacity: 0; } }
 @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } }

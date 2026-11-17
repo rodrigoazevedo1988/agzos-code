@@ -860,6 +860,10 @@ function renderAIExtraHtml() {
         </div>
       </div>
     </div>
+    <div class="settings-section-card">
+      <h3 class="settings-section-title">Skills (modos do Agzos IA)</h3>
+      <div id="ai-skills-host"></div>
+    </div>
   `;
 }
 
@@ -1039,6 +1043,10 @@ function bindContentEvents() {
       await updateSetting(key, defVal);
     });
   });
+
+  // Agzos IA: skills (modos) e visão do perfil
+  const skillsHost = document.getElementById('ai-skills-host');
+  if (skillsHost) import('./ai-skills-settings.js').then((m) => m.mountSkillsSettings(skillsHost));
 
   // Ações especiais
   const btnAIWizard = document.getElementById('btn-settings-open-ai-wizard');

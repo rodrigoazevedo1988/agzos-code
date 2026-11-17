@@ -200,3 +200,25 @@ test('commit com segredo abre o diálogo, não commita, e "Ignorar uma vez" cria
     await app.close();
   }
 });
+
+test('cofre: editar valor e Desfazer restaura o arquivo', async () => {
+  const dir = workspace();
+  const original = fs.readFileSync(path.join(dir, '.env'), 'utf8');
+  const { app, page, errors } = await launchApp({ settings });
+  try {
+    await openFolder(app, page, dir);
+    const view = await openVault(page);
+    const row = view.locator('.ev-row[data-key="PLAIN"]').first();
+    await row.hover();
+    await row.getByRole('button', { name: 'Editar valor' }).click();
+    const input = page.getByLabel('Novo valor de PLAIN');
+    await input.fill('outro-valor');
+    await input.press('Enter');
+    await expect.poll(() => fs.readFileSync(path.join(dir, '.env'), 'utf8')).toContain('PLAIN=outro-valor');
+    await page.locator('.toast-action-btn', { hasText: 'Desfazer' }).click();
+    await expect.poll(() => fs.readFileSync(path.join(dir, '.env'), 'utf8')).toBe(original);
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+  }
+});

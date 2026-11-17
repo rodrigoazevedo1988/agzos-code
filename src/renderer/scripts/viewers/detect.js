@@ -14,8 +14,8 @@ const GROUPS = {
   audio: ['mp3', 'wav', 'ogg', 'oga', 'flac', 'm4a', 'aac', 'opus', 'weba'],
   pdf: ['pdf'],
   markdown: ['md', 'markdown'],
-  docx: ['docx', 'doc', 'odt', 'rtf'],
-  sheet: ['xlsx', 'xls', 'xlsm', 'ods', 'csv', 'tsv'],
+  docx: ['docx', 'docm', 'dotx', 'doc', 'odt', 'rtf'],
+  sheet: ['xlsx', 'xlsm', 'xlsb', 'xls', 'ods', 'csv', 'tsv'],
   external: [
     // imagens que o Chromium não decodifica
     'heic', 'heif', 'tiff', 'tif', 'psd', 'raw', 'cr2', 'cr3', 'nef', 'arw', 'dng', 'orf', 'rw2', 'xcf', 'ai', 'eps',
@@ -50,4 +50,17 @@ export function detectViewer(filePath) {
 /** Tipos que abrem numa aba de visualização (sem modelo Monaco). */
 export function isViewerKind(kind) {
   return kind !== 'text' && kind !== 'markdown';
+}
+
+/** Documento renderizável na aba ('docx' via docx-preview) ou null (fallback). */
+export function documentEngine(filePath) {
+  return ['docx', 'docm', 'dotx'].includes(extOf(filePath)) ? 'docx' : null;
+}
+
+/** Como abrir uma planilha: 'csv' (parser próprio), 'sheetjs' ou null. */
+export function sheetEngine(filePath) {
+  const ext = extOf(filePath);
+  if (ext === 'csv' || ext === 'tsv') return 'csv';
+  if (['xlsx', 'xlsm', 'xlsb', 'xls', 'ods'].includes(ext)) return 'sheetjs';
+  return null;
 }
