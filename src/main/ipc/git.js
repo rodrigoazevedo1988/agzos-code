@@ -10,10 +10,14 @@ const path = require('path');
 const ops = require('../git/ops');
 const { getStatus, repoRoot } = require('../git/status');
 const { gitVersion, GitError, GIT_INSTALL_URL } = require('../git/run');
+const { getCommitGuard, SecretsDetectedError } = require('../modules/envvault/commit-guard');
 
 function ok(data) { return { ok: true, data }; }
 function fail(e) {
-  return { ok: false, error: { message: e?.message || String(e), kind: e?.kind || 'error', status: e?.status || 0 } };
+  const error = { message: e?.message || String(e), kind: e?.kind || 'error', status: e?.status || 0 };
+  // Bloqueio do Cofre .env: achados vão junto (arquivo/linha/regra/preview mascarado, nunca o valor).
+  if (Array.isArray(e?.findings)) error.findings = e.findings;
+  return { ok: false, error };
 }
 
 /** Embrulha um handler: exceções viram { ok: false, error }. */
@@ -33,7 +37,9 @@ function createQueue() {
   return (key, fn) => {
     const prev = tails.get(key) || Promise.resolve();
     const next = prev.catch(() => {}).then(fn);
-    tails.set(key, next.finally(() => { if (tails.get(key) === next) tails.delete(key); }));
+    // A cauda nunca rejeita (senão a falha de uma operação vira unhandledRejection).
+    const tail = next.then(() => {}, () => {}).then(() => { if (tails.get(key) === tail) tails.delete(key); });
+    tails.set(key, tail);
     return next;
   };
 }
@@ -44,8 +50,10 @@ function identityFor(account) {
   return { name: account.name || account.login, email: `${account.id}+${account.login}@users.noreply.github.com` };
 }
 
-function register(ipcMain, { guard, accounts }) {
+function register(ipcMain, { guard, accounts, commitGuard }) {
   const queue = createQueue();
+  // Cofre .env: o guard é configurado pelo ipc/envvault (registrado depois); resolvido na hora do commit.
+  const secretsGuard = () => commitGuard || getCommitGuard();
 
   function assertCwd(cwd) {
     if (typeof cwd !== 'string' || !cwd) throw new GitError('Pasta inválida', { kind: 'invalid' });
@@ -128,7 +136,19 @@ function register(ipcMain, { guard, accounts }) {
     const dir = assertCwd(cwd);
     const ctx = await networkContext(dir);
     const account = ctx.account || accounts?.pickDefault?.() || null;
-    return queue(dir, () => ops.commit(dir, message, { amend: !!options?.amend, identity: identityFor(account) }));
+    return queue(dir, async () => {
+      const sg = secretsGuard();
+      let findings = [];
+      let root = null;
+      if (sg) {
+        root = await repoRoot(dir);
+        if (root) ({ findings } = await sg.check(root));
+        if (findings.length && !options?.ignoreSecretsOnce) throw new SecretsDetectedError(findings);
+      }
+      const res = await ops.commit(dir, message, { amend: !!options?.amend, identity: identityFor(account) });
+      if (findings.length) sg.logOverride(root, findings);
+      return res;
+    });
   }));
 
   ipcMain.handle('git:log', wrap(async (_e, cwd, limit = 50) => ops.log(assertCwd(cwd), { limit })));

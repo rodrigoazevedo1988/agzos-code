@@ -251,8 +251,10 @@ test('extra: kind inválido vira command; prepare assíncrono é aceito', async 
 test('getModuleTools ignora módulo desabilitado e stub null', () => {
   const { getModuleTools } = require('../../src/main/modules/agent-tools');
   const { DEFAULT_SETTINGS } = require('../../src/main/lib/settings');
-  // stubs reais (null) → nenhuma ferramenta
-  assert.deepEqual(getModuleTools(DEFAULT_SETTINGS), []);
+  // registro real: env_check (Cofre .env) só com o módulo habilitado
+  const realNames = (s) => getModuleTools(s).map((t) => t.definition.name);
+  assert.ok(realNames(DEFAULT_SETTINGS).includes('env_check'));
+  assert.ok(!realNames({ modules: { envVault: { enabled: false } } }).includes('env_check'));
   const a = extraTool({ definition: { name: 'a_tool', description: 'a', input_schema: {} } });
   const b = extraTool({ definition: { name: 'b_tool', description: 'b', input_schema: {} } });
   const registry = [
@@ -265,4 +267,28 @@ test('getModuleTools ignora módulo desabilitado e stub null', () => {
   assert.deepEqual(names({ modules: { broom: { enabled: false } } }), ['b_tool']);
   assert.deepEqual(names({ modules: { envVault: { enabled: false } } }), ['a_tool']);
   assert.deepEqual(names(undefined), ['a_tool', 'b_tool']);
+});
+
+test('extra: gancho commandRisk marca run_command como risco (síncrono ou assíncrono)', async () => {
+  const mk = (commandRisk) => ({
+    definition: { name: 'hook_tool', description: 'x', input_schema: { type: 'object', properties: {} } },
+    kind: 'read',
+    prepare: () => ({ title: 'x', run: async () => ({ summary: 'ok' }) }),
+    commandRisk,
+  });
+  const seen = [];
+  const syncBox = createToolbox({ root, checkpoint: cp, extraTools: [mk((c, ctx) => { seen.push(ctx.cwd); return c.includes('perigo') ? 'motivo x' : null; })] });
+  const p = syncBox.prepare('run_command', { command: 'echo perigo' });
+  assert.equal(p.risky, true);
+  assert.equal(p.riskReason, 'motivo x');
+  assert.equal(p.preview.reason, 'motivo x');
+  assert.equal(syncBox.prepare('run_command', { command: 'echo ok' }).risky, false);
+  assert.deepEqual(seen, [root, root]);
+
+  const asyncBox = createToolbox({ root, checkpoint: cp, extraTools: [mk(async () => 'motivo y')] });
+  const a = await asyncBox.prepare('run_command', { command: 'echo 1' });
+  assert.equal(a.riskReason, 'motivo y');
+
+  const brokenBox = createToolbox({ root, checkpoint: cp, extraTools: [mk(() => { throw new Error('x'); })] });
+  assert.equal(brokenBox.prepare('run_command', { command: 'echo 1' }).risky, false);
 });
