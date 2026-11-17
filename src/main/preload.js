@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld('agzos', {
   // File system
   fs: {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
+    // Diretórios que mudaram no disco (observador da pasta aberta) → recarregar a árvore.
+    onChanged: (cb) => {
+      const handler = (_e, dirs) => cb(dirs);
+      ipcRenderer.on('fs:changed', handler);
+      return () => ipcRenderer.removeListener('fs:changed', handler);
+    },
     findFiles: (p, maxResults) => ipcRenderer.invoke('fs:findFiles', p, maxResults),
     readFile: (p, opts) => ipcRenderer.invoke('fs:readFile', p, opts),
     readBinary: (p) => ipcRenderer.invoke('fs:readBinary', p),
@@ -34,6 +40,8 @@ contextBridge.exposeInMainWorld('agzos', {
     delete: (p) => ipcRenderer.invoke('fs:delete', p),
     rename: (a, b) => ipcRenderer.invoke('fs:rename', a, b),
     homeDir: () => ipcRenderer.invoke('fs:homeDir'),
+    // Busca no host da pasta remota → { hits: [{ file, line, text }] } ({ unsupported } em pasta local).
+    searchText: (root, query, opts) => ipcRenderer.invoke('fs:searchText', root, query, opts),
     openPath: (p) => ipcRenderer.invoke('fs:openPath', p),
     reveal: (p) => ipcRenderer.invoke('fs:reveal', p),
     // Recebe um File de um drop real; o caminho sai do webUtils (o renderer não o forja).
@@ -80,6 +88,32 @@ contextBridge.exposeInMainWorld('agzos', {
     parseTarget: (text) => ipcRenderer.invoke('ssh:parseTarget', text),
   },
 
+  // Pasta remota via SSH (ipc/remote.js). Diálogos: onPrompt(cb) — cb(payload) → resposta
+  // ({ value, remember } para senha/passphrase; true/false para host key).
+  remote: {
+    connect: (target) => ipcRenderer.invoke('remote:connect', target),
+    reconnect: (authority) => ipcRenderer.invoke('remote:reconnect', authority),
+    disconnect: (authority) => ipcRenderer.invoke('remote:disconnect', authority),
+    list: () => ipcRenderer.invoke('remote:list'),
+    browse: (authority, dir) => ipcRenderer.invoke('remote:browse', authority, dir),
+    openInNewWindow: (uri) => ipcRenderer.invoke('remote:openInNewWindow', uri),
+    takePending: () => ipcRenderer.invoke('remote:takePending'),
+    onState: (cb) => {
+      const handler = (_e, st) => cb(st);
+      ipcRenderer.on('remote:state', handler);
+      return () => ipcRenderer.removeListener('remote:state', handler);
+    },
+    onPrompt: (cb) => {
+      const handler = async (_e, id, payload) => {
+        let result = null;
+        try { result = await cb(payload); } catch { result = null; }
+        ipcRenderer.invoke('remote:prompt:reply', id, result).catch(() => {});
+      };
+      ipcRenderer.on('remote:prompt', handler);
+      return () => ipcRenderer.removeListener('remote:prompt', handler);
+    },
+  },
+
   // Portas TCP em escuta (aba PORTAS do painel).
   ports: {
     list: () => ipcRenderer.invoke('ports:list'),
@@ -102,6 +136,7 @@ contextBridge.exposeInMainWorld('agzos', {
     test: (draft, apiKey) => ipcRenderer.invoke('ai:test', draft, apiKey),
     detectOllama: () => ipcRenderer.invoke('ai:detectOllama'),
     chat: (requestId, payload) => ipcRenderer.invoke('ai:chat', requestId, payload),
+    summarize: (requestId, payload) => ipcRenderer.invoke('ai:summarize', requestId, payload),
     cancel: (requestId) => ipcRenderer.invoke('ai:cancel', requestId),
     // Anexos: save({ name, bytes }) → { ok, attachment | error }; read(paths?) → [{ name, bytes | error }]
     // (sem caminhos abre o diálogo nativo; caminhos do Explorer passam pelo guard).
@@ -171,6 +206,11 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Agzos Formatador (ipc/formatter.js): prettier embutido no processo utilitário.
+  formatter: {
+    format: (req) => ipcRenderer.invoke('formatter:format', req),
+  },
+
   // Módulos nativos — Cofre .env (ipc/envvault.js). Valores só chegam por reveal.
   envVault: {
     list: (...args) => ipcRenderer.invoke('envvault:list', ...args),
@@ -187,6 +227,61 @@ contextBridge.exposeInMainWorld('agzos', {
     gitignoreStatus: (...args) => ipcRenderer.invoke('envvault:gitignoreStatus', ...args),
     addToGitignore: (...args) => ipcRenderer.invoke('envvault:addToGitignore', ...args),
     undo: (...args) => ipcRenderer.invoke('envvault:undo', ...args),
+  },
+
+  // Histórico local e Git Slider (ipc/history.js).
+  history: {
+    list: (...args) => ipcRenderer.invoke('history:list', ...args),
+    timeline: (...args) => ipcRenderer.invoke('history:timeline', ...args),
+    read: (...args) => ipcRenderer.invoke('history:read', ...args),
+    recordSave: (...args) => ipcRenderer.invoke('history:recordSave', ...args),
+    restore: (...args) => ipcRenderer.invoke('history:restore', ...args),
+    clear: (...args) => ipcRenderer.invoke('history:clear', ...args),
+  },
+
+  // Agzos Árvore (ipc/tree.js): generate(dir, opções) → { text, count, truncated }.
+  tree: {
+    generate: (dir, opts) => ipcRenderer.invoke('tree:generate', dir, opts),
+  },
+
+  // Agzos Snap (ipc/snap.js): html(payload) → { html } · exportImage(payload, 'save'|'copy').
+  snap: {
+    html: (payload) => ipcRenderer.invoke('snap:html', payload),
+    exportImage: (payload, action) => ipcRenderer.invoke('snap:export', payload, action),
+  },
+
+  // Agzos Ao Vivo (ipc/live.js): servidor local com recarga; onChanged(cb(status)).
+  live: {
+    start: (target, opts) => ipcRenderer.invoke('live:start', target, opts),
+    stop: () => ipcRenderer.invoke('live:stop'),
+    status: () => ipcRenderer.invoke('live:status'),
+    open: () => ipcRenderer.invoke('live:open'),
+    fileSaved: (p) => ipcRenderer.invoke('live:fileSaved', p),
+    onChanged: (cb) => {
+      const handler = (_e, status) => cb(status);
+      ipcRenderer.on('live:changed', handler);
+      return () => ipcRenderer.removeListener('live:changed', handler);
+    },
+  },
+
+  // Módulos nativos — Snippets (ipc/snippets.js). Nenhum canal recebe caminho de arquivo.
+  snippets: {
+    list: (...args) => ipcRenderer.invoke('snippets:list', ...args),
+    get: (...args) => ipcRenderer.invoke('snippets:get', ...args),
+    save: (...args) => ipcRenderer.invoke('snippets:save', ...args),
+    remove: (...args) => ipcRenderer.invoke('snippets:remove', ...args),
+    duplicate: (...args) => ipcRenderer.invoke('snippets:duplicate', ...args),
+    restoreDefaults: (...args) => ipcRenderer.invoke('snippets:restoreDefaults', ...args),
+    import: (...args) => ipcRenderer.invoke('snippets:import', ...args),
+    export: (...args) => ipcRenderer.invoke('snippets:export', ...args),
+    render: (...args) => ipcRenderer.invoke('snippets:render', ...args),
+    interpolate: (...args) => ipcRenderer.invoke('snippets:interpolate', ...args),
+    tailwind: (...args) => ipcRenderer.invoke('snippets:tailwind', ...args),
+    onChanged: (cb) => {
+      const handler = () => cb();
+      ipcRenderer.on('snippets:changed', handler);
+      return () => ipcRenderer.removeListener('snippets:changed', handler);
+    },
   },
 
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.

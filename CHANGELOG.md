@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.2.0 — 2026-11-17
+
+### Pasta remota via SSH
+
+- Abra uma pasta de um servidor pelo botão remoto da barra de status ("Abrir pasta remota via SSH"), na janela atual ou em nova janela. Explorer, editor, visualizadores, busca, Quick Open, terminal, painel Git e agente funcionam no servidor.
+- Conexão por alias do `~/.ssh/config` ou `usuario@host:porta`. Autenticação pelo agente SSH (ssh-agent, OpenSSH do Windows, Pageant), chaves (passphrase pedida) ou senha — guardada no cofre do sistema só com "Lembrar".
+- Chave do servidor conferida no `known_hosts`: desconhecida pede confirmação com o fingerprint; divergente bloqueia a conexão.
+- Queda de conexão mostra "Reconectar" e não perde o que não foi salvo. Push/pull no servidor usam as credenciais do próprio servidor (o token do GitHub não é enviado).
+- Histórico local, Linha do tempo, Árvore, Ao Vivo e Formatador também funcionam na pasta remota.
+
+### Snippets de Agência
+
+- Biblioteca com 22 componentes Agzos prontos (hero, CTA, formulários, pricing, prova social, FAQ, rodapé, navbar…) em HTML + Tailwind, com miniaturas.
+- Clique insere no cursor; arraste para o editor; em `.jsx/.tsx` o HTML vira JSX. Variáveis da marca (`{{cor_primaria}}`, `{{nome_marca}}`…) em Configurações → Módulos Agzos → Snippets.
+- Criar, editar, duplicar, apagar, restaurar originais, importar/exportar e "Salvar seleção como snippet". Ferramentas do agente: `list_snippets`, `insert_snippet`, `save_snippet`.
+
+### Histórico local e Agzos Git Slider
+
+- Cópia de cada arquivo a cada salvamento e antes de alterações do agente, da Vassoura e do Cofre (até 50 por arquivo, 30 dias, 300 MB).
+- Linha do tempo do arquivo (`Ctrl+Alt+H`): commits e versões locais juntos, diff, ←/→, "Restaurar esta versão" e "Comparar com a anterior". Ferramenta do agente `file_history`.
+
+### Novos Módulos Agzos
+
+- **Erros na Linha:** erros e avisos no fim da linha.
+- **Erros Claros:** mensagens do TypeScript formatadas no hover e no painel Problemas (que agora lista os problemas do arquivo).
+- **Marca-texto:** comentários coloridos por marcador (`!`, `?`, `TODO`, `FIXME`, `*`, `//`).
+- **Formatador:** formatação estilo Prettier, "Formatar ao salvar" por linguagem; lê `.prettierrc` JSON/YAML e nunca executa código do projeto.
+- **Árvore:** árvore de pastas em texto para README (respeita `.gitignore`), copiar, inserir ou criar `ARVORE.md`; ferramenta `project_tree`.
+- **Snap:** imagem PNG bonita do código (tema, fundo, moldura, números de linha, marca d'água).
+- **Ao Vivo:** servidor local (127.0.0.1) que recarrega o navegador ao salvar; aparece na aba PORTAS.
+
+### Agzos IA
+
+- **Compactar conversa:** `/compactar`, menu ⋯ ou paleta; automático quando a conversa passa do limite (≈ 60 mil tokens, configurável). Durante execuções longas, saídas antigas de ferramentas viram resumo.
+- **Limite de passos do agente** configurável (25 a 500, padrão 100) e botão **Continuar** quando o limite é atingido.
+
+### Correções e melhorias
+
+- Título da janela mostra `projeto › arquivo — Agzos Code`.
+- Explorer: a pasta relê o disco ao abrir e a árvore observa mudanças (arquivos criados por outros programas, como downloads, aparecem sozinhos); pastas linkadas (symlink, junction, OneDrive) expandem; erro ao abrir pasta aparece em aviso.
+- Histórico: dois salvamentos seguidos não guardam versão vazia.
+- Explorer mostra arquivos ocultos (`.gitignore`, `.env`, `.github`, `.vscode`…); só `.git`, `.DS_Store` e afins ficam ocultos, lista editável em Configurações → "Arquivos: Ocultar no Explorer".
+- Árvore: Copiar/Inserir/Criar usam sempre as opções atuais.
+
+### Segurança (revisão independente da 1.2.0)
+
+- Pasta remota: chave do servidor de outro tipo que a registrada bloqueia a conexão (antes aparecia como "host desconhecido"); hosts no `known_hosts` comparados sem diferenciar maiúsculas.
+- Pasta remota: links simbólicos no servidor não saem da pasta aberta (leitura, escrita, listagem, agente e Ao Vivo).
+- Pasta remota: o tempo limite da conexão pausa enquanto você confere o fingerprint ou digita a senha; 2FA (keyboard-interactive) pergunta cada código em vez de enviar a senha; sem conexões duplicadas na reconexão.
+- `.gitignore`, `.prettierrc` e globs da busca do agente com padrões maliciosos não congelam mais o app (matcher sem backtracking).
+- Git Slider não lê versão de outro arquivo nem aceita nomes de arquivo como pathspec especial do git.
+- Ao Vivo não serve `.env`/`.git` através de links simbólicos.
+- Observador de arquivos no Linux só vigia as pastas abertas na árvore (não esgota o limite do sistema em projetos grandes).
+
+### Limitações conhecidas
+
+- Pasta remota: servidor precisa ser POSIX (Linux/macOS); no agente remoto não há `clean_code`, ferramentas do Cofre nem dos Snippets; hook pre-commit do Cofre e skills de projeto não funcionam; links simbólicos no servidor não são resolvidos.
+- Não testado em Windows real nem macOS.
+
 ## 1.1.0 — 2026-11-17
 
 ### Módulos Agzos (utilidades nativas, sem extensões)

@@ -73,6 +73,11 @@ test('search: ignora node_modules, glob, regex e limite', async () => {
   const many = await run('search', { query: 'x', glob: 'many.txt' });
   assert.match(many.result, /truncados em 200/);
   assert.ok(globToRegExp('**/*.{js,ts}').test('a/b/c.ts'));
+  // glob patológico vindo do modelo não trava o processo main
+  const t0 = Date.now();
+  assert.equal(globToRegExp('**a**a**a**a**a**a**a**b').test('a'.repeat(1000)), false);
+  assert.ok(Date.now() - t0 < 200);
+  assert.equal(globToRegExp('[z-a]').test('x'), false);
 });
 
 test('write_file: cria pastas pai, preview e meta', async () => {
@@ -251,9 +256,9 @@ test('extra: kind inválido vira command; prepare assíncrono é aceito', async 
 test('getModuleTools ignora módulo desabilitado e stub null', () => {
   const { getModuleTools } = require('../../src/main/modules/agent-tools');
   const { DEFAULT_SETTINGS } = require('../../src/main/lib/settings');
-  // registro real: clean_code e env_check, cada um só com o módulo habilitado
+  // registro real: clean_code, env_check e file_history, cada um só com o módulo habilitado
   const realNames = (s) => getModuleTools(s).map((t) => t.definition.name);
-  assert.deepEqual(realNames(DEFAULT_SETTINGS).sort(), ['clean_code', 'env_check']);
+  assert.deepEqual(realNames(DEFAULT_SETTINGS).sort(), ['clean_code', 'env_check', 'file_history', 'insert_snippet', 'list_snippets', 'project_tree', 'save_snippet']);
   assert.ok(!realNames({ modules: { envVault: { enabled: false } } }).includes('env_check'));
   assert.ok(!realNames({ modules: { broom: { enabled: false } } }).includes('clean_code'));
   const a = extraTool({ definition: { name: 'a_tool', description: 'a', input_schema: {} } });

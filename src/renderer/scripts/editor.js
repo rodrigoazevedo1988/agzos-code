@@ -6,6 +6,7 @@
  */
 
 import { toast } from './toast.js';
+import { updateWindowTitle } from './window-title.js';
 import { renderTabs, focusTab } from './tabs.js';
 import { detectViewer, isViewerKind } from './viewers/detect.js';
 import { showViewer, hideViewer } from './viewers/index.js';
@@ -20,6 +21,7 @@ let saveHandler = null;
 const autoSaveTimers = new Map(); // path -> timeout (afterDelay)
 let applyingExternal = false; // recarga vinda do disco: não marca a aba como suja
 const conflicts = new Set(); // arquivos sujos alterados por fora (agente)
+let formatOnSaveCheck = () => false; // Agzos Formatador: formatar ao salvar por linguagem
 
 // Workers: o loader AMD do Monaco resolve vs/base/worker/workerMain.js sozinho.
 // Apontar direto para tsWorker.js/jsonWorker.js quebra (são módulos AMD: "define is not defined").
@@ -250,7 +252,7 @@ export async function openFile(filePath, contentOverride, opts = {}) {
   syncConflictBar();
   document.getElementById('welcome').style.display = 'none';
   // Atualiza título da janela
-  document.title = `${basename(filePath)} — Agzos Code`;
+  updateWindowTitle();
   notifyActiveChanged();
 }
 
@@ -387,7 +389,7 @@ export async function saveFile(filePath) {
   // Abas de visualização não têm texto: nunca escrever nada no arquivo.
   if (!file || file.viewer) return;
   const isActive = filePath === State.activePath && !!activeEditor && !!currentModel;
-  if (isActive && State.settings.editor?.formatOnSave) {
+  if (isActive && (State.settings.editor?.formatOnSave || formatOnSaveCheck(currentModel))) {
     try {
       await activeEditor.getAction('editor.action.formatDocument')?.run();
     } catch { }
@@ -401,7 +403,7 @@ export async function saveFile(filePath) {
     file.mtime = Date.now();
     if (conflicts.delete(filePath)) syncConflictBar();
     renderTabs();
-    window.dispatchEvent(new CustomEvent('agzos:file-saved', { detail: { path: filePath } }));
+    window.dispatchEvent(new CustomEvent('agzos:file-saved', { detail: { path: filePath, content } }));
     toast(`Salvo: ${basename(filePath)}`, 'success', 1800);
   } catch (e) {
     toast(`Erro ao salvar: ${e.message}`, 'error');
@@ -431,7 +433,8 @@ export async function closeTab(filePath) {
     } else {
       activeEditor.setModel(monaco.editor.createModel('', 'plaintext'));
       document.getElementById('welcome').style.display = '';
-      document.title = 'Agzos Code';
+      State.activePath = null;
+      updateWindowTitle();
       notifyActiveChanged();
     }
   }
@@ -458,6 +461,11 @@ function syncEditorWelcome() {
 }
 
 export function getActiveEditor() { return activeEditor; }
+
+/** Módulos (Agzos Formatador) decidem se o modelo ativo é formatado ao salvar. fn(model) → boolean */
+export function setFormatOnSaveCheck(fn) {
+  formatOnSaveCheck = typeof fn === 'function' ? fn : () => false;
+}
 export function getMonaco() { return monaco; }
 
 export function applyTheme(themeName) {

@@ -3,6 +3,7 @@
  * Sem dependência do Electron: recebe o caminho por parâmetro.
  */
 
+const { DEFAULT_FILES_EXCLUDE, normalizeFilesExclude } = require('./files-exclude');
 const fs = require('fs');
 const path = require('path');
 
@@ -27,13 +28,18 @@ const DEFAULT_SETTINGS = {
     showAvatars: true,
     sendKey: 'enter', // enter | ctrlEnter
     defaultContext: { file: true, selection: true, terminal: false },
+    // Compactar conversa: automática antes do pedido e dentro do agente (ai/compact.js).
+    autoCompact: true,
+    compactThresholdTokens: 60000, // 8k–400k
   },
   // Agente: modo de autonomia ask | edit | auto. Dono: ipc/agent.js (agent:setMode).
-  aiAgent: { mode: 'edit' },
+  aiAgent: { mode: 'edit', maxSteps: 100 },
   // Skills de projeto confiadas pelo usuário: [{ root, path, sha256 }] (só o main grava).
   aiSkills: { trusted: [] },
   // Contas GitHub (só metadados; tokens no cofre em github.<id>). Dono: ipc/github.js.
   github: { accounts: [], defaultAccountId: null, repoAccounts: {} },
+  // Nomes ocultos no Explorer/Quick Open (como files.exclude do VS Code).
+  files: { exclude: [...DEFAULT_FILES_EXCLUDE] },
   editor: {
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
     tabSize: 2,
@@ -83,6 +89,37 @@ const DEFAULT_SETTINGS = {
       allowlist: [], // valores/hashes de valores que nunca bloqueiam
       revealTimeoutSec: 10, // 3–120
     },
+    // Snippets (1.2.0): variáveis da marca trocadas em {{nome}} na inserção.
+    snippets: {
+      enabled: true,
+      variables: [
+        { name: 'cor_primaria', value: '#D10A11' },
+        { name: 'cor_fundo', value: '#0E0E0E' },
+        { name: 'cor_texto', value: '#E8E8E8' },
+        { name: 'cor_secundaria', value: '#1A1A1A' },
+        { name: 'fonte', value: 'Inter, sans-serif' },
+        { name: 'nome_marca', value: 'Agzos' },
+        { name: 'url_site', value: 'https://seudominio.com.br' },
+        { name: 'email_contato', value: 'contato@seudominio.com.br' },
+      ],
+    },
+    // Histórico local e Git Slider (1.2.0). Normalização em normalizeHistoryModules.
+    localHistory: { enabled: true, maxPerFile: 50, maxDays: 30, maxTotalMB: 300 },
+    gitSlider: { enabled: true, maxCommits: 200 },
+    // Módulos de editor (1.2.0). Normalização em normalizeEditorMods.
+    inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
+    prettyErrors: { enabled: true },
+    highlighter: { enabled: true, tags: ['!=#FF5252', '?=#4FC3F7', 'TODO=#FF9800', 'FIXME=#FF9800', '*=#98C379', '//=#7A7A7A'] },
+    formatter: {
+      enabled: true,
+      formatOnSave: {
+        javascript: false, typescript: false, json: false, css: false, scss: false, less: false, html: false, markdown: false, yaml: false,
+      },
+    },
+    // Módulos de ferramentas (1.2.0). Normalização em normalizeToolModules.
+    tree: { enabled: true },
+    snap: { enabled: true, watermark: true },
+    liveServer: { enabled: true, startPort: 5500 }, // 1024–65535
   },
 };
 
@@ -109,6 +146,7 @@ function deepMerge(target, source) {
 }
 
 const AI_PANEL_WIDTH = { min: 240, max: 1600 };
+const COMPACT_THRESHOLD = { min: 8000, max: 400000 };
 
 /** Valores inválidos de `aiPanel` voltam ao padrão (campo a campo). */
 function normalizeAiPanel(value, legacyContext) {
@@ -135,13 +173,27 @@ function normalizeAiPanel(value, legacyContext) {
     showAvatars: typeof v.showAvatars === 'boolean' ? v.showAvatars : def.showAvatars,
     sendKey: pick(v.sendKey, ['enter', 'ctrlEnter'], def.sendKey),
     defaultContext,
+    autoCompact: typeof v.autoCompact === 'boolean' ? v.autoCompact : def.autoCompact,
+    // Campo numérico das Configurações pode chegar como string.
+    compactThresholdTokens: int(
+      typeof v.compactThresholdTokens === 'string' && v.compactThresholdTokens.trim() ? Number(v.compactThresholdTokens) : v.compactThresholdTokens,
+      COMPACT_THRESHOLD.min, COMPACT_THRESHOLD.max, def.compactThresholdTokens,
+    ),
   };
 }
 
-/** `aiAgent.mode` inválido volta a 'edit'. */
+/** Limites de passos do agente por pedido. */
+const AGENT_STEP_LIMITS = [25, 50, 100, 200, 500];
+
+/** `aiAgent.mode` inválido volta a 'edit'; `maxSteps` fora da lista volta a 100. */
 function normalizeAiAgent(value) {
   const v = isPlainObject(value) ? value : {};
-  return { ...v, mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode };
+  const steps = Number(v.maxSteps);
+  return {
+    ...v,
+    mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode,
+    maxSteps: AGENT_STEP_LIMITS.includes(steps) ? steps : DEFAULT_SETTINGS.aiAgent.maxSteps,
+  };
 }
 
 const MAX_TRUSTED_SKILLS = 500;
@@ -186,6 +238,98 @@ function isValidRegex(src) {
   }
 }
 
+/** localHistory/gitSlider: inteiros fora da faixa voltam ao padrão, campo a campo. */
+function normalizeHistoryModules(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const int = (val, min, max, fallback) => (Number.isInteger(val) && val >= min && val <= max ? val : fallback);
+  const h = isPlainObject(v.localHistory) ? v.localHistory : {};
+  const g = isPlainObject(v.gitSlider) ? v.gitSlider : {};
+  return {
+    localHistory: {
+      ...h,
+      enabled: typeof h.enabled === 'boolean' ? h.enabled : def.localHistory.enabled,
+      maxPerFile: int(h.maxPerFile, 1, 1000, def.localHistory.maxPerFile),
+      maxDays: int(h.maxDays, 1, 3650, def.localHistory.maxDays),
+      maxTotalMB: int(h.maxTotalMB, 10, 10000, def.localHistory.maxTotalMB),
+    },
+    gitSlider: {
+      ...g,
+      enabled: typeof g.enabled === 'boolean' ? g.enabled : def.gitSlider.enabled,
+      maxCommits: int(g.maxCommits, 10, 2000, def.gitSlider.maxCommits),
+    },
+    ...normalizeToolModules(v),
+  };
+}
+
+const INLINE_SEVERITIES = ['error', 'warning', 'info'];
+const HIGHLIGHT_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/** "marcador=#cor" válido → forma canônica (sem espaços); inválido → null. */
+function normalizeHighlightTag(raw) {
+  if (typeof raw !== 'string') return null;
+  const at = raw.lastIndexOf('=');
+  if (at <= 0) return null;
+  const tag = raw.slice(0, at).trim();
+  const color = raw.slice(at + 1).trim();
+  if (!tag || tag.length > 20 || /\s/.test(tag) || !HIGHLIGHT_COLOR.test(color)) return null;
+  return `${tag}=${color}`;
+}
+
+/** Módulos de editor da 1.2.0 (Erros na Linha, Erros Claros, Marca-texto, Formatador). */
+function normalizeEditorMods(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
+  const obj = (val) => (isPlainObject(val) ? val : {});
+
+  const ie = obj(v.inlineErrors);
+  const hl = obj(v.highlighter);
+  const fm = obj(v.formatter);
+  const fosIn = obj(fm.formatOnSave);
+  const formatOnSave = {};
+  for (const [lang, val] of Object.entries(def.formatter.formatOnSave)) formatOnSave[lang] = bool(fosIn[lang], val);
+  const severities = Array.isArray(ie.severities)
+    ? INLINE_SEVERITIES.filter((s) => ie.severities.includes(s))
+    : [...def.inlineErrors.severities];
+
+  return {
+    inlineErrors: {
+      ...ie,
+      enabled: bool(ie.enabled, def.inlineErrors.enabled),
+      severities,
+      onlyCursorLine: bool(ie.onlyCursorLine, def.inlineErrors.onlyCursorLine),
+    },
+    prettyErrors: { ...obj(v.prettyErrors), enabled: bool(obj(v.prettyErrors).enabled, def.prettyErrors.enabled) },
+    highlighter: {
+      ...hl,
+      enabled: bool(hl.enabled, def.highlighter.enabled),
+      tags: Array.isArray(hl.tags) ? hl.tags.map(normalizeHighlightTag).filter(Boolean) : [...def.highlighter.tags],
+    },
+    formatter: { ...fm, enabled: bool(fm.enabled, def.formatter.enabled), formatOnSave },
+  };
+}
+
+/** Agzos Árvore, Snap e Ao Vivo (1.2.0): campo a campo, como normalizeModules. */
+function normalizeToolModules(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const obj = (x) => (isPlainObject(x) ? x : {});
+  const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
+  const tree = obj(v.tree);
+  const snap = obj(v.snap);
+  const live = obj(v.liveServer);
+  const port = live.startPort;
+  return {
+    tree: { ...tree, enabled: bool(tree.enabled, def.tree.enabled) },
+    snap: { ...snap, enabled: bool(snap.enabled, def.snap.enabled), watermark: bool(snap.watermark, def.snap.watermark) },
+    liveServer: {
+      ...live,
+      enabled: bool(live.enabled, def.liveServer.enabled),
+      startPort: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : def.liveServer.startPort,
+    },
+  };
+}
+
+const SNIPPET_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,39}$/;
+
 /** Valores inválidos de `modules` voltam ao padrão (campo a campo; listas item a item). */
 function normalizeModules(value) {
   const def = DEFAULT_SETTINGS.modules;
@@ -215,8 +359,18 @@ function normalizeModules(value) {
   const revealTimeoutSec = typeof t === 'number' && Number.isInteger(t) && t >= 3 && t <= 120
     ? t : def.envVault.revealTimeoutSec;
 
+  const sn = isPlainObject(v.snippets) ? v.snippets : {};
+  const seenVars = new Set();
+  const variables = Array.isArray(sn.variables)
+    ? sn.variables
+      .filter((x) => isPlainObject(x) && typeof x.name === 'string' && SNIPPET_VAR_NAME.test(x.name)
+        && typeof x.value === 'string' && !seenVars.has(x.name) && seenVars.add(x.name))
+      .map((x) => ({ name: x.name, value: x.value }))
+    : def.snippets.variables.map((x) => ({ ...x }));
+
   return {
     ...v,
+    snippets: { ...sn, enabled: bool(sn.enabled, def.snippets.enabled), variables },
     broom: {
       ...b,
       enabled: bool(b.enabled, def.broom.enabled),
@@ -233,6 +387,8 @@ function normalizeModules(value) {
       allowlist,
       revealTimeoutSec,
     },
+    ...normalizeHistoryModules(v),
+    ...normalizeEditorMods(v),
   };
 }
 
@@ -270,6 +426,7 @@ function loadSettings(filePath) {
   merged.aiSkills = normalizeAiSkills(parsed.aiSkills);
   merged.modules = normalizeModules(parsed.modules);
   merged.window = normalizeWindow(parsed.window);
+  merged.files = { ...(isPlainObject(parsed.files) ? parsed.files : {}), exclude: normalizeFilesExclude(parsed.files?.exclude) };
   return merged;
 }
 

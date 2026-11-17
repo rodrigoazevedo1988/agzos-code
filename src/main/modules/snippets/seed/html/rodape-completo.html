@@ -1,0 +1,45 @@
+<footer class="bg-[{{cor_fundo}}] px-6 pt-20 text-[{{cor_texto}}]" style="font-family: {{fonte}}">
+  <div class="mx-auto max-w-6xl">
+    <div class="grid gap-12 border-b border-[{{cor_texto}}]/15 pb-14 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
+      <div>
+        <a href="{{url_site}}" class="inline-flex items-center gap-2 text-xl font-semibold tracking-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]"><svg class="h-7 w-7 text-[{{cor_primaria}}]" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M0 0h32v32H0z" /><path d="M9 23l7-14 7 14h-4l-3-6-3 6z" fill="#fff" /></svg>{{nome_marca}}</a>
+        <p class="mt-5 max-w-xs text-sm leading-relaxed text-[{{cor_texto}}]/75">Estratégia, design e tecnologia para marcas que vendem pela internet.</p>
+        <a href="mailto:{{email_contato}}" class="mt-6 inline-block text-sm font-semibold underline decoration-[{{cor_primaria}}] underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">{{email_contato}}</a>
+      </div>
+      <nav aria-label="Serviços">
+        <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-[{{cor_texto}}]/60">Serviços</h2>
+        <ul class="mt-5 space-y-3 text-sm">
+          <li><a href="{{url_site}}/sites" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Sites e landing pages</a></li>
+          <li><a href="{{url_site}}/ecommerce" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">E-commerce</a></li>
+          <li><a href="{{url_site}}/midia" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Mídia paga</a></li>
+          <li><a href="{{url_site}}/dados" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Dados e BI</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Empresa">
+        <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-[{{cor_texto}}]/60">Empresa</h2>
+        <ul class="mt-5 space-y-3 text-sm">
+          <li><a href="{{url_site}}/sobre" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Sobre</a></li>
+          <li><a href="{{url_site}}/cases" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Cases</a></li>
+          <li><a href="{{url_site}}/carreiras" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Carreiras</a></li>
+          <li><a href="{{url_site}}/blog" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Blog</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Redes sociais">
+        <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-[{{cor_texto}}]/60">Siga</h2>
+        <ul class="mt-5 space-y-3 text-sm">
+          <li><a href="https://instagram.com/" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Instagram</a></li>
+          <li><a href="https://linkedin.com/" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">LinkedIn</a></li>
+          <li><a href="https://youtube.com/" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">YouTube</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="flex flex-col gap-4 py-8 text-xs text-[{{cor_texto}}]/60 md:flex-row md:items-center md:justify-between">
+      <p>© 2026 {{nome_marca}}. Todos os direitos reservados.</p>
+      <ul class="flex gap-6">
+        <li><a href="{{url_site}}/privacidade" class="hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Privacidade</a></li>
+        <li><a href="{{url_site}}/termos" class="hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Termos de uso</a></li>
+      </ul>
+    </div>
+  </div>
+  <p class="pointer-events-none select-none overflow-hidden whitespace-nowrap text-center text-[18vw] font-semibold leading-[0.8] tracking-tighter text-[{{cor_texto}}]/5" aria-hidden="true">{{nome_marca}}</p>
+</footer>

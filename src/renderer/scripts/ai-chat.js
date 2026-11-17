@@ -16,6 +16,7 @@ import {
   AGENT_MODES, AGENT_MODE_INFO, normalizeAgentMode, createAgentTurn, applyAgentEvent, settleSteps,
   encodeAgentContent, decodeAgentContent, stripAgentMarker, joinRoot, relativePath,
   FALLBACK_SKILLS, resolveSkill, skillLabel, payloadMessage, formatBytes, truncate, isVisionError, agentTurnText,
+  estimateTokens, modelMessages, compactableMessages, makeSummaryMessage, compactedBefore, isSummary,
 } from './ai-chat-utils.js';
 import { TurnView } from './agent-ui.js';
 import { attachFile, attachFromMain } from './ai-attachments.js';
@@ -29,7 +30,7 @@ const $ = (sel) => panel.querySelector(sel);
 
 let root = null;
 let store = { conversations: [], activeId: null };
-let request = null; // { id, message, el, conversationId, agent?: { turn, view } }
+let request = null; // { id, message, el, conversationId, agent?: { turn, view } } | { id, compact: true, conversationId, message: null }
 let renderTimer = null;
 let loadVersion = 0;
 let loadingHistory = false;
@@ -421,7 +422,42 @@ function attachmentChip(att, { removable = false } = {}) {
     }, icon('x', 11)) : null);
 }
 
+/** Marcador "Conversa compactada — N mensagens resumidas", expansível para ver o resumo. */
+function compactMarkerElement(message) {
+  const n = Number(message.compactedCount) || 0;
+  const body = h('div', { class: 'ai-prose ai-compact-body' });
+  body.innerHTML = renderMarkdown(message.content);
+  return h('div', { class: 'ai-compact-marker', role: 'note' },
+    h('details', {},
+      h('summary', { title: 'Mostrar o resumo enviado ao modelo no lugar das mensagens anteriores' },
+        icon('fold-vertical', 13),
+        h('span', { text: `Conversa compactada — ${n} ${n === 1 ? 'mensagem resumida' : 'mensagens resumidas'}` })),
+      body));
+}
+
+function compactingElement() {
+  return h('div', { class: 'ai-compacting', role: 'status' },
+    h('span', { class: 'ai-thinking-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
+    h('span', { text: 'Compactando conversa…' }));
+}
+
+/** Mensagens da conversa: as anteriores ao último resumo ficam esmaecidas. */
+function threadChildren(items, { live = false } = {}) {
+  const cut = compactedBefore(items);
+  const children = items.map((message, index) => {
+    const el = messageElement(message);
+    if (index < cut && !isSummary(message)) {
+      el.classList.add('is-compacted');
+      el.title = 'Compactada: o modelo recebe só o resumo abaixo';
+    }
+    return el;
+  });
+  if (live) children.push(compactingElement());
+  return children;
+}
+
 function messageElement(message) {
+  if (isSummary(message)) return compactMarkerElement(message);
   if (message.role === 'user') {
     const atts = Array.isArray(message.attachments) && message.attachments.length
       ? h('div', { class: 'ai-msg-atts', role: 'list', 'aria-label': 'Anexos' }, message.attachments.map((a) => attachmentChip(a)))
@@ -479,13 +515,14 @@ function renderMessages() {
   if (!panel) return;
   const list = $('#ai-messages');
   if (readOnlyView) {
-    list.replaceChildren(readOnlyBanner(), h('div', { class: 'ai-thread is-readonly' }, readOnlyView.conversation.messages.map(messageElement)));
+    list.replaceChildren(readOnlyBanner(), h('div', { class: 'ai-thread is-readonly' }, threadChildren(readOnlyView.conversation.messages)));
     list.classList.remove('is-empty');
     list.scrollTop = 0;
     return;
   }
   const items = messages();
-  const children = [items.length ? h('div', { class: 'ai-thread' }, items.map(messageElement)) : welcomeElement()];
+  const compacting = !!request?.compact && request.conversationId === store.activeId;
+  const children = [items.length ? h('div', { class: 'ai-thread' }, threadChildren(items, { live: compacting })) : welcomeElement()];
   if (lastError) children.push(errorElement());
   list.replaceChildren(...children);
   list.classList.toggle('is-empty', !items.length);
@@ -516,11 +553,12 @@ function queueRender() {
 function persist() {
   const conversations = store.conversations.map((c) => ({
     ...c,
-    messages: c.messages.map(({ role, content, attachments, model, skill }) => ({
+    messages: c.messages.map(({ role, content, attachments, model, skill, kind, compactedCount, createdAt }) => ({
       role, content,
       ...(Array.isArray(attachments) && attachments.length ? { attachments } : {}),
       ...(model ? { model } : {}),
       ...(skill ? { skill } : {}),
+      ...(kind === 'summary' ? { kind, compactedCount, createdAt } : {}),
     })),
   }));
   const snapshot = { conversations, activeId: store.activeId };
@@ -851,6 +889,10 @@ function openMoreMenu() {
   const conversation = activeConversation();
   if (conversation?.messages.length && !readOnlyView) {
     items.push(
+      { label: 'Compactar conversa', icon: 'fold-vertical', disabled: !!request, action: () => compactConversation() },
+      { separator: true },
+    );
+    items.push(
       { label: 'Exportar como Markdown', icon: 'file-text', action: () => exportConversation(null, conversation.id, 'md') },
       { label: 'Exportar como PDF', icon: 'file-down', action: () => exportConversation(null, conversation.id, 'pdf') },
       { separator: true },
@@ -1030,6 +1072,19 @@ export function sendToChat(text, opts = {}) {
   if ((!content && !attachments.length) || request || loadingHistory || !selectedProfile || !panel) return;
   if (visionBlocked(attachments)) return;
   if (readOnlyView) { readOnlyView = null; }
+  // Histórico grande: compacta antes (resumo com o modelo atual) e então envia.
+  if (!opts.skipCompact && shouldAutoCompact({ content, attachments })) {
+    compactConversation({ auto: true }).then((result) => {
+      if (result === 'cancelled') {
+        // Parou durante a compactação: a mensagem volta para a fila (pausada), nada se perde.
+        queue.unshift({ id: crypto.randomUUID(), content, attachments });
+        renderQueue();
+        return;
+      }
+      sendToChat(content, { ...opts, attachments, skipCompact: true });
+    });
+    return;
+  }
   // Ações do editor (Explicar/Refatorar…) e o fallback seguem pelo chat.
   if (!opts.forceChat && !opts.includeSelection && isAgentOn()) { runAgent(content, opts); return; }
   const skill = opts.forceChat ? resolveSkill(skills, 'chat', false) : currentSkill();
@@ -1044,7 +1099,7 @@ export function sendToChat(text, opts = {}) {
   conversation.messages.push({ role: 'user', content, ...(attachments.length ? { attachments } : {}) });
   conversation.messages = conversation.messages.slice(-(MAX_MESSAGES - 1));
   conversation.updatedAt = Date.now();
-  const payload = conversation.messages.map((m) => payloadMessage(m, stripAgentMarker));
+  const payload = modelMessages(conversation.messages).map((m) => payloadMessage(m, stripAgentMarker));
   const contextMessage = makeContextMessage(opts.includeSelection);
   if (contextMessage) payload.unshift({ role: 'system', content: contextMessage });
   const model = selectedModel || selectedProfile.model;
@@ -1078,6 +1133,7 @@ export function focusChat() {
 function cancelRequest() {
   if (!request) return Promise.resolve();
   const { id, agent } = request;
+  if (request.compact) return Promise.resolve(window.agzos.ai.cancel(id)).catch(() => {});
   if (!agent) {
     // Se o main não confirmar (pedido já sumiu lá), fecha aqui para não travar o painel.
     setTimeout(() => { if (request?.id === id) finish(id, 'Interrompido'); }, 2500);
@@ -1113,7 +1169,20 @@ function agentContext(message, live) {
     },
     onText: (el, isLive) => { if (!isLive) highlightCode(el); },
     runPlan: (turn) => runPlan(turn),
+    continueRun: () => continueRun(),
   };
+}
+
+/** "Continuar" depois do limite de passos: novo pedido que retoma a tarefa. */
+const CONTINUE_PROMPT = 'Continue a tarefa de onde parou. Não refaça o que já foi feito; confira o estado atual dos arquivos antes de seguir.';
+function continueRun() {
+  if (request) return;
+  // Tarefa longa: compacta antes de continuar se o histórico passou do limite.
+  if (shouldAutoCompact({ content: CONTINUE_PROMPT })) {
+    compactConversation({ auto: true }).then((result) => { if (result !== 'cancelled' && !request) runAgent(CONTINUE_PROMPT); });
+    return;
+  }
+  runAgent(CONTINUE_PROMPT);
 }
 
 /** "Executar plano": muda para o modo Agente e põe o plano no composer para revisar e enviar. */
@@ -1145,7 +1214,7 @@ function runAgent(content, opts = {}) {
   }
   conversation.messages = conversation.messages.slice(-(MAX_MESSAGES - 1));
   conversation.updatedAt = Date.now();
-  const payload = conversation.messages.map((m) => payloadMessage(m, stripAgentMarker));
+  const payload = modelMessages(conversation.messages).map((m) => payloadMessage(m, stripAgentMarker));
   const contextMessage = makeContextMessage(false);
   if (contextMessage) payload.unshift({ role: 'system', content: contextMessage });
   const mode = agentMode();
@@ -1477,6 +1546,14 @@ function submitComposer({ fromButton = false } = {}) {
   const content = input.value.trim();
   const attachments = draftAttachments.slice();
   if (attachBusy) { toast('Espere os anexos terminarem de carregar.', 'info'); return; }
+  if (COMPACT_COMMAND.test(content) && !attachments.length) {
+    if (request) { toast('Espere a execução terminar para compactar a conversa.', 'info'); return; }
+    input.value = '';
+    autoGrow();
+    updateSendButton();
+    compactConversation();
+    return;
+  }
   if (request) {
     if (!content && !attachments.length) { if (fromButton) cancelRequest(); return; }
     enqueue({ content, attachments });
@@ -1497,6 +1574,84 @@ function submitComposer({ fromButton = false } = {}) {
   renderDraftAttachments();
   autoGrow();
   updateSendButton();
+}
+
+/* ----------------------------------------------------------- compactar */
+
+const COMPACT_COMMAND = /^\/(compactar|compact)$/i;
+const DEFAULT_COMPACT_THRESHOLD = 60000;
+
+/** Compactação automática: histórico (+ a nova mensagem) passa do limite das Configurações? */
+function shouldAutoCompact(next) {
+  const settings = aiSettings();
+  if (settings.autoCompact === false) return false;
+  const conversation = activeConversation();
+  if (!conversation) return false;
+  const pending = compactableMessages(conversation.messages);
+  if (pending.filter((m) => !isSummary(m)).length < 2) return false;
+  const threshold = Number(settings.compactThresholdTokens) || DEFAULT_COMPACT_THRESHOLD;
+  return estimateTokens([...modelMessages(pending), { role: 'user', ...next }]) > threshold;
+}
+
+/**
+ * Compactar conversa: o modelo atual resume o que iria ao modelo (último resumo + posteriores)
+ * e o resumo entra como mensagem marcada. Daí em diante só ele + as mensagens novas vão ao
+ * modelo; as antigas continuam visíveis (esmaecidas) e no export.
+ * Falha → erro claro e a conversa fica como estava.
+ * @returns {Promise<'ok'|'error'|'cancelled'|'skipped'>}
+ */
+export async function compactConversation({ auto = false } = {}) {
+  if (!panel || loadingHistory || !selectedProfile) return 'skipped';
+  if (request) {
+    if (!auto) toast('Espere a execução terminar para compactar a conversa.', 'info');
+    return 'skipped';
+  }
+  if (readOnlyView) {
+    toast('Esta conversa é somente leitura.', 'info');
+    return 'skipped';
+  }
+  const conversation = activeConversation();
+  const pending = compactableMessages(conversation?.messages);
+  const count = pending.filter((m) => !isSummary(m)).length;
+  if (count < 2) {
+    if (!auto) toast('Ainda não há o que compactar nesta conversa.', 'info');
+    return 'skipped';
+  }
+  const payload = modelMessages(pending).map((m) => payloadMessage(m, stripAgentMarker));
+  const model = selectedModel || selectedProfile.model;
+  const id = crypto.randomUUID();
+  request = { id, compact: true, conversationId: conversation.id, message: null, el: null };
+  lastError = null;
+  closeHistory();
+  setStreaming(true);
+  renderMessages();
+  let result;
+  try {
+    result = await window.agzos.ai.summarize(id, { profileId: selectedProfile.id, model, messages: payload });
+  } catch (error) {
+    result = { ok: false, error: `Não foi possível resumir a conversa: ${error?.message || 'erro desconhecido'}` };
+  }
+  if (request?.id !== id) return 'cancelled';
+  request = null;
+  setStreaming(false);
+  let outcome;
+  if (result?.ok) {
+    conversation.messages.push({ ...makeSummaryMessage(result.summary, count), model });
+    conversation.updatedAt = Date.now();
+    persist();
+    outcome = 'ok';
+  } else if (result?.cancelled) {
+    outcome = 'cancelled';
+  } else {
+    const text = result?.error || 'Não foi possível resumir a conversa.';
+    // Automática: avisa e envia mesmo assim (sem compactar).
+    if (auto) toast(`${text} A mensagem vai sem compactar.`, 'error');
+    else lastError = { text };
+    outcome = 'error';
+  }
+  renderMessages();
+  if (!auto) afterRun({ ok: outcome === 'ok' });
+  return outcome;
 }
 
 /* ----------------------------------------------------------- fila */
@@ -1541,6 +1696,13 @@ async function sendNow(id) {
   const item = takeQueued(id);
   if (!item) return;
   if (!request) { sendItem(item); return; }
+  if (request.compact) {
+    // Compactando: a mensagem sai logo depois (não interrompe o resumo).
+    queue.unshift(item);
+    renderQueue();
+    toast('A mensagem sai assim que a compactação terminar.', 'info');
+    return;
+  }
   if (request.agent) {
     const api = agentApi();
     let accepted = false;

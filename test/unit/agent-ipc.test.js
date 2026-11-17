@@ -118,7 +118,7 @@ test('IPC: modelo sem tools → tools_unsupported; cancel desconhecido → false
 
 test('settings: aiAgent.mode padrão edit e inválido volta a edit', () => {
   const { loadSettings, DEFAULT_SETTINGS } = require('../../src/main/lib/settings');
-  assert.deepEqual(DEFAULT_SETTINGS.aiAgent, { mode: 'edit' });
+  assert.deepEqual(DEFAULT_SETTINGS.aiAgent, { mode: 'edit', maxSteps: 100 });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-set-'));
   try {
     const file = path.join(dir, 's.json');

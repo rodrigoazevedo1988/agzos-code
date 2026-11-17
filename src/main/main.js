@@ -275,9 +275,15 @@ const { createWindowGuards } = require('./lib/window-guards');
 const windowGuards = createWindowGuards();
 const { guardFor } = windowGuards;
 ipcMain.on('window:fileToken', (evt) => { evt.returnValue = windowGuards.tokenFor(evt.sender); });
-require('./ipc/fs').register(ipcMain, { guardFor, shell });
+// onDirRead: a pasta lida entra no observador da janela (workspaces é definido logo abaixo;
+// fs:readDir só chega depois da inicialização). getFilesExclude: nomes ocultos no Explorer.
+require('./ipc/fs').register(ipcMain, {
+  guardFor, shell,
+  onDirRead: (sender, dir) => workspaces.watchDir(sender, dir),
+  getFilesExclude: () => settingsStore?.load?.().files?.exclude,
+});
 require('./ipc/dialog').register(ipcMain, { ...deps, guardFor });
-require('./ipc/term').register(ipcMain);
+require('./ipc/term').register(ipcMain, { guardFor });
 require('./ipc/ssh').register(ipcMain, { guardFor });
 require('./ipc/ports').register(ipcMain);
 const settingsStore = require('./ipc/settings').register(ipcMain, {
@@ -357,6 +363,22 @@ const secretStore = createSecretStore({
   safeStorage: secretsBackend,
 });
 require('./ipc/secrets').register(ipcMain, { store: secretStore });
+// Pasta remota via SSH (1.2.0): uma conexão por host por janela; diálogos e estado
+// (remote:prompt / remote:state) só vão para a janela dona da conexão.
+const { createRemoteManager } = require('./remote/manager');
+const remoteRetryMs = Number(process.env.AGZOS_TEST === '1' && process.env.AGZOS_REMOTE_RETRY_MS) || 0;
+const remoteManager = createRemoteManager({
+  connectionOptions: () => ({ secretStore, home: require('os').homedir() }),
+  retryDelays: remoteRetryMs ? [remoteRetryMs, remoteRetryMs, remoteRetryMs] : undefined,
+  onState: (ownerId, st) => {
+    const wc = require('electron').webContents.fromId(ownerId);
+    if (wc && !wc.isDestroyed()) wc.send('remote:state', st);
+  },
+});
+require('./workspace/provider-for').setRemoteManager(remoteManager);
+// Contenção de symlinks no host: o provider SSH confere o realpath contra as raízes da janela.
+require('./workspace/provider-for').setRootsResolver((id) => guardFor(id).roots());
+require('./ipc/remote').register(ipcMain, { manager: remoteManager, createWindow: () => createMainWindow() });
 // Git + GitHub: contas (tokens só no main) e operações git do sistema.
 const githubAccounts = require('./ipc/github').register(ipcMain, { guardFor, settingsStore, store: secretStore, app });
 require('./ipc/git').register(ipcMain, { guardFor, accounts: githubAccounts });
@@ -381,6 +403,27 @@ const modulesDeps = {
   settingsStore, userDataDir: app.getPath('userData'), workerHost: modulesWorker };
 require('./ipc/broom').register(ipcMain, modulesDeps);
 require('./ipc/envvault').register(ipcMain, modulesDeps);
+// Histórico local + Git Slider (userData/local-history).
+require('./ipc/history').register(ipcMain, modulesDeps);
+require('./ipc/formatter').register(ipcMain, modulesDeps);
+require('./ipc/tree').register(ipcMain, modulesDeps);
+// Snippets (1.2.0): biblioteca em userData/snippets.json; import/export só por diálogo nativo.
+require('./ipc/snippets').register(ipcMain, {
+  ...modulesDeps, dialog, getWindowFor: (sender) => BrowserWindow.fromWebContents(sender),
+});
+// Agzos Snap: janela oculta só para renderizar a imagem (modules/snap/capture.js).
+require('./ipc/snap').register(ipcMain, {
+  ...modulesDeps,
+  getWindowFor: deps.getWindowFor,
+  capture: require('./modules/snap/capture').createCapture({ BrowserWindow, screen: require('electron').screen }),
+  clipboard: require('electron').clipboard,
+  dialog: { showSaveDialog: (...args) => dialog.showSaveDialog(...args) },
+});
+// Agzos Ao Vivo: servidor local em 127.0.0.1 por janela; abre no navegador só http(s).
+const liveServers = require('./ipc/live').register(ipcMain, {
+  ...modulesDeps,
+  openExternal: (url) => openExternalSafe(shell, url),
+});
 require('./ipc/chat-history').register(ipcMain, {
   ...deps, BrowserWindow, attachments: chatAttachments,
   getRecentFolders: () => settingsStore.load().recentFolders || [],
@@ -398,7 +441,11 @@ ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
-  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({ guardForHost: windowGuards.guardForToken }));
+  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({
+    guardForHost: windowGuards.guardForToken,
+    // Pasta remota: stream SFTP pela conexão da janela dona do token.
+    providerForHost: (host, p) => require('./workspace/provider-for').providerFor(p, windowGuards.ownerForToken(host)),
+  }));
 
   // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
   const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);
@@ -441,6 +488,8 @@ app.on('window-all-closed', () => {
   aiSessions.cancelAll();
   agentSessions.cancelAll();
   modulesWorker.dispose();
+  liveServers.stopAll().catch(() => {});
+  remoteManager.disposeAll();
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();

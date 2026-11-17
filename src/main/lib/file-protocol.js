@@ -11,6 +11,10 @@
  * ela pelo preload) e o handler usa o guard daquela janela (guardForHost). Token
  * desconhecido ou de outra janela → 403. `guard` + host `local` = modo antigo (testes).
  *
+ * Arquivo remoto (pasta SSH, 1.2.0): agzos-file://<token>/~ssh/<authority codificada>/<caminho>
+ * → URI ssh://<authority>/<caminho>; o guard da janela confere e o conteúdo vem por
+ * stream SFTP com Range (providerForHost(host, uri) → provider SSH da janela).
+ *
  * Sem dependência do Electron: o handler recebe { url, method, headers } e
  * devolve um Response (global do Node 18+/Electron).
  */
@@ -18,6 +22,9 @@
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
+const { isRemote, parseRemoteUri, toRemoteUri } = require('../workspace/remote-uri');
+
+const REMOTE_PREFIX = '/~ssh/';
 
 const SCHEME = 'agzos-file';
 const HOST = 'local';
@@ -60,6 +67,10 @@ function pathFromUrl(u, platform) {
   let decoded;
   try { decoded = decodeURIComponent(u.pathname); } catch { return null; }
   if (!decoded || decoded.includes('\0')) return null;
+  if (decoded.startsWith(REMOTE_PREFIX)) {
+    const r = parseRemoteUri(`ssh://${decoded.slice(REMOTE_PREFIX.length)}`);
+    return r ? toRemoteUri(r.authority, r.path) : null;
+  }
   if (platform === 'win32') {
     const win = decoded.replace(/^\/+/, '').replace(/\//g, '\\');
     if (!/^[a-zA-Z]:\\/.test(win) && !win.startsWith('\\\\')) return null;
@@ -95,7 +106,7 @@ function parseRange(header, size) {
 
 const text = (status, body) => new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
 
-function createFileProtocolHandler({ guard: fallbackGuard, guardForHost, platform = process.platform, fsImpl = fs }) {
+function createFileProtocolHandler({ guard: fallbackGuard, guardForHost, providerForHost, platform = process.platform, fsImpl = fs }) {
   return async function handle(request) {
     const parsed = parseFileUrl(request.url, platform);
     if (!parsed) return text(400, 'URL inválida');
@@ -111,8 +122,20 @@ function createFileProtocolHandler({ guard: fallbackGuard, guardForHost, platfor
     } catch {
       return text(403, 'Acesso negado');
     }
+    let remote = null;
+    if (isRemote(real)) {
+      try { remote = typeof providerForHost === 'function' ? providerForHost(parsed.host, real) : null; } catch { remote = null; }
+      if (!remote) return text(403, 'Acesso negado');
+    }
     let stat;
-    try { stat = await fsImpl.promises.stat(real); } catch { return text(404, 'Não encontrado'); }
+    try {
+      if (remote) {
+        const st = await remote.stat(real);
+        stat = { size: st.size, isFile: () => !!st.isFile };
+      } else {
+        stat = await fsImpl.promises.stat(real);
+      }
+    } catch { return text(404, 'Não encontrado'); }
     if (!stat.isFile()) return text(404, 'Não encontrado');
 
     const size = stat.size;
@@ -134,7 +157,8 @@ function createFileProtocolHandler({ guard: fallbackGuard, guardForHost, platfor
     if (range) headers['content-range'] = `bytes ${start}-${end}/${size}`;
     const status = range ? 206 : 200;
     if (method === 'HEAD' || length === 0) return new Response(null, { status, headers });
-    const stream = Readable.toWeb(fsImpl.createReadStream(real, { start, end }));
+    const source = remote ? await remote.createReadStream(real, { start, end }) : fsImpl.createReadStream(real, { start, end });
+    const stream = Readable.toWeb(source);
     return new Response(stream, { status, headers });
   };
 }

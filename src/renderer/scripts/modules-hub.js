@@ -156,25 +156,12 @@ function buildCard(def) {
 /** Chamado pelo app.js no boot. */
 export function setupModulesHub({ switchSidebarView } = {}) {
   if (typeof switchSidebarView === 'function') showView = () => switchSidebarView('modules');
-  registerModule({
-    id: 'snippets',
-    label: 'Snippets',
-    icon: 'file-code',
-    description: 'Biblioteca de trechos de código reutilizáveis.',
-    comingSoon: true,
-  });
+  // Snippets: card ativo registrado por snippets.js (setupSnippets).
   registerModule({
     id: 'sandbox',
     label: 'Sandbox de Componentes',
     icon: 'layout-template',
     description: 'Pré-visualize componentes React/Next isolados.',
-    comingSoon: true,
-  });
-  registerModule({
-    id: 'gitSlider',
-    label: 'Git Slider',
-    icon: 'git-commit-horizontal',
-    description: 'Navegue pelo histórico de um arquivo com um controle deslizante.',
     comingSoon: true,
   });
   // Estado habilitado/desabilitado muda nas Configurações (settings-modal.js).

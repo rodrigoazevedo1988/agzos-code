@@ -1,0 +1,118 @@
+/* Agzos Git Slider — linha do tempo do arquivo (scripts/timeline.js) */
+
+.timeline-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 6px 0 2px;
+  align-self: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.timeline-toggle-btn:hover { background: var(--hover); color: var(--fg); }
+.timeline-toggle-btn.active { color: var(--accent); background: var(--accent-bg); }
+.timeline-toggle-btn[hidden] { display: none; }
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line);
+  color: var(--fg);
+  font-size: 12px;
+}
+.timeline[hidden] { display: none; }
+
+.timeline-head { display: flex; align-items: center; gap: 10px; }
+.timeline-title { font-weight: 600; }
+.timeline-status { color: var(--fg-mute); flex: 1; }
+.timeline-close {
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px;
+}
+.timeline-close:hover { background: var(--hover); color: var(--fg); }
+
+.timeline-track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 2px 4px;
+  overflow-x: auto;
+  position: relative;
+}
+.timeline-track::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 2px;
+  background: var(--line);
+  z-index: 0;
+}
+.timeline-marker {
+  position: relative;
+  z-index: 1;
+  flex: 1 0 14px;
+  max-width: 48px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.timeline-marker::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--fg-mute);
+  border: 2px solid var(--bg-soft);
+}
+.timeline-marker[data-kind="commit"]::after { background: #7AA2F7; border-radius: 2px; }
+.timeline-marker[data-kind="local"]::after { background: #9ECE6A; }
+.timeline-marker[data-origin="agente"]::after,
+.timeline-marker[data-origin="vassoura"]::after,
+.timeline-marker[data-origin="cofre"]::after { background: #FF9E64; }
+.timeline-marker.present::after { background: var(--fg); width: 12px; height: 12px; }
+.timeline-marker.selected::after { box-shadow: 0 0 0 2px var(--accent); }
+.timeline-marker:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
+
+.timeline-range { width: 100%; accent-color: var(--accent); margin: 0; }
+.timeline-info { color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timeline-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.timeline-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.timeline-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* Diff por cima do editor (dentro de #editor-row). */
+#editor-row { position: relative; }
+.timeline-diff {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--bg);
+}
+.timeline-diff[hidden] { display: none; }
+
+/* View do hub */
+.timeline-view-intro,
+.timeline-view-hint { margin: 0 0 10px; color: var(--fg-dim); font-size: 12px; line-height: 1.5; }
+.timeline-view-actions { display: flex; flex-direction: column; gap: 8px; }
+.timeline-view-actions button { display: inline-flex; align-items: center; gap: 6px; justify-content: center; }

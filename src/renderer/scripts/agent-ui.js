@@ -105,6 +105,13 @@ function previewDiff(step) {
 }
 
 /** Mensagem do usuário enviada durante a execução ("Enviar agora"). */
+function compactedElement(seg) {
+  const chars = Number(seg.removedChars) || 0;
+  const amount = chars >= 1000 ? `${Math.round(chars / 1000)} mil` : String(chars);
+  return h('div', { class: 'ag-compacted', role: 'note', title: 'Saídas antigas de ferramentas foram encurtadas para caber no contexto do modelo. As últimas 10 continuam completas.' },
+    icon('fold-vertical', 11), h('span', { text: `Contexto compactado (−${amount} caracteres de saídas antigas)` }));
+}
+
 function steerElement(seg) {
   return h('div', { class: 'ag-steer', 'data-steer-id': seg.id || null },
     h('div', { class: 'ag-steer-bubble', text: seg.text || '' }),
@@ -427,6 +434,14 @@ export class TurnView {
           this.el.insertBefore(block.el, this.tail);
         }
         blockIndex++;
+      } else if (seg.t === 'compacted') {
+        // Contexto compactado no meio da execução: selo discreto.
+        if (!this.blocks[blockIndex]) {
+          const block = { kind: 'compacted', el: compactedElement(seg) };
+          this.blocks.push(block);
+          this.el.insertBefore(block.el, this.tail);
+        }
+        blockIndex++;
       } else {
         let block = this.blocks[blockIndex];
         if (!block) {
@@ -473,6 +488,13 @@ export class TurnView {
     }
     const err = errorElement(t, this.ctx);
     if (err) parts.push(err);
+    // Limite de passos: oferece continuar de onde parou.
+    if (t.done?.stopped === 'step_limit' && !this.ctx.live && !t.undone && this.ctx.continueRun) {
+      parts.push(h('div', { class: 'ag-plan-actions ag-continue-actions' },
+        h('button', { type: 'button', class: 'ag-btn ag-btn-primary ag-continue', onclick: () => this.ctx.continueRun(t) },
+          icon('play', 12), h('span', { text: 'Continuar' })),
+        h('span', { class: 'ag-dim', text: 'Segue a tarefa de onde parou. O limite de passos fica em Configurações → Agzos IA.' })));
+    }
     // Modo Plan: ao terminar, oferece mandar o plano para o modo Agente.
     if (t.skill === 'plan' && t.done && !t.error && !this.ctx.live && this.ctx.runPlan) {
       parts.push(h('div', { class: 'ag-plan-actions' },

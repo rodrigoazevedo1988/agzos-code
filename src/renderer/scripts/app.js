@@ -25,6 +25,13 @@ import { setupModulesHub } from './modules-hub.js';
 import { setupBroom } from './broom.js';
 import { setupEnvVault } from './envvault.js';
 import { setupSsh } from './ssh.js';
+import { setupTimeline } from './timeline.js';
+import { setupEditorMods } from './mods/index.js';
+import { setupTree } from './mods/tree.js';
+import { setupSnap } from './mods/snap.js';
+import { setupLive } from './mods/live.js';
+import { setupSnippets } from './snippets.js';
+import { setupRemote } from './remote.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -113,7 +120,7 @@ async function boot() {
   } catch (e) {
     console.error('[Módulos] setupModulesHub falhou:', e);
   }
-  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh]]) {
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['Snippets', setupSnippets], ['SSH', setupSsh], ['Pasta remota', setupRemote], ['Git Slider', setupTimeline], ['Módulos de editor', setupEditorMods], ['Agzos Árvore', setupTree], ['Agzos Snap', setupSnap], ['Agzos Ao Vivo', setupLive]]) {
     try {
       setup();
     } catch (e) {
@@ -455,6 +462,10 @@ function bindShortcuts() {
       case 'editor.format':
         runEditorAction(e, 'editor.action.formatDocument', { focus: false });
         break;
+      case 'history.timeline':
+        e.preventDefault(); e.stopPropagation();
+        runCommand('history.timeline');
+        break;
       case 'editor.toggleWordWrap': {
         e.preventDefault();
         const curr = State.settings?.editor?.wordWrap || 'off';
@@ -615,7 +626,8 @@ async function newFolderInRoot() {
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
 
-function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }
+// Pasta remota (ssh://…) usa sempre '/'.
+function sep() { return String(State.workspaceRoot || '').startsWith('ssh://') || !navigator.userAgent.includes('Windows') ? '/' : '\\'; }
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);

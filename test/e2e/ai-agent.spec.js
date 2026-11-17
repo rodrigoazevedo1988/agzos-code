@@ -236,3 +236,26 @@ test('agente chama clean_code no modo edit sem pedir OK e o arquivo aberto recar
     expect(tool.function.parameters.required).toEqual(['path']);
   } finally { await env.close(); }
 });
+
+test('limite de passos: mostra "Continuar" e retoma em novo pedido', async () => {
+  const listTurn = { toolCalls: [{ name: 'list_dir', arguments: { path: '.' } }] };
+  const env = await setup({
+    settings: { aiAgent: { mode: 'edit', maxSteps: 25 } },
+    script: [...Array(26).fill(listTurn), { text: 'Terminei o que faltava.' }],
+  });
+  const { page, fake } = env;
+  try {
+    await ask(page, 'Liste tudo');
+    await idle(page);
+    await expect(page.locator('.ai-msg').last()).toContainText('Limite de 25 passos atingido');
+    const cont = page.locator('.ag-continue').last();
+    await expect(cont).toBeVisible();
+    await cont.click();
+    await idle(page);
+    const last = fake.requests.filter((r) => r.path === '/v1/chat/completions').at(-1);
+    expect(JSON.stringify(last.body.messages)).toContain('Continue a tarefa de onde parou');
+    await expect(page.locator('.ai-msg').last()).toContainText('Terminei o que faltava.');
+  } finally {
+    await env.close();
+  }
+});

@@ -124,7 +124,12 @@ function transcriptMarkdown(conversation, { root = null, exportedAt = Date.now()
   ];
   for (const message of messages) {
     lines.push('');
-    if (message.role === 'user') {
+    if (message.kind === 'summary') {
+      const n = Number(message.compactedCount) || 0;
+      // Títulos do resumo descem um nível para não competir com as mensagens.
+      const body = String(message.content || '').trim().replace(/^(#{1,5}) /gm, '#$1 ');
+      lines.push(`## Conversa compactada — ${n} ${n === 1 ? 'mensagem resumida' : 'mensagens resumidas'}`, '', '_A partir daqui, o modelo recebeu este resumo no lugar das mensagens anteriores._', '', body || '_(resumo vazio)_');
+    } else if (message.role === 'user') {
       lines.push('## Você', '', String(message.content || '').trim() || '_(sem texto)_');
       const attachments = Array.isArray(message.attachments) ? message.attachments : [];
       if (attachments.length) {

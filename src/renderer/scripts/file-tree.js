@@ -11,10 +11,12 @@
  */
 
 import { toast } from './toast.js';
+import { updateWindowTitle } from './window-title.js';
 import { openFile } from './editor.js';
 import { renderFileIcon, renderFolderIcon } from './icon-theme.js';
 import { invalidateQuickOpenCache } from './command-palette.js';
 import { gitStatusFor } from './git-decorations.js';
+import { isRemotePath, parentPath, joinRemote, remoteAuthority, remotePathPart, hostLabel } from './remote-paths.js';
 
 const State = window.AgzosState;
 
@@ -106,9 +108,17 @@ function buildNode(node, depth) {
 
   // Ícone estilizado conforme tema selecionado
   const currentTheme = State.settings?.iconTheme || 'lucide-color';
-  const icon = node.isDirectory
-    ? renderFolderIcon(node.expanded, node.name, currentTheme)
-    : renderFileIcon(node.name, currentTheme);
+  let icon;
+  try {
+    icon = node.isDirectory
+      ? renderFolderIcon(node.expanded, node.name, currentTheme)
+      : renderFileIcon(node.name, currentTheme);
+  } catch (err) {
+    // Um ícone com problema não pode impedir a pasta de abrir.
+    console.error('[explorer] ícone', node.name, err);
+    icon = document.createElement('span');
+    icon.className = 'tree-icon';
+  }
   row.appendChild(icon);
 
   // Nome do arquivo ou pasta
@@ -208,12 +218,15 @@ async function toggleDir(node) {
     return;
   }
   const root = treeRoot;
-  if (!node.children) {
+  // Sempre relê o disco ao abrir: arquivos podem ter chegado depois da última leitura.
+  {
     node.loading = true;
     try {
-      await loadChildren(node);
+      await withTimeout(loadChildren(node), LOAD_TIMEOUT_MS, 'a pasta demorou para responder');
     } catch (err) {
-      toast(`Erro ao ler diretório: ${err.message}`, 'error');
+      node.children = null;
+      console.error('[explorer] erro ao ler pasta', node.path, err);
+      toast(`Não foi possível abrir a pasta ${node.name}: ${err.message}`, 'error', 6000);
       return;
     } finally {
       node.loading = false;
@@ -222,7 +235,63 @@ async function toggleDir(node) {
   if (treeRoot !== root) return;
   node.expanded = true;
   State.expandedDirs.add(node.path);
-  render();
+  try {
+    render();
+  } catch (err) {
+    // Antes o erro de desenho sumia em silêncio e o clique parecia não fazer nada.
+    node.expanded = false;
+    State.expandedDirs.delete(node.path);
+    console.error('[explorer] erro ao exibir pasta', node.path, err);
+    toast(`Erro ao exibir a pasta ${node.name}: ${err.message}`, 'error', 6000);
+    try { render(); } catch { /* mantém a árvore anterior */ }
+  }
+}
+
+const LOAD_TIMEOUT_MS = 15000;
+
+function normDir(p) {
+  return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function findLoadedNode(node, target) {
+  if (!node || !node.isDirectory) return null;
+  if (normDir(node.path) === target) return node.children ? node : null;
+  for (const child of node.children || []) {
+    if (!child.isDirectory) continue;
+    const t = normDir(child.path);
+    if (target === t || target.startsWith(`${t}/`)) return findLoadedNode(child, target);
+  }
+  return null;
+}
+
+/** Mudanças no disco (observador do main): recarrega só as pastas já lidas. */
+export async function reloadChangedDirs(dirs) {
+  if (!treeRoot || !Array.isArray(dirs)) return;
+  const root = treeRoot;
+  const nodes = new Set();
+  for (const d of dirs) {
+    const n = findLoadedNode(root, normDir(d));
+    if (n) nodes.add(n);
+  }
+  if (!nodes.size) return;
+  for (const n of nodes) {
+    try { await loadChildren(n); } catch (err) { console.warn('[explorer] recarregar', n.path, err); }
+  }
+  if (treeRoot !== root) return;
+  invalidateQuickOpenCache();
+  try { render(); } catch (err) { console.error('[explorer] render', err); }
+}
+
+if (typeof window !== 'undefined' && window.agzos?.fs?.onChanged) {
+  window.agzos.fs.onChanged((dirs) => { reloadChangedDirs(dirs); });
+}
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /* --------------------------------------------------------------------------
@@ -360,12 +429,19 @@ function invalidateTree() {
    Public API
    -------------------------------------------------------------------------- */
 export async function openWorkspace(folderPath) {
+  // Pasta remota (recentes/nova janela): conecta nesta janela antes de liberar.
+  if (isRemotePath(folderPath)) {
+    const remote = await import('./remote.js');
+    if (!(await remote.ensureConnectedFor(folderPath))) return;
+    if (remotePathPart(folderPath) !== '/') folderPath = folderPath.replace(/\/+$/, '');
+  }
   const allowed = await window.agzos.workspace.open(folderPath);
   if (!allowed) {
     toast('Abra a pasta pelo diálogo.', 'error');
     return;
   }
   State.workspaceRoot = folderPath;
+  updateWindowTitle();
   window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
   State.expandedDirs.add(folderPath);
   treeRoot = {
@@ -383,7 +459,11 @@ export async function openWorkspace(folderPath) {
   }
   if (treeRoot !== root) return;
   const topbar = document.getElementById('topbar-workspace');
-  if (topbar) topbar.textContent = `— ${basename(folderPath)}`;
+  if (topbar) {
+    topbar.textContent = isRemotePath(folderPath)
+      ? `— ${basename(folderPath)} [SSH: ${hostLabel(remoteAuthority(folderPath))}]`
+      : `— ${basename(folderPath)}`;
+  }
   render();
 }
 
@@ -400,6 +480,7 @@ export async function closeWorkspace() {
   treeRoot = null;
   invalidateQuickOpenCache();
   try { await window.agzos.workspace.close(); } catch {}
+  updateWindowTitle();
   window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
   const topbar = document.getElementById('topbar-workspace');
   if (topbar) topbar.textContent = '— Sem pasta aberta';
@@ -440,12 +521,16 @@ function basename(p) {
 }
 function dirname(p) {
   if (!p) return '';
+  if (isRemotePath(p)) return parentPath(p);
   const parts = p.split(/[\\/]/).filter(Boolean);
   parts.pop();
   return parts.join(sep()) || sep();
 }
-function joinPath(a, b) { return a.replace(/[\\/]+$/, '') + sep() + b.replace(/^[\\/]+/, ''); }
-function sep() { return navigator.userAgent.includes('Windows') || window.agzos?.app?.info?.()?.platform === 'win32' ? '\\' : '/'; }
+function joinPath(a, b) {
+  if (isRemotePath(a)) return joinRemote(a, b);
+  return a.replace(/[\\/]+$/, '') + sep() + b.replace(/^[\\/]+/, '');
+}
+function sep() { if (isRemotePath(State.workspaceRoot)) return '/'; return navigator.userAgent.includes('Windows') || window.agzos?.app?.info?.()?.platform === 'win32' ? '\\' : '/'; }
 function cssEscape(s) {
   return s.replace(/[\\"]/g, '\\$&');
 }

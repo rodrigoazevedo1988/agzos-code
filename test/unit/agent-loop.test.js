@@ -35,7 +35,7 @@ function fakeProvider(turns) {
   };
 }
 
-function harness({ turns, mode = 'edit', decide = () => 'allow', maxSteps } = {}) {
+function harness({ turns, mode = 'edit', decide = () => 'allow', maxSteps, compactThreshold } = {}) {
   const events = [];
   const provider = fakeProvider(turns);
   const store = createCheckpointStore({});
@@ -48,6 +48,7 @@ function harness({ turns, mode = 'edit', decide = () => 'allow', maxSteps } = {}
     emit: (e) => events.push(e), signal: controller.signal, systemPrompt: 'SYS',
     requestApproval: async (callId) => { approvals.push(callId); return decide(callId, events); },
     ...(maxSteps ? { maxSteps } : {}),
+    ...(compactThreshold !== undefined ? { compactThreshold } : {}),
   });
   return { events, provider, promise, controller, approvals, store };
 }
@@ -352,4 +353,53 @@ test('sessão: getExtraTools passa ferramentas de módulos ao toolbox', async ()
   assert.ok(provider.seen[0].tools.some((t) => t.name === 'mod_tool'));
   assert.equal(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), 'mod\n');
   assert.equal(sent.at(-1)[1].type, 'done');
+});
+
+test('compactação no laço: passou do limite → saídas antigas viram marcador e emite `compacted`', async () => {
+  fs.writeFileSync(path.join(root, 'big.txt'), `primeira linha\n${'x'.repeat(3000)}\n`);
+  const read = { calls: [{ name: 'read_file', input: { path: 'big.txt' } }] };
+  const h = harness({ compactThreshold: 4000, turns: [...Array(13).fill(read), { text: 'fim' }] });
+  const done = await h.promise;
+  assert.equal(done.type, 'done');
+  const compacted = h.events.filter((e) => e.type === 'compacted');
+  assert.ok(compacted.length >= 1);
+  assert.ok(compacted[0].removedChars > 2000);
+  const last = h.provider.seen.at(-1).messages;
+  const tools = last.filter((m) => m.role === 'tool');
+  assert.equal(tools.length, 13);
+  const marked = tools.filter((m) => /^\[saída compactada: 1\tprimeira linha… \(\d+ caracteres\)\]$/.test(m.content));
+  assert.equal(marked.length, 3, 'só as 3 mais antigas (mantém as últimas 10)');
+  assert.ok(tools.slice(-10).every((m) => m.content.includes('x'.repeat(100))));
+  // pares preservados: cada tool segue o assistant com a chamada de mesmo id
+  last.forEach((m, i) => { if (m.role === 'tool') assert.equal(last[i - 1].toolCalls[0].id, m.toolCallId); });
+});
+
+test('compactação no laço: abaixo do limite ou desligada (0) → nada muda', async () => {
+  fs.writeFileSync(path.join(root, 'big.txt'), 'x'.repeat(3000));
+  const read = { calls: [{ name: 'read_file', input: { path: 'big.txt' } }] };
+  for (const compactThreshold of [0, 1e6]) {
+    const h = harness({ compactThreshold, turns: [...Array(12).fill(read), { text: 'fim' }] });
+    await h.promise;
+    assert.equal(h.events.filter((e) => e.type === 'compacted').length, 0);
+    assert.ok(h.provider.seen.at(-1).messages.every((m) => !/^\[saída compactada/.test(String(m.content))));
+  }
+});
+
+test('sessão: getCompactThreshold chega ao laço (compacta saídas antigas)', async () => {
+  fs.writeFileSync(path.join(root, 'big.txt'), 'y'.repeat(3000));
+  const read = { calls: [{ name: 'read_file', input: { path: 'big.txt' } }] };
+  const provider = fakeProvider([...Array(12).fill(read), { text: 'fim' }]);
+  const sent = [];
+  const s = createAgentSessions({
+    getRoot: () => root,
+    getProvider: () => ({ provider, model: 'm' }),
+    getMode: () => 'edit',
+    checkpoints: createCheckpointStore({}),
+    send: (id, evt) => sent.push([id, evt]),
+    getEnv: () => ({ ...process.env }),
+    getCompactThreshold: () => 4000,
+  });
+  s.run('rc', { messages: [{ role: 'user', content: 'x' }] });
+  await s.wait('rc');
+  assert.ok(sent.some(([, e]) => e.type === 'compacted'));
 });

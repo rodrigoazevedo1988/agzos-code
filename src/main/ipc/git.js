@@ -12,6 +12,7 @@ const { getStatus, repoRoot } = require('../git/status');
 const { gitVersion, GitError, GIT_INSTALL_URL } = require('../git/run');
 const { getCommitGuard, SecretsDetectedError } = require('../modules/envvault/commit-guard');
 const { guardResolver } = require('../lib/window-guards');
+const { runAsOwner, isRemote, joinAny } = require('../workspace/provider-for');
 
 function ok(data) { return { ok: true, data }; }
 function fail(e) {
@@ -21,15 +22,18 @@ function fail(e) {
   return { ok: false, error };
 }
 
-/** Embrulha um handler: exceções viram { ok: false, error }. */
+/**
+ * Embrulha um handler: exceções viram { ok: false, error }. A janela que pediu vira
+ * a dona das chamadas remotas (pasta SSH: git roda pela conexão dela).
+ */
 function wrap(fn) {
-  return async (...args) => {
+  return async (...args) => runAsOwner(args[0]?.sender, async () => {
     try {
       return ok(await fn(...args));
     } catch (e) {
       return fail(e);
     }
-  };
+  });
 }
 
 /** Fila por repositório: operações que mexem no índice não podem correr juntas. */
@@ -70,13 +74,15 @@ function register(ipcMain, { guard, guardFor, accounts, commitGuard }) {
     const root = await repoRoot(cwd);
     if (!root) throw new GitError('Esta pasta não é um repositório Git.', { kind: 'not-repo' });
     for (const p of paths) {
-      if (!guardOf(sender).isAllowed(path.join(root, p))) throw new GitError(`Acesso negado: ${p}`, { kind: 'denied' });
+      if (!guardOf(sender).isAllowed(joinAny(root, p))) throw new GitError(`Acesso negado: ${p}`, { kind: 'denied' });
     }
     return paths;
   }
 
   /** Token da conta associada ao remote atual (só github.com via https). */
   async function networkContext(cwd) {
+    // Pasta remota: o token do GitHub nunca é resolvido nem enviado ao host.
+    if (isRemote(cwd)) return { token: null, account: null, remote: null, github: null };
     const remote = await ops.currentRemote(cwd).catch(() => null);
     if (!remote || !accounts) return { token: null, account: null, remote, github: null };
     const r = accounts.resolveForRemote(remote.url);
@@ -190,7 +196,7 @@ function register(ipcMain, { guard, guardFor, accounts, commitGuard }) {
       g.assertAllowed(local);
     }
     let token;
-    if (accounts) {
+    if (accounts && !isRemote(parent)) {
       const r = accounts.resolveForRemote(cleanUrl);
       if (r.github?.https) {
         const id = options?.accountId || r.account?.id;

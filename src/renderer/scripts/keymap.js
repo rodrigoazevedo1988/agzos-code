@@ -59,6 +59,9 @@ export function matchShortcut(e, { isMac = false } = {}) {
   // F11: tela cheia (sem modificadores)
   if (e.key === 'F11' && !ctrl && !shift && !alt) return 'window.fullscreen';
 
+  // Ctrl+Alt+H: linha do tempo do arquivo (Agzos Git Slider).
+  if (ctrl && alt && !shift && k === 'h') return 'history.timeline';
+
   if (ctrl && !alt) {
     // Ctrl+PageUp/PageDown: sessão anterior/seguinte (app.js só age com foco no terminal).
     if (!shift && e.key === 'PageUp') return 'terminal.prev';

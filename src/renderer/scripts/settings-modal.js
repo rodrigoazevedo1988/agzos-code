@@ -75,6 +75,8 @@ const DEFAULTS = {
     showAvatars: true,
     sendKey: 'enter',
     defaultContext: { file: true, selection: true, terminal: false },
+    autoCompact: true,
+    compactThresholdTokens: 60000,
   },
   // Espelho de DEFAULT_SETTINGS.modules (src/main/lib/settings.js).
   modules: {
@@ -92,6 +94,8 @@ const DEFAULTS = {
       allowlist: [],
       revealTimeoutSec: 10,
     },
+    localHistory: { enabled: true, maxPerFile: 50, maxDays: 30, maxTotalMB: 300 },
+    gitSlider: { enabled: true, maxCommits: 200 },
   },
 };
 
@@ -168,6 +172,18 @@ const SETTINGS_DEF = [
       applyTheme(val);
       document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${val}`;
     },
+    inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
+    prettyErrors: { enabled: true },
+    highlighter: { enabled: true, tags: ['!=#FF5252', '?=#4FC3F7', 'TODO=#FF9800', 'FIXME=#FF9800', '*=#98C379', '//=#7A7A7A'] },
+    formatter: {
+      enabled: true,
+      formatOnSave: {
+        javascript: false, typescript: false, json: false, css: false, scss: false, less: false, html: false, markdown: false, yaml: false,
+      },
+    },
+    tree: { enabled: true },
+    snap: { enabled: true, watermark: true },
+    liveServer: { enabled: true, startPort: 5500 },
   },
   {
     key: 'fontSize',
@@ -197,6 +213,19 @@ const SETTINGS_DEF = [
       fileTreeMod.refreshTree(true);
       const tabsMod = await import('./tabs.js');
       tabsMod.renderTabs();
+    },
+    snippets: {
+      enabled: true,
+      variables: [
+        { name: 'cor_primaria', value: '#D10A11' },
+        { name: 'cor_fundo', value: '#0E0E0E' },
+        { name: 'cor_texto', value: '#E8E8E8' },
+        { name: 'cor_secundaria', value: '#1A1A1A' },
+        { name: 'fonte', value: 'Inter, sans-serif' },
+        { name: 'nome_marca', value: 'Agzos' },
+        { name: 'url_site', value: 'https://seudominio.com.br' },
+        { name: 'email_contato', value: 'contato@seudominio.com.br' },
+      ],
     },
   },
   {
@@ -286,6 +315,27 @@ const SETTINGS_DEF = [
       { value: 'relative', label: 'Relativo' },
     ],
     apply: (val) => applyEditorSettings({ lineNumbers: val }),
+  },
+  {
+    key: 'aiAgent.maxSteps',
+    title: 'Agzos IA: Limite de Passos do Agente',
+    desc: 'Quantas ações (ler, buscar, editar, rodar comando) o agente pode fazer por pedido antes de parar e oferecer "Continuar".',
+    categories: ['ai'],
+    type: 'select',
+    options: [
+      { value: 25, label: '25 passos' },
+      { value: 50, label: '50 passos' },
+      { value: 100, label: '100 passos (padrão)' },
+      { value: 200, label: '200 passos' },
+      { value: 500, label: '500 passos' },
+    ],
+  },
+  {
+    key: 'files.exclude',
+    title: 'Arquivos: Ocultar no Explorer',
+    desc: 'Nomes de arquivos e pastas que não aparecem no Explorer nem no Quick Open, separados por vírgula. Arquivos com ponto (.gitignore, .env, .github…) aparecem, exceto os desta lista.',
+    categories: ['commonlyUsed', 'editor'],
+    type: 'list',
   },
   {
     key: 'editor.renderWhitespace',
@@ -444,6 +494,22 @@ const SETTINGS_DEF = [
     apply: notifyAiPanel,
   },
   {
+    key: 'aiPanel.autoCompact',
+    title: 'Agzos IA: Compactar Conversa Automaticamente',
+    desc: 'Quando a conversa passa do limite abaixo, resume as mensagens antigas antes de enviar (e, numa execução longa do agente, encurta saídas antigas de ferramentas). As mensagens antigas continuam visíveis.',
+    categories: ['ai'],
+    type: 'boolean',
+  },
+  {
+    key: 'aiPanel.compactThresholdTokens',
+    title: 'Agzos IA: Limite para Compactar (tokens)',
+    desc: 'Tamanho estimado do histórico (caracteres ÷ 4) a partir do qual a conversa é compactada. De 8000 a 400000.',
+    categories: ['ai'],
+    type: 'number',
+    min: 8000,
+    max: 400000,
+  },
+  {
     key: 'aiAgent.mode',
     title: 'Agzos IA: Autonomia do Agente',
     desc: 'O que o agente pode fazer sem pedir OK. Comandos de risco sempre pedem confirmação.',
@@ -553,6 +619,286 @@ const SETTINGS_DEF = [
     type: 'number',
     min: 3,
     max: 120,
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Histórico local e Git Slider
+  {
+    key: 'modules.gitSlider.enabled',
+    title: 'Git Slider: Habilitado',
+    desc: 'Linha do tempo do arquivo (Ctrl+Alt+H): commits do Git e versões locais, com diff e restauração.',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.gitSlider.maxCommits',
+    title: 'Git Slider: Commits na linha do tempo',
+    desc: 'Quantos commits recentes do arquivo mostrar (10 a 2000).',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'number',
+    min: 10,
+    max: 2000,
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.localHistory.enabled',
+    title: 'Histórico local: Habilitado',
+    desc: 'Guarda uma cópia do arquivo a cada salvamento e antes de alterações do agente, da Vassoura e do Cofre.',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.localHistory.maxPerFile',
+    title: 'Histórico local: Versões por arquivo',
+    desc: 'Quantas versões guardar por arquivo (1 a 1000). As mais antigas são apagadas.',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'number',
+    min: 1,
+    max: 1000,
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.localHistory.maxDays',
+    title: 'Histórico local: Dias guardados',
+    desc: 'Versões mais antigas que isso são apagadas (1 a 3650 dias).',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'number',
+    min: 1,
+    max: 3650,
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.localHistory.maxTotalMB',
+    title: 'Histórico local: Espaço total (MB)',
+    desc: 'Limite de espaço de todo o histórico local (10 a 10000 MB). Acima disso, apaga as versões mais antigas.',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'number',
+    min: 10,
+    max: 10000,
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Erros na Linha
+  {
+    key: 'modules.inlineErrors.enabled',
+    title: 'Erros na Linha: Habilitado',
+    desc: 'Mostra a mensagem de erros e avisos no fim da linha do editor.',
+    categories: ['modules'],
+    section: 'Agzos Erros na Linha',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.inlineErrors.severities',
+    title: 'Erros na Linha: Severidades',
+    desc: 'Quais severidades aparecem na linha, separadas por vírgula: error (erro), warning (aviso), info.',
+    categories: ['modules'],
+    section: 'Agzos Erros na Linha',
+    type: 'list',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.inlineErrors.onlyCursorLine',
+    title: 'Erros na Linha: Só na linha do cursor',
+    desc: 'Mostra a mensagem apenas na linha onde o cursor está.',
+    categories: ['modules'],
+    section: 'Agzos Erros na Linha',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Erros Claros
+  {
+    key: 'modules.prettyErrors.enabled',
+    title: 'Erros Claros: Habilitado',
+    desc: 'Reformata as mensagens do TypeScript/JavaScript no hover e no painel Problemas (tipos quebrados e realçados, link para a documentação do erro).',
+    categories: ['modules'],
+    section: 'Agzos Erros Claros',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Marca-texto
+  {
+    key: 'modules.highlighter.enabled',
+    title: 'Marca-texto: Habilitado',
+    desc: 'Colore comentários que começam com um marcador (!, ?, TODO, FIXME, *, //).',
+    categories: ['modules'],
+    section: 'Agzos Marca-texto',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.highlighter.tags',
+    title: 'Marca-texto: Marcadores e cores',
+    desc: 'Lista "marcador=#cor" separada por vírgula (ex.: TODO=#FF9800, NOTE=#00BCD4). O marcador // fica riscado.',
+    categories: ['modules'],
+    section: 'Agzos Marca-texto',
+    type: 'list',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Formatador
+  {
+    key: 'modules.formatter.enabled',
+    title: 'Formatador: Habilitado',
+    desc: '"Formatar Documento" usa o Prettier embutido (com .prettierrc/.json/.yaml do projeto; configs em código são ignoradas).',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.javascript',
+    title: 'Formatador: Formatar ao salvar (JavaScript/JSX)',
+    desc: 'Formata arquivos JavaScript/JSX com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.typescript',
+    title: 'Formatador: Formatar ao salvar (TypeScript/TSX)',
+    desc: 'Formata arquivos TypeScript/TSX com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.json',
+    title: 'Formatador: Formatar ao salvar (JSON)',
+    desc: 'Formata arquivos JSON com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.css',
+    title: 'Formatador: Formatar ao salvar (CSS)',
+    desc: 'Formata arquivos CSS com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.scss',
+    title: 'Formatador: Formatar ao salvar (SCSS)',
+    desc: 'Formata arquivos SCSS com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.less',
+    title: 'Formatador: Formatar ao salvar (LESS)',
+    desc: 'Formata arquivos LESS com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.html',
+    title: 'Formatador: Formatar ao salvar (HTML)',
+    desc: 'Formata arquivos HTML com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.markdown',
+    title: 'Formatador: Formatar ao salvar (Markdown)',
+    desc: 'Formata arquivos Markdown com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.formatter.formatOnSave.yaml',
+    title: 'Formatador: Formatar ao salvar (YAML)',
+    desc: 'Formata arquivos YAML com o Agzos Formatador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Formatador',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Árvore
+  {
+    key: 'modules.tree.enabled',
+    title: 'Agzos Árvore: Habilitada',
+    desc: 'Gera a árvore de pastas em texto (menu de contexto de pasta, paleta e ferramenta project_tree do agente).',
+    categories: ['modules'],
+    section: 'Agzos Árvore',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Snap
+  {
+    key: 'modules.snap.enabled',
+    title: 'Agzos Snap: Habilitado',
+    desc: 'Gera imagens (PNG) do código selecionado com tema, fundo, moldura e números de linha.',
+    categories: ['modules'],
+    section: 'Agzos Snap',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.snap.watermark',
+    title: 'Agzos Snap: Marca d\'água',
+    desc: 'Marca d\'água "Agzos Code" ligada por padrão nas imagens (pode ser desligada em cada captura).',
+    categories: ['modules'],
+    section: 'Agzos Snap',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Ao Vivo
+  {
+    key: 'modules.liveServer.enabled',
+    title: 'Agzos Ao Vivo: Habilitado',
+    desc: 'Servidor local (127.0.0.1) que serve a pasta do projeto e recarrega o navegador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Ao Vivo',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.liveServer.startPort',
+    title: 'Agzos Ao Vivo: Porta inicial',
+    desc: 'Primeira porta tentada; se estiver ocupada, usa a próxima livre (1024 a 65535).',
+    categories: ['modules'],
+    section: 'Agzos Ao Vivo',
+    type: 'number',
+    min: 1024,
+    max: 65535,
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Snippets (variáveis da marca: snippets-settings.js)
+  {
+    key: 'modules.snippets.enabled',
+    title: 'Snippets: Habilitados',
+    desc: 'Ativa a biblioteca de Snippets (inserir por clique ou arrastando) e as ferramentas de snippets do agente.',
+    categories: ['modules'],
+    section: 'Snippets',
+    type: 'boolean',
     apply: notifyModules,
   },
 
@@ -746,6 +1092,12 @@ function renderContentHtml() {
     extraHtml = renderUpdateExtraHtml();
   } else if (!query && activeCategory === 'privacy') {
     extraHtml = renderPrivacyExtraHtml();
+  }
+  if (!query && activeCategory === 'modules') {
+    // Snippets: variáveis da marca (montado por snippets-settings.js em bindContentEvents)
+    extraHtml += '<div class="settings-section-card" id="snippets-vars-card"><h3 class="settings-section-title">Snippets: variáveis da marca</h3>'
+      + '<p class="setting-item-desc">Trocadas em <code>{{nome}}</code> ao inserir um snippet. Variável desconhecida fica como está.</p>'
+      + '<div id="snippets-vars-host"></div></div>';
   }
 
   if (items.length === 0 && !extraHtml) {
@@ -984,6 +1336,8 @@ function bindContentEvents() {
   // Git & GitHub: contas montadas por github-settings.js
   const githubHost = document.getElementById('github-settings-host');
   if (githubHost) import('./github-settings.js').then((m) => m.mountGithubSettings(githubHost));
+  const snippetVarsHost = document.getElementById('snippets-vars-host');
+  if (snippetVarsHost) import('./snippets-settings.js').then((m) => m.mountSnippetVariables(snippetVarsHost, { notify: notifyModules }));
 
   // Limpar busca no botão vazio
   const resetSearch = document.getElementById('btn-reset-search');

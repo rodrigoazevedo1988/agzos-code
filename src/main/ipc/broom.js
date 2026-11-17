@@ -23,6 +23,8 @@ const {
   createBroomEngine, optionsFromSettings, summarize, setDefaultEngine,
 } = require('../modules/broom/engine');
 const { guardResolver } = require('../lib/window-guards');
+const { recordBefore } = require('../modules/history');
+const { runAsOwner, providerFor, isRemote } = require('../workspace/provider-for');
 
 const CHANNELS = ['analyzeFile', 'cleanFile', 'scanWorkspace', 'cleanWorkspace', 'cancel', 'undo'];
 
@@ -35,6 +37,9 @@ function register(ipcMain, {
   engine = createBroomEngine({ workerHost }),
   checkpoints = createCheckpointStore({ dir: userDataDir ? path.join(userDataDir, 'broom-checkpoints') : null, maxCount: 20 }),
 } = {}) {
+  // Pasta remota: a janela que pediu é a dona das leituras/escritas pelo provider SSH.
+  const rawIpc = ipcMain;
+  ipcMain = { handle: (ch, fn) => rawIpc.handle(ch, (event, ...args) => runAsOwner(event?.sender, () => fn(event, ...args))) };
   setDefaultEngine(engine, () => settingsStore.load());
   const running = new Map();
   const guardOf = guardResolver({ guard, guardFor });
@@ -68,6 +73,7 @@ function register(ipcMain, {
     }
     const g = guardOf(sender);
     for (const c of candidates) {
+      if (isRemote(c)) { if (g.isAllowed(c)) return g.assertAllowed(c); continue; }
       if (path.isAbsolute(c) && g.isAllowed(c) && isDirectory(c)) return g.assertAllowed(c);
     }
     throw new Error('Abra uma pasta de projeto para usar a Vassoura.');
@@ -99,9 +105,11 @@ function register(ipcMain, {
     const editIds = Array.isArray(opts?.editIds) ? opts.editIds : undefined;
     const p = await engine.plan(abs, options(), { editIds });
     if (!p.edits.length) return { checkpointId: null, removed: 0, ...(p.error ? { error: p.error } : {}) };
-    const cp = checkpoints.create({ root: path.dirname(abs) });
-    cp.record(abs);
+    const cp = checkpoints.create({ root: isRemote(abs) ? null : path.dirname(abs) });
+    const original = await checkpointBefore(cp, abs, event?.sender);
+    recordBefore(abs, 'vassoura', original ? { content: original } : undefined);
     await engine.write(abs, p.text, p.after);
+    if (isRemote(abs)) cp.noteRemote(abs, p.after);
     cp.finalize();
     own(cp.id, event?.sender);
     fileChanged(event.sender, abs);
@@ -137,8 +145,10 @@ function register(ipcMain, {
         if (signal.aborted) break;
         const p = await engine.plan(abs[i], opts);
         if (p.edits.length) {
-          cp.record(abs[i]);
+          const original = await checkpointBefore(cp, abs[i], event?.sender);
+          recordBefore(abs[i], 'vassoura', original ? { content: original } : undefined);
           await engine.write(abs[i], p.text, p.after);
+          if (isRemote(abs[i])) cp.noteRemote(abs[i], p.after);
           files++;
           removed += p.edits.length;
           fileChanged(event.sender, abs[i]);
@@ -155,6 +165,15 @@ function register(ipcMain, {
     return result;
   });
 
+  /** Original no checkpoint (local) antes de gravar; remoto lido pelo provider da janela. */
+  // → Buffer original no remoto (para o histórico local), null no disco local.
+  async function checkpointBefore(cp, abs, sender) {
+    if (!isRemote(abs)) { cp.record(abs); return null; }
+    const prov = providerFor(abs, sender);
+    await cp.recordRemote(abs, prov);
+    try { return await prov.readFile(abs); } catch { return null; }
+  }
+
   function getRootOrNull(sender) {
     try { return getRoot(sender); } catch { return null; }
   }
@@ -167,14 +186,14 @@ function register(ipcMain, {
     return true;
   });
 
-  ipcMain.handle('broom:undo', (event, checkpointId) => {
+  ipcMain.handle('broom:undo', async (event, checkpointId) => {
     if (owners.has(checkpointId) && owners.get(checkpointId) !== senderId(event?.sender)) {
       return { restored: [], errors: [{ path: null, message: 'Este checkpoint pertence a outra janela.' }] };
     }
     let r;
     try {
       const g = guardOf(event?.sender);
-      r = checkpoints.undo(checkpointId, { assertPath: (p) => g.assertAllowed(p) });
+      r = await checkpoints.undoAsync(checkpointId, { assertPath: (p) => g.assertAllowed(p), providerFor: (p) => providerFor(p, event?.sender) });
     } catch (err) { return { restored: [], errors: [{ path: null, message: err.message }] }; }
     if (!r.errors.length || r.restored.length) owners.delete(checkpointId);
     for (const p of r.restored) {

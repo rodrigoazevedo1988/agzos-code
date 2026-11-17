@@ -5,7 +5,7 @@ const { pathToFileURL } = require('url');
 
 const load = () => import(pathToFileURL(path.join(__dirname, '../../src/renderer/scripts/ssh-utils.js')).href);
 
-test('remotePickerItems: hosts primeiro, ações, Em breve desabilitado', async () => {
+test('remotePickerItems: hosts primeiro, ações, pasta remota habilitada (1.2.0)', async () => {
   const { remotePickerItems } = await load();
   const items = remotePickerItems({
     hosts: [
@@ -19,9 +19,9 @@ test('remotePickerItems: hosts primeiro, ações, Em breve desabilitado', async 
   assert.equal(items[0].description, 'deploy@10.0.0.5:2222');
   assert.equal(items[1].description, '');
   const folder = items.find((i) => i.id === 'folder');
-  assert.equal(folder.disabled, true);
-  assert.equal(folder.badge, 'Em breve (1.2.0)');
-  assert.equal(items.filter((i) => i.disabled).length, 1);
+  assert.equal(folder.disabled, undefined);
+  assert.equal(folder.badge, undefined);
+  assert.equal(items.filter((i) => i.disabled).length, 0);
 });
 
 test('remotePickerItems: WSL só quando o perfil existe', async () => {
@@ -52,4 +52,6 @@ test('remoteStatus: destaque só com sessão SSH ativa e viva', async () => {
     { connected: true, label: 'SSH: prod', title: 'Conectado a prod via SSH (terminal ativo)' });
   assert.equal(remoteStatus({ ssh: { host: 'h' }, exited: true }).connected, false);
   assert.equal(remoteStatus({ ssh: null }).connected, false);
+  // Pasta remota aberta tem prioridade sobre o terminal.
+  assert.deepEqual(remoteStatus(null, 'srv'), { connected: true, label: 'SSH: srv', title: 'Pasta remota em srv via SSH' });
 });

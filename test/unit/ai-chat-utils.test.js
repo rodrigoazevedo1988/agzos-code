@@ -103,3 +103,71 @@ test('1.1.0: payloadMessage leva só refs dos anexos', async () => {
   assert.deepEqual(payloadMessage(msg), { role: 'user', content: 'veja', attachments: [{ id: 'a'.repeat(32), name: 'x.png', kind: 'image' }] });
   assert.deepEqual(payloadMessage({ role: 'assistant', content: 'oi' }), { role: 'assistant', content: 'oi' });
 });
+
+/* ------------------------------------------------- compactar conversa (1.2.0) */
+
+test('estimateTokens: chars/4 com marcador do agente fora e anexos contados', async () => {
+  const { estimateTokens, encodeAgentContent, createAgentTurn, applyAgentEvent } = await load();
+  assert.equal(estimateTokens([]), 0);
+  assert.equal(estimateTokens([{ role: 'user', content: 'a'.repeat(400) }]), 100);
+  const turn = createAgentTurn('edit');
+  applyAgentEvent(turn, { type: 'text', delta: 'b'.repeat(40) });
+  applyAgentEvent(turn, { type: 'tool_start', callId: 'c', tool: 'write_file', input: { path: 'a.js', content: 'x'.repeat(5000) } });
+  const agent = estimateTokens([{ role: 'assistant', content: encodeAgentContent(turn) }]);
+  assert.ok(agent < 200, `marcador JSON não conta (${agent})`);
+  const withAtts = estimateTokens([{ role: 'user', content: '', attachments: [
+    { id: 'a', kind: 'text', size: 8000 }, { id: 'b', kind: 'image', size: 999999 }, { id: 'c', kind: 'pdf', size: 40000 },
+  ] }]);
+  assert.equal(withAtts, 2000 + 1000 + 2500);
+});
+
+test('modelMessages: sem resumo vai tudo; com resumo, só o último resumo + posteriores', async () => {
+  const { modelMessages, SUMMARY_PREFIX } = await load();
+  const old = [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }];
+  assert.deepEqual(modelMessages(old), old);
+  const conv = [
+    { role: 'user', content: 'a' },
+    { role: 'assistant', content: 'b' },
+    { role: 'assistant', kind: 'summary', content: 'R1', compactedCount: 2 },
+    { role: 'user', content: 'c' },
+    { role: 'assistant', content: 'd' },
+    { role: 'assistant', kind: 'summary', content: 'R2', compactedCount: 3 },
+    { role: 'user', content: 'e', attachments: [{ id: 'x', kind: 'text', name: 'n', size: 1 }] },
+  ];
+  const out = modelMessages(conv);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].role, 'user');
+  assert.ok(out[0].content.startsWith(SUMMARY_PREFIX));
+  assert.ok(out[0].content.endsWith('R2'));
+  assert.equal(out[0].kind, undefined);
+  assert.equal(out[1], conv[6]);
+  assert.ok(!out.some((m) => m.content === 'c' || m.content === 'a'));
+});
+
+test('compactable / summaryMessage / isCompacted', async () => {
+  const { compactableMessages, makeSummaryMessage, compactedBefore } = await load();
+  const conv = [
+    { role: 'user', content: 'a' },
+    { role: 'assistant', content: 'b' },
+    { role: 'assistant', kind: 'summary', content: 'R', compactedCount: 2 },
+    { role: 'user', content: 'c' },
+  ];
+  assert.equal(compactableMessages(conv).length, 2, 'resumo anterior + c');
+  assert.equal(compactableMessages(conv.slice(0, 2)).length, 2);
+  assert.equal(compactableMessages(conv.slice(0, 3)).length, 1);
+  assert.deepEqual(makeSummaryMessage('  R  ', 4, 123), { role: 'assistant', kind: 'summary', content: 'R', compactedCount: 4, createdAt: 123 });
+  assert.equal(compactedBefore(conv), 2);
+  assert.equal(compactedBefore(conv.slice(0, 2)), 0);
+});
+
+test('applyAgentEvent compacted: selo no turno, preservado ao salvar e fora do texto', async () => {
+  const { createAgentTurn, applyAgentEvent, encodeAgentContent, decodeAgentContent, agentTurnText } = await load();
+  const turn = createAgentTurn('edit');
+  applyAgentEvent(turn, { type: 'text', delta: 'Lendo.' });
+  assert.deepEqual(applyAgentEvent(turn, { type: 'compacted', removedChars: 12000 }), { kind: 'compacted' });
+  applyAgentEvent(turn, { type: 'compacted', removedChars: 'x' });
+  assert.deepEqual(turn.segments.slice(1), [{ t: 'compacted', removedChars: 12000 }, { t: 'compacted', removedChars: 0 }]);
+  assert.equal(agentTurnText(turn), 'Lendo.');
+  const back = decodeAgentContent(encodeAgentContent(turn)).turn;
+  assert.deepEqual(back.segments[1], { t: 'compacted', removedChars: 12000 });
+});

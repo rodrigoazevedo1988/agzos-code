@@ -24,6 +24,7 @@
  * .example/.sample/.template) mostram `CHAVE=****`; para chaves, o agente usa env_check.
  */
 
+const { compileGlob } = require('../lib/glob-match');
 const fs = require('fs');
 const path = require('path');
 const { createPathGuard } = require('../lib/path-guard');
@@ -32,6 +33,7 @@ const { lineStats, truncateMiddle, stripAnsi, redact, SECRET_NAME } = require('.
 const { runCommand: defaultRunCommand } = require('./exec');
 const { redactSecrets, isPlaceholder, shannon } = require('../modules/envvault/detect');
 const { _scan: scanEnv } = require('../modules/envvault/parse');
+const { recordBefore } = require('../modules/history');
 
 const ENV_FILE_RE = /^\.env(?:\..+)?$/;
 const ENV_TEMPLATE_RE = /\.(?:example|sample|template)$/i;
@@ -191,25 +193,14 @@ const DEFINITIONS = [
   },
 ];
 
+/**
+ * Glob do agente (`search.glob`) → objeto com `.test(caminho)`. Usa o matcher sem
+ * backtracking de lib/glob-match (o glob vem do modelo: um padrão patológico não
+ * pode congelar o processo main). Padrão inválido não casa com nada.
+ */
 function globToRegExp(glob) {
-  let re = '';
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i];
-    if (ch === '*') {
-      if (glob[i + 1] === '*') {
-        i++;
-        if (glob[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*';
-      } else re += '[^/]*';
-    } else if (ch === '?') re += '[^/]';
-    else if (ch === '{') {
-      const end = glob.indexOf('}', i);
-      if (end > i) {
-        re += `(?:${glob.slice(i + 1, end).split(',').map((s) => s.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')).join('|')})`;
-        i = end;
-      } else re += '\\{';
-    } else re += ch.replace(/[.+^${}()|[\]\\/]/g, '\\$&');
-  }
-  return new RegExp(`^${re}$`);
+  const match = compileGlob(glob, { braces: true });
+  return { test: (p) => (match ? match(String(p)) : false) };
 }
 
 function isBinary(buf) {
@@ -418,6 +409,7 @@ function createToolbox({
       execute: async () => {
         checkpoint?.recordParents(abs);
         checkpoint?.record(abs);
+        if (!created) recordBefore(abs, 'agente');
         fs.mkdirSync(path.dirname(abs), { recursive: true });
         fs.writeFileSync(abs, input.content, 'utf8');
         const stats = lineStats(before, input.content);
@@ -471,6 +463,7 @@ function createToolbox({
         const current = readTextFile(abs);
         if (current !== before) throw new ToolError(`${rel(abs)} mudou desde a leitura; leia de novo`);
         checkpoint?.record(abs);
+        recordBefore(abs, 'agente');
         fs.writeFileSync(abs, after, 'utf8');
         const stats = lineStats(before, after);
         return {
@@ -556,6 +549,7 @@ function createToolbox({
           try { removed = lineStats(readTextFile(abs), null).removed; } catch {}
         }
         checkpoint?.recordTree(abs);
+        if (!isDir && st.isFile()) recordBefore(abs, 'agente');
         fs.rmSync(abs, { recursive: true, force: true });
         return {
           ok: true, result: `Apagado: ${rel(abs)}`, summary: 'apagado',

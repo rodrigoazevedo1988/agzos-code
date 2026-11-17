@@ -117,7 +117,8 @@ test('settings:save mantém perfis de IA do disco (cópia do renderer pode estar
 test('modules: defaults de modules', () => {
   const p = tmpFile();
   const s = loadSettings(p);
-  assert.deepEqual(s.modules, {
+  // Só os módulos da 1.1.0; os da 1.2.0 têm testes próprios.
+  assert.deepEqual({ broom: s.modules.broom, envVault: s.modules.envVault }, {
     broom: {
       enabled: true,
       rules: { console: true, comments: true, unusedImports: true, deadCode: true },
@@ -264,4 +265,30 @@ test('aiSkills.trusted: normaliza registros de confiança e settings:save não a
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(saved.theme, 'monokai');
   assert.deepEqual(saved.aiSkills.trusted, [good]);
+});
+
+test('aiAgent.maxSteps: padrão 100, aceita só 25/50/100/200/500 (string vinda do select vira número)', () => {
+  const { normalizeAiAgent } = require('../../src/main/lib/settings');
+  const n = (v) => normalizeAiAgent({ maxSteps: v }).maxSteps;
+  assert.equal(n(undefined), 100);
+  assert.equal(n(200), 200);
+  assert.equal(n('500'), 500);
+  assert.equal(n(7), 100);
+  assert.equal(n('abc'), 100);
+});
+
+test('aiPanel.autoCompact (padrão true) e compactThresholdTokens (padrão 60000, 8k–400k)', () => {
+  const { normalizeAiPanel, DEFAULT_SETTINGS: D } = require('../../src/main/lib/settings');
+  assert.equal(D.aiPanel.autoCompact, true);
+  assert.equal(D.aiPanel.compactThresholdTokens, 60000);
+  const p = (v) => normalizeAiPanel(v);
+  assert.equal(p(undefined).autoCompact, true);
+  assert.equal(p({ autoCompact: false }).autoCompact, false);
+  assert.equal(p({ autoCompact: 'sim' }).autoCompact, true);
+  assert.equal(p({}).compactThresholdTokens, 60000);
+  assert.equal(p({ compactThresholdTokens: 100 }).compactThresholdTokens, 8000);
+  assert.equal(p({ compactThresholdTokens: 999999 }).compactThresholdTokens, 400000);
+  assert.equal(p({ compactThresholdTokens: '120000' }).compactThresholdTokens, 120000);
+  assert.equal(p({ compactThresholdTokens: 'abc' }).compactThresholdTokens, 60000);
+  assert.equal(p({ compactThresholdTokens: 30000.6 }).compactThresholdTokens, 30001);
 });
