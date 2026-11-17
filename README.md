@@ -24,51 +24,82 @@
 
 ## ✨ O que é
 
-**Agzos Code** é um editor de código desktop construído com [Electron 44](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/) (o mesmo engine que o VS Code usa de verdade — não é imitação). A base é Electron + Monaco próprio, **sem fork do Code-OSS** — decisão registrada no [ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md).
+**Agzos Code** é um editor de código desktop construído com [Electron](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/), o componente de edição também usado pelo VS Code. A base é um aplicativo próprio, sem fork do Code-OSS e sem suporte à API de extensões do VS Code ([ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md)).
 
-**Estado atual (31/10/2026):** Fase 1.5 — Confiança e integridade mergeada (PR #4) e publicada na `v0.2.2`, já com o terminal em pty real. Próxima: Fase 2 — IA. O roadmap vivo fica em [`docs/plano/ROADMAP.md`](docs/plano/ROADMAP.md).
+Versão atual: **1.0.0** — editor completo, IA agêntica que edita o projeto e roda comandos, Git/GitHub integrados, terminal multi-sessão e atualização automática.
 
-**Diferencial intencional:** o editor foi desenhado desde o dia 1 com o ecossistema Agzos em mente (IA, ferramentas internas, identidade visual) e com privacidade por padrão — **não há telemetria**.
+**Diferencial intencional:** desenhado para o ecossistema Agzos (IA, ferramentas internas, identidade visual) e com privacidade por padrão (telemetria desligada, segredos no cofre do sistema).
 
-## 🎯 Features atuais (v0.2)
+## 🎯 Funcionalidades (v1.0.0)
 
-- **Editor Monaco** com syntax highlight, IntelliSense TS/JS, multi-cursor, bracket pair colorization, minimap e line numbers.
-- **3 temas reais:** `Agzos Dark` (preto + vermelho), `Agzos Light` e `Monokai`.
-- **Sidebar:** Explorer, Buscar, Git (Fase 3), Integrações Agzos e Agzos IA (Fase 2).
-- **File tree** com expansão vertical, ícones por extensão, temas de ícones, context menu (renomear, excluir, novo arquivo/pasta, revelar no SO) e dotfiles (`.env`, `.github` etc.).
-- **Tabs** com indicador de dirty (●), fechar com clique do meio e proteção de alterações não salvas ao fechar a janela.
-- **Quick Open** (`Ctrl+P`): busca por nome de arquivo na workspace (versão MVP; ripgrep na Fase 4).
-- **Buscar em arquivos** (`Ctrl+Shift+F`): inclui dotfiles, ignora `node_modules`/`.git` e leva à linha/coluna do resultado.
-- **Terminal integrado** (`Ctrl+`): xterm.js ligado ao shell do sistema por pty real (`node-pty`). `cls`/`clear`, cores, `Tab` e `Ctrl+C` funcionam; se o módulo nativo não carregar, cai para um modo reduzido que avisa na primeira linha.
-- **Command Palette** (`Ctrl+Shift+P`).
-- **Status bar** com Ln/Col, linguagem, encoding/EOL reais e modo de performance; branch real chega na Fase 3.
-- **Configurações em página cheia** (fora da sidebar, `Cmd+,`): tema, ícones, performance, fonte, arquivos ocultos. A configuração de IA fica desabilitada até a Fase 2.
-- **3 modos de performance:** Economia, Balanceado e Alta Performance.
-- **Atalhos** estilo VS Code: `Ctrl+S`, `Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+B`, `Ctrl+W`, `Ctrl+` `, `Ctrl+Shift+E/F/G/X`.
-- **Encoding/EOL/binário:** arquivos Latin-1/UTF-16 são preservados; binários abrem somente leitura; escrita atômica.
-- **Assinatura local no macOS** para testes (identidade `Rodrigo Dev Local`, bundle id `com.agzos.code`), sem repetir prompts de pasta a cada rebuild.
-- **Builds multiplataforma** via electron-builder: NSIS/portable (Windows x64/arm64), AppImage/DEB/RPM (Linux x64), DMG/ZIP (macOS arm64/x64).
-- **Robustez:** logs em `userData/logs`, fallback de erro no renderer, `sandbox: true`, permissões negadas por padrão e instância única.
+### Editor
+- **Monaco** com IntelliSense de TS/JS/JSON/CSS/HTML (workers), multi-cursor, minimap, bracket pair colorization, formatar (`Alt+Shift+F`), quebra de linha (`Alt+Z`), localizar/substituir, ir para linha.
+- **Abas** com indicador de alteração, fechar com clique do meio, `Ctrl+W`, `Ctrl+K Ctrl+W`.
+- **Auto-save** e recarga de arquivos alterados fora do editor (pergunta se houver conflito com edição local).
+- **Temas:** Agzos Dark, Agzos Light e Monokai. **4 estilos de ícones** de arquivos/pastas.
+- **Explorer** com árvore lazy, menu de contexto (criar, renomear, excluir, revelar no SO) e cores de status do Git.
+- **Quick Open** (`Ctrl+P`) com busca recursiva, **Buscar em arquivos** (`Ctrl+Shift+F`) e **Command Palette** (`Ctrl+Shift+P`).
+- **Configurações** em modal no padrão VS Code, com busca, e importação de configurações do VS Code / Cursor.
+
+### Agzos IA
+- **Painel acoplável** à esquerda, direita (padrão) ou embaixo, redimensionável; trocar de posição não perde a conversa nem o streaming.
+- **Provedores:** OpenAI, Groq, OpenRouter, Gemini, Ollama, compatível com OpenAI (custom) e Anthropic; wizard de configuração e vários perfis.
+- **Chat:** streaming, Markdown, blocos de código com Copiar / Inserir / Aplicar com diff, contexto de arquivo, seleção e terminal, várias conversas por workspace.
+- **Modo Agente:** a IA lê, busca, cria e edita arquivos, cria/move/apaga pastas e roda comandos dentro da pasta aberta.
+  - Modos de autonomia: **Perguntar tudo**, **Edição livre** (padrão) e **Automático**.
+  - Comandos de risco sempre pedem confirmação; nada fora da pasta do projeto.
+  - Cartões por ação, aprovação com diff inline e **Desfazer tudo** por checkpoint.
+- **Personalização:** fonte, densidade, avatar, tecla de envio, contexto padrão.
+
+### Git e GitHub
+- Painel GIT: branches (trocar/criar), sincronizar, fetch/pull/push, stage/unstage/descartar, diff, commit e "Commit e Push", histórico.
+- Branch e sincronização na barra de status, badge de alterações.
+- Clonar repositório com progresso.
+- Contas GitHub por token (PAT), várias contas, conta por repositório; token só no cofre do sistema.
+- Publicar pasta no GitHub e criar Pull Request.
+
+### Terminal
+- **PTY real** (`node-pty`: ConPTY no Windows, forkpty no Linux/macOS), com fallback em modo pipe.
+- **Várias sessões**, escolha de shell (PowerShell 7, Windows PowerShell, CMD, Git Bash, WSL; bash/zsh/fish/sh), dividir lado a lado, renomear, reiniciar.
+- Painel embaixo ou à direita, redimensionável e maximizável.
+- Copiar/colar (`Ctrl+C` com seleção, `Ctrl+Shift+C/V`, `Ctrl+V`, botão direito).
+- Windows: ambiente limpo lido do registro a cada shell (como o Windows Terminal); `AGZOS_TERM_INHERIT_ENV=1` volta a herdar.
+- **Aba PORTAS:** portas TCP em escuta com processo e PID, abrir no navegador.
+
+### Distribuição
+- Instaladores Windows (NSIS + portátil), Linux (AppImage, DEB, RPM) e macOS (DMG/ZIP, requer host macOS).
+- **Atualização automática (OTA)** a partir de `https://code.rsolutionsbr.com/release/` em Windows, Linux e macOS.
 
 ## 🧠 Roadmap
 
 | Fase | Status | Foco |
 |------|--------|------|
-| **0 — Protótipo** | ✅ | Editor, branding, welcome/onboarding |
-| **1 — Fundação** | ✅ | Lint/testes, IPC modular, cofre, path guard, CI |
-| **1.5 — Confiança** | ✅ | Electron 44, assinatura local, dirty close, encoding, arquivos, busca, status, logs |
-| **2 — IA** | ⏳ | SSE, providers, wizard, chat com streaming, contexto e aplicar diff |
-| **3 — Git/GitHub** | ⏳ | Status/diff/commit/push/pull, multi-conta |
-| **4 — Editor completo** | ⏳ | pty, ripgrep, sessão, performance, importar VS Code |
-| **5 — Distribuição/v1.0** | ⏳ | Release 3 SO, auto-update, privacidade, assinatura |
+| **0 — Protótipo** | ✅ | Editor Electron + Monaco e identidade Agzos |
+| **1 — Fundação** | ✅ | Testes, segurança, modularização e CI |
+| **2 — IA** | ✅ | Providers, streaming, wizard e painel de chat |
+| **3 — Git e GitHub** | ✅ | Git integrado e contas GitHub (Device Flow pendente) |
+| **4 — Editor completo** | ✅ | IntelliSense, terminal PTY, busca, recarga de arquivos |
+| **5 — Distribuição e v1.0** | ✅ | Releases e atualização automática (assinatura pendente) |
+| **Pós-v1.0** | ⏳ | Agente avançado, LSP de outras linguagens, integrações Agzos |
 
-Detalhes, critérios de saída e planos por tarefa: [`docs/plano/`](docs/plano/ROADMAP.md). Decisão de base: [ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md) (sem fork) e [ADR-0002](docs/decisoes/ADR-0002-electron-e-codigo-nativo.md) (Electron 44 + política de código nativo).
+Detalhes em [docs/plano/ROADMAP.md](docs/plano/ROADMAP.md) e no [CHANGELOG](CHANGELOG.md).
 
 ## 🚀 Quick start
 
+### Downloads — v1.0.0
+
+- [Windows — instalador](https://code.rsolutionsbr.com/release/Agzos%20Code%20Setup%201.0.0.exe)
+- [Windows — portátil](https://code.rsolutionsbr.com/release/Agzos%20Code%201.0.0.exe)
+- [Linux — AppImage](https://code.rsolutionsbr.com/release/Agzos%20Code-1.0.0.AppImage)
+- [Linux — .deb](https://code.rsolutionsbr.com/release/agzos-code_1.0.0_amd64.deb)
+- [Linux — .rpm](https://code.rsolutionsbr.com/release/agzos-code-1.0.0.x86_64.rpm)
+
+Builds de macOS dependem de um host macOS e não acompanham esta release. Enquanto o app não estiver assinado/notarizado, o macOS informa novas versões para download manual.
+
 ### Pré-requisitos
-- Node.js 22.x (o Electron 44 embute Node 24 no main)
+- Node.js 20.x ou 22.x
 - npm 10+
+- Git no PATH (para o painel Git)
 
 ### Instalação
 ```bash
@@ -77,16 +108,7 @@ cd agzos-code
 npm install
 ```
 
-O `postinstall` roda `tools/setup-vendor.js`, que copia os assets do Monaco e do xterm para `src/renderer/vendor/` (necessário por causa da CSP restritiva do renderer).
-
-**macOS — assinatura local para testes:** se existir a identidade `Rodrigo Dev Local` no Keychain, o `postinstall` assina o `Electron.app` de dev com bundle id `com.agzos.code`. Isso dá uma identidade estável ao TCC e evita pedir permissão de Área de Trabalho/Documentos/Downloads a cada rebuild. Para reassinar manualmente:
-
-```bash
-npm run sign:mac        # Electron.app de dev
-npm run sign:mac:dist   # .app empacotado em dist/
-```
-
-Sem o certificado (CI/outra máquina), o script apenas avisa e segue. A assinatura local **não** é notarizada; distribuição exige Developer ID (Fase 5).
+O `postinstall` roda `tools/setup-vendor.js`, que copia Monaco, xterm e Lucide para `src/renderer/vendor/` (necessário por causa da CSP restritiva do renderer).
 
 ### Rodar em dev
 ```bash
@@ -94,154 +116,100 @@ npm run dev         # abre o app
 npm run dev:tools   # abre o app com DevTools
 ```
 
+### Testes
+```bash
+npm run check                    # eslint + testes unitários (node --test)
+xvfb-run -a npx playwright test  # E2E no Linux sem display
+```
+
+### Buildar instalador
+```bash
+npm run dist:linux    # AppImage + DEB + RPM
+npm run dist:win      # NSIS + portátil (no Linux, via wine)
+npm run dist:mac      # DMG + ZIP (precisa de host macOS)
+```
+
+Saída em `dist/`. Publicação na VPS: `node tools/publish-vps-release.js` (mantém só as 2 releases mais recentes).
+
 ### Regenerar ícones
 ```bash
 npm run build:icons
 ```
-Gera PNG/ICO/ICNS a partir de `logos/SVG/6.svg` usando o próprio Electron (sem dependências externas). No macOS também aplica nome e ícone Agzos no `Electron.app` de dev.
-
-### Documentação
-Veja [`docs/`](docs/README.md): PRD, decisões de arquitetura, troubleshooting e roadmap.
-
-### Buildar instalador
-```bash
-npm run dist          # todas as plataformas (precisa de toolchain)
-npm run dist:linux    # só Linux (AppImage + DEB + RPM)
-npm run dist:win      # só Windows (NSIS + portable, x64 + arm64)
-npm run dist:mac      # só macOS (DMG + ZIP, arm64 + x64, precisa de host macOS)
-```
-
-Saída vai para `dist/`. No macOS, o `.app` local é assinado com a identidade `Rodrigo Dev Local` (quando disponível) via hook `afterPack`; isso serve para teste, não para distribuição. O workflow de build dos três sistemas está em `.github/workflows/build.yml`.
 
 ## ⌨️ Atalhos
 
 | Atalho | Ação |
 |--------|------|
-| `Ctrl+P` | Quick open (buscar arquivo) |
+| `Ctrl+P` | Quick Open |
 | `Ctrl+Shift+P` | Command Palette |
-| `Ctrl+,` | Abrir Configurações (página cheia) |
-| `Ctrl+Shift+F` | Buscar texto nos arquivos |
-| `Ctrl+S` | Salvar arquivo ativo |
-| `Ctrl+W` | Fechar aba (pede confirmação se houver dirty) |
-| `Ctrl+Shift+W` | Fechar janela (pede confirmação se houver dirty) |
+| `Ctrl+Shift+F` | Buscar nos arquivos |
+| `Ctrl+S` | Salvar |
+| `Ctrl+W` / `Ctrl+K Ctrl+W` | Fechar aba / fechar todas |
+| `Ctrl+F` / `Ctrl+H` / `Ctrl+G` | Localizar / substituir / ir para linha |
+| `Alt+Shift+F` | Formatar documento |
+| `Alt+Z` | Quebra de linha |
 | `Ctrl+B` | Alternar sidebar |
+| `Ctrl+,` | Configurações |
+| `Ctrl+K Ctrl+S` | Atalhos de teclado |
 | `` Ctrl+` `` | Alternar terminal |
-| `Ctrl+Shift+E` | Ir para Explorer |
-| `Ctrl+Shift+G` | Ir para Git |
-| `Ctrl+Shift+X` | Ir para Integrações |
-| `Esc` | Fechar command palette |
-| `Enter` (em campo de busca) | Abrir primeiro resultado |
-| Middle-click em tab | Fechar tab |
+| ``Ctrl+Shift+` `` | Novo terminal |
+| `Ctrl+Shift+5` | Dividir terminal |
+| `Ctrl+PageUp/PageDown` | Sessão de terminal anterior/seguinte |
+| `Ctrl+L` | Agzos IA: abrir/fechar (com seleção, envia a seleção) |
+| `Ctrl+Shift+A` | Focar Agzos IA |
+| `Ctrl+Shift+E/F/G/X` | Explorer / Buscar / Git / Extensões |
+| `Ctrl+Enter` (painel Git) | Commit |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom |
 
 ## 🏗️ Arquitetura
 
 ```
-agzos-code/
-├── package.json              # Electron + electron-builder config
-├── src/
-│   ├── main/
-│   │   ├── main.js          # Electron main process (BrowserWindow, IPC)
-│   │   └── preload.js       # contextBridge (API segura pro renderer)
-│   └── renderer/
-│       ├── index.html       # Shell HTML da UI
-│       ├── splash.html      # Splash de boot
-│       ├── styles/app.css   # Tema Agzos (CSS variables, dark/light/monokai)
-│       ├── scripts/
-│       │   ├── app.js              # Entry point / costura
-│       │   ├── editor.js           # Monaco wrapper
-│       │   ├── tabs.js             # Sistema de abas
-│       │   ├── file-tree.js        # Sidebar de arquivos
-│       │   ├── terminal.js         # xterm + shell IPC
-│       │   ├── command-palette.js  # Overlay de comandos
-│       │   ├── ai-chat.js          # UI stub do chat IA
-│       │   ├── search.js           # Busca textual
-│       │   ├── state.js            # Singleton de estado (script clássico, carregado antes do app.js)
-│       │   ├── welcome.js          # Pop-up de boas-vindas
-│       │   ├── onboarding.js       # Wizard de onboarding
-│       │   └── toast.js            # Notificações efêmeras
-│       ├── vendor/          # Gerado por tools/setup-vendor.js (gitignored)
-│       │   ├── monaco/      # Monaco AMD loader + min/vs/
-│       │   └── xterm/       # xterm.js + xterm-addon-fit + css
-│       └── assets/          # Ícones SVG/PNG
-├── build/                   # Assets do electron-builder (ícones, etc)
-│   ├── icon.png            # 256x256
-│   ├── icon-1024.png       # Master
-│   ├── icon.ico            # Windows
-│   └── ...
-├── docs/                    # PRD, ADRs, arquitetura, roadmap
-├── tools/
-│   ├── setup-vendor.js     # Copia Monaco/xterm/Lucide pra vendor/
-│   ├── build-icons.js      # Gera PNG/ICO/ICNS (roda no Electron)
-│   └── patch-electron-dev-mac.js  # Nome/ícone Agzos no Electron.app de dev (macOS)
-├── README.md
-├── LICENSE                  # MIT
-└── .gitignore
+src/
+├── main/                     # Processo principal (Node)
+│   ├── main.js               # Janela, menu, registro de IPC
+│   ├── preload.js            # contextBridge → window.agzos.*
+│   ├── updater.js            # OTA (electron-updater + mac-ota)
+│   ├── ipc/                  # fs, dialog, settings, secrets, workspace, term, ports, ai, agent, git, github, chat-history
+│   ├── ai/                   # Providers (OpenAI-compat, Anthropic), SSE, perfis, tool calls
+│   ├── agent/                # Laço do agente, ferramentas, risco, checkpoints, execução de comandos
+│   ├── git/                  # Runner do git (execFile, sem shell), status, operações
+│   ├── github/               # Contas e API do GitHub
+│   └── lib/                  # path-guard, secrets (safeStorage), settings, win-env, import-vscode
+└── renderer/                 # UI (sem Node; só window.agzos)
+    ├── index.html
+    ├── styles/               # app.css, ai-panel.css, terminal.css, git.css
+    └── scripts/              # editor, tabs, file-tree, terminal(+sessions), ai-chat, ai-dock,
+                              # agent-ui, git-panel, settings-modal, command-palette, keymap…
+tools/                        # setup-vendor, build-icons, publish-vps-release
+test/unit, test/e2e           # node --test e Playwright (com servidores falsos de IA e GitHub)
+docs/                         # PRD, ADRs, plano, specs
 ```
 
-### IPC API (preload → main)
-
-Exposta como `window.agzos.*`:
-
-```ts
-agzos.app.info()                          // versão, electron, platform
-agzos.app.openExternal(url)               // abre link no browser padrão
-
-agzos.fs.readDir(p)                       // lista entries
-agzos.fs.readFile(p)                      // { content, size, mtime }
-agzos.fs.writeFile(p, content)            // salva
-agzos.fs.mkdir(p) / delete(p) / rename(...)
-agzos.fs.homeDir()                        // ~/ do usuário
-
-agzos.dialog.openFolder()                 // dialog nativo
-agzos.dialog.openFile() / saveFile(path?)
-
-agzos.term.create(cols, rows)             // spawna shell
-agzos.term.write(id, data)                // stdin
-agzos.term.kill(id)                       // SIGTERM
-agzos.term.onData(cb) / onExit(cb)        // stdout, exit
-
-agzos.settings.load() / save(s)           // userData/settings.json
-
-agzos.onMenu(cb)                          // eventos do menu nativo
-```
+Principais namespaces expostos ao renderer: `agzos.fs`, `agzos.dialog`, `agzos.settings`, `agzos.term`, `agzos.ports`, `agzos.ai`, `agzos.agent`, `agzos.git`, `agzos.github`, `agzos.app`.
 
 ### Segurança
 
-- `contextIsolation: true` (renderer não tem acesso direto a `require`/`fs`)
-- `nodeIntegration: false`
-- `sandbox: true` na janela principal
-- CSP restritiva no `index.html` (default-src 'self')
-- `will-navigate` bloqueado (links externos vão pro `shell.openExternal`); webviews bloqueadas; permissões negadas por padrão
-- API keys e tokens no cofre do SO (`safeStorage`), nunca no `settings.json`; o renderer não lê o valor
-- Acesso a arquivos restrito às raízes liberadas (path guard com `realpath`)
+- `contextIsolation: true`, `nodeIntegration: false`, CSP restritiva, navegação externa bloqueada.
+- Acesso a arquivos restrito à pasta aberta (`path-guard`), inclusive para o agente.
+- Chaves de IA e tokens GitHub no cofre do sistema (`safeStorage`); nunca chegam ao renderer nem ao modelo.
+- Comandos git com argumentos em array, sem shell; shells do terminal em allowlist.
 
 ## 🎨 Tema
 
-Cores Agzos (definidas em `src/renderer/styles/app.css`):
-
 | Token | Valor | Uso |
 |-------|-------|-----|
-| `--accent` | `#D10A11` | Vermelho Agzos (logo, active tabs, cursor, botões primários) |
+| `--accent` | `#D10A11` | Vermelho Agzos (abas ativas, cursor, botões primários) |
 | `--bg` | `#0E0E0E` | Fundo principal |
 | `--fg` | `#E8E8E8` | Texto principal |
-| Branco | `#FFFFFF` | Detalhe (logo dot) |
 
-Customizar o tema: edite as CSS variables em `app.css` ou crie um novo bloco `body.theme-<nome>`. Aplique via Command Palette → "Preferências: Tema …".
+Customizar: edite as variáveis em `src/renderer/styles/app.css` ou crie um bloco `body.theme-<nome>`.
 
 ## 🤝 Como contribuir
 
-1. Fork + branch (`git checkout -b feature/minha-feature`)
+1. Branch a partir de `main` (`git checkout -b feat/minha-feature`)
 2. `npm run dev` para iterar
-3. `npm run check` (lint + testes unitários) e `npm run test:e2e` (Playwright; no Linux sem display use `xvfb-run -a npm run test:e2e`)
+3. `npm run check` e `xvfb-run -a npx playwright test`
 4. PR descrevendo o que mudou e por quê
-
-## 📋 Próximas fases
-
-- [ ] **Fase 2 — IA:** wizard, chat com streaming, contexto e aplicar diff
-- [ ] **Fase 3 — Git/GitHub:** status/diff/commit/push/pull e multi-conta
-- [ ] **Fase 4 — Editor completo:** pty, ripgrep/Quick Open, sessão e importar VS Code
-- [ ] **Fase 5 — Distribuição:** release 3 SO, auto-update, privacidade e assinatura Developer ID
-- [ ] Pós-v1.0: integrações Agzos (Key/Browser/Project/Hub), LSP, agent e freemium
 
 ## 📄 Licença
 

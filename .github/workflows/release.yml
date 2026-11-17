@@ -1,0 +1,113 @@
+name: Release Multiplataforma
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versão do release (ex: 0.4.0)'
+        required: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux
+            dist_cmd: npm run dist:linux
+          - os: windows-latest
+            target: windows
+            dist_cmd: npm run dist:win
+          - os: macos-14
+            target: macos
+            dist_cmd: npm run dist:mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint e testes unitários
+        run: npm run check
+
+      - name: Compilar artefatos e manifestos (${{ matrix.target }})
+        run: ${{ matrix.dist_cmd }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Salvar artefatos de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
+            dist/latest*.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  consolidate:
+    name: Consolidar Pacotes e Cheque de Manifestos
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Criar diretório consolidado
+        run: mkdir -p dist-consolidated
+
+      - name: Baixar artefatos Linux
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux
+          path: dist-consolidated
+
+      - name: Baixar artefatos Windows
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: dist-consolidated
+
+      - name: Baixar artefatos macOS
+        uses: actions/download-artifact@v4
+        with:
+          name: release-macos
+          path: dist-consolidated
+
+      - name: Listar arquivos e validar manifestos
+        run: |
+          ls -la dist-consolidated
+          echo "Validando presença dos 3 manifestos de OTA:"
+          test -f dist-consolidated/latest.yml || { echo "::error::latest.yml (Windows) ausente"; exit 1; }
+          echo "✓ latest.yml (Windows) presente"
+          test -f dist-consolidated/latest-linux.yml || { echo "::error::latest-linux.yml (Linux) ausente"; exit 1; }
+          echo "✓ latest-linux.yml (Linux) presente"
+          test -f dist-consolidated/latest-mac.yml || { echo "::error::latest-mac.yml (macOS) ausente"; exit 1; }
+          echo "✓ latest-mac.yml (macOS) presente"
+
+      - name: Salvar pacote de release pronto para VPS
+        uses: actions/upload-artifact@v4
+        with:
+          name: agzos-code-ota-bundle
+          path: dist-consolidated/
+          retention-days: 30

@@ -48,10 +48,6 @@ function createPathGuard({
 
     isAllowed,
 
-    isRoot(p) {
-      return roots.has(resolveReal(p));
-    },
-
     // Retorna o caminho resolvido para o chamador usar no lugar do original.
     assertAllowed(p) {
       if (!isAllowed(p)) throw new Error(`Acesso negado: ${p}`);

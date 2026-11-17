@@ -1,0 +1,240 @@
+/* ==========================================================================
+   Terminal multi-sessão + aba PORTAS
+   Usa só os tokens do tema (app.css): --bg, --bg-soft*, --line*, --fg*, --accent*.
+   ========================================================================== */
+
+/* Cabeçalho do painel: abas encolhem/rolam, ações nunca somem -------------- */
+#bottom-panel { container: bottompanel / inline-size; }
+.bottom-tab-strip {
+  display: flex; align-items: stretch; align-self: stretch; min-width: 0; flex: 0 1 auto;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.bottom-tab-strip::-webkit-scrollbar { display: none; }
+.bottom-tab-strip .bottom-tab { flex: 0 0 auto; }
+.bottom-tabs > :not(.bottom-tab-strip):not(.bottom-spacer) { flex-shrink: 0; }
+.bottom-spacer { min-width: 4px; }
+
+/* Ações por aba no cabeçalho do painel ------------------------------------ */
+.panel-actions { display: none; align-items: center; gap: 1px; }
+#bottom-panel[data-active-tab="terminal"] .panel-actions[data-for="terminal"],
+#bottom-panel[data-active-tab="ports"] .panel-actions[data-for="ports"] { display: flex; }
+.panel-actions-sep { width: 1px; height: 14px; background: var(--line-2); margin: 0 6px; }
+.bottom-tabs .icon-btn.open { color: var(--fg); background: var(--hover); }
+.bottom-tabs .icon-btn:focus-visible,
+.term-menu-item:focus-visible,
+.term-session-row:focus-visible,
+.port-link:focus-visible,
+.port-action:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+/* Nome do shell ativo */
+.term-active {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 180px; height: 22px; padding: 0 8px 0 4px; margin-right: 4px;
+  font-size: 11.5px; color: var(--fg-dim);
+  cursor: default; user-select: none;
+}
+.term-active-icon { display: inline-flex; }
+.term-active-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-active .term-rename-input { width: 120px; }
+
+/* "+" e "⌄" formam um botão composto */
+.term-new-group { display: inline-flex; align-items: center; border-radius: 3px; }
+.term-new-group:hover { background: var(--hover); }
+.term-new-group .icon-btn:hover { background: transparent; }
+.bottom-tabs .term-new-group .icon-btn { border-radius: 3px; }
+.bottom-tabs .icon-btn.term-new-caret { width: 16px; padding: 0; margin-left: -2px; }
+.bottom-tabs .icon-btn.term-new-caret svg { width: 13px; height: 13px; }
+
+/* Contador na aba PORTAS */
+.bottom-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 15px; padding: 0 4px; margin-left: 6px;
+  border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 700; letter-spacing: 0; vertical-align: 1px;
+}
+.bottom-tab-count[hidden] { display: none; }
+
+#btn-ports-refresh.spinning svg { animation: term-spin 0.8s linear infinite; }
+@keyframes term-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #btn-ports-refresh.spinning svg { animation: none; } }
+
+/* Área de terminais -------------------------------------------------------- */
+#pane-terminal.active { display: flex; container-type: inline-size; container-name: termpane; }
+#terminal-host {
+  position: relative; flex: 1 1 auto; min-width: 0; height: 100%;
+  background: var(--bg);
+}
+.term-group { display: flex; flex-direction: row; width: 100%; height: 100%; }
+.term-group[hidden] { display: none; }
+.term-instance {
+  position: relative; flex: 1 1 0; min-width: 0; height: 100%;
+  padding: 6px 8px; background: var(--bg); overflow: hidden;
+}
+.term-instance .xterm { height: 100%; }
+/* Divisão: a metade ativa ganha um fio vermelho no topo, a outra esmaece de leve */
+.term-group.is-split .term-instance.active::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+  background: var(--accent); pointer-events: none; z-index: 5;
+}
+.term-group.is-split .term-instance:not(.active) .xterm-screen { opacity: 0.72; transition: opacity 0.12s; }
+.term-divider {
+  flex: 0 0 5px; cursor: col-resize;
+  background: linear-gradient(var(--line), var(--line)) center / 1px 100% no-repeat;
+}
+.term-divider:hover, .term-divider.dragging {
+  background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
+}
+body.resizing-col { cursor: col-resize; user-select: none; }
+body.resizing-col .xterm { pointer-events: none; }
+
+/* Lista de sessões --------------------------------------------------------- */
+.term-sessions {
+  flex: 0 0 172px; min-width: 0; height: 100%;
+  overflow-y: auto; padding: 4px 0;
+  background: var(--bg-soft); border-left: 1px solid var(--line);
+}
+.term-sessions[hidden] { display: none; }
+.term-session-row {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 4px 0 8px;
+  font-size: 12px; color: var(--fg-dim); cursor: pointer; user-select: none;
+}
+.term-session-row:hover { background: var(--hover); color: var(--fg); }
+.term-session-row.active { background: var(--accent-bg); color: var(--fg); }
+.term-session-row.active::before {
+  content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 2px;
+  border-radius: 0 2px 2px 0; background: var(--accent);
+}
+.term-session-glyph {
+  flex: 0 0 9px; color: var(--fg-mute);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 24px;
+}
+.term-session-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-session-status { font-size: 10.5px; color: var(--fg-mute); }
+.term-session-row.exited .term-session-title { color: var(--fg-mute); text-decoration: line-through; text-decoration-color: var(--line-2); }
+.term-session-row.exited .term-shell-icon { opacity: 0.45; filter: grayscale(1); }
+.term-session-kill {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border: none; border-radius: 3px;
+  background: transparent; color: var(--fg-mute); cursor: pointer;
+  opacity: 0;
+}
+.term-session-row:hover .term-session-kill,
+.term-session-row:focus-within .term-session-kill { opacity: 1; }
+.term-session-kill:hover { color: var(--accent-2); background: var(--hover); }
+.term-rename-input {
+  flex: 1 1 auto; min-width: 0; height: 18px; padding: 0 4px;
+  font: inherit; font-size: 12px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--accent); border-radius: 3px; outline: none;
+}
+
+/* Painel estreito (lateral): a lista vira uma coluna só de ícones */
+@container termpane (max-width: 520px) {
+  .term-sessions { flex-basis: 40px; }
+  .term-session-row { justify-content: center; padding: 0; }
+  .term-session-glyph, .term-session-title, .term-session-status, .term-session-kill { display: none; }
+  .term-session-row .term-rename-input { position: absolute; left: 2px; right: 2px; z-index: 2; }
+}
+
+/* Ícones de shell: cada família com um tom, puxado para o texto do tema */
+.term-shell-icon { display: inline-flex; flex: 0 0 auto; color: var(--fg-dim); }
+.term-shell-icon[data-shell="bash"] { color: color-mix(in srgb, #3FA34D 78%, var(--fg)); }
+.term-shell-icon[data-shell="powershell"] { color: color-mix(in srgb, #2F7DE1 80%, var(--fg)); }
+.term-shell-icon[data-shell="cmd"] { color: var(--fg-dim); }
+.term-shell-icon[data-shell="wsl"] { color: color-mix(in srgb, #E95420 82%, var(--fg)); }
+
+/* Menus suspensos ---------------------------------------------------------- */
+.term-menu:focus { outline: none; }
+.term-menu {
+  position: fixed; z-index: 300; min-width: 210px; max-width: 320px; padding: 4px;
+  background: var(--bg-soft2); border: 1px solid var(--line-2); border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+.term-menu-heading { padding: 4px 8px 4px; font-size: 11px; color: var(--fg-mute); }
+.term-menu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+.term-menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 26px; padding: 0 8px;
+  border: none; border-radius: 4px; background: transparent;
+  font: inherit; font-size: 12px; color: var(--fg); text-align: left; cursor: pointer;
+}
+.term-menu-icon { display: inline-flex; width: 16px; justify-content: center; color: var(--fg-dim); }
+.term-menu-label { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.term-menu-hint { font-size: 11px; color: var(--fg-mute); }
+.term-menu-item:hover, .term-menu-item:focus { background: var(--accent); color: #fff; outline: none; }
+.term-menu-item:hover .term-menu-icon, .term-menu-item:focus .term-menu-icon,
+.term-menu-item:hover .term-shell-icon, .term-menu-item:focus .term-shell-icon,
+.term-menu-item:hover .term-menu-hint, .term-menu-item:focus .term-menu-hint { color: rgba(255, 255, 255, 0.9); }
+
+/* Aba PORTAS --------------------------------------------------------------- */
+#pane-ports.active { display: flex; flex-direction: column; }
+.ports-view { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--bg); }
+.ports-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--fg); }
+.ports-table th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 5px 12px; text-align: left; white-space: nowrap;
+  font-size: 11px; font-weight: 600; color: var(--fg-mute);
+  background: var(--bg-soft); border-bottom: 1px solid var(--line);
+}
+.ports-table td {
+  padding: 3px 12px; height: 28px; white-space: nowrap;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+.ports-table tbody tr:hover { background: var(--hover); }
+.ports-table .col-port { width: 1%; }
+.ports-table .col-pid { width: 1%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--fg-mute); }
+.ports-table .col-act { width: 1%; text-align: right; }
+.ports-table td.muted { color: var(--fg-mute); }
+.port-link {
+  display: inline-flex; align-items: center; gap: 8px; padding: 2px 4px; margin-left: -4px;
+  border: none; border-radius: 3px; background: transparent; cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; font-weight: 700;
+  color: var(--fg); font-variant-numeric: tabular-nums;
+}
+.port-link:hover { color: var(--accent-2); text-decoration: underline; text-underline-offset: 3px; }
+.port-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.port-raw {
+  margin-left: 8px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px; color: var(--fg-mute);
+}
+.port-action {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 22px; padding: 0; border: none; border-radius: 3px;
+  background: transparent; color: var(--fg-mute); cursor: pointer; opacity: 0.6;
+}
+.ports-table tr:hover .port-action, .port-action:focus-visible { opacity: 1; }
+.port-action:hover { color: var(--fg); background: var(--bg-soft3); }
+.ports-foot {
+  display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 8px 12px;
+  font-size: 11px; color: var(--fg-mute);
+}
+.ports-warn { color: var(--accent-2); }
+.ports-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; height: 100%; min-height: 120px; padding: 16px; text-align: center;
+}
+.ports-empty-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; margin-bottom: 4px; border-radius: 8px;
+  background: var(--bg-soft2); color: var(--accent);
+}
+.ports-empty-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--fg); }
+.ports-empty-body { margin: 0; max-width: 360px; font-size: 12px; color: var(--fg-mute); }
+.ports-empty.is-error .ports-empty-body { color: var(--accent-2); }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Painel estreito (fica no fim: vence as regras base de mesma especificidade) */
+@container bottompanel (max-width: 640px) {
+  .term-active { display: none; }
+  .bottom-tab { padding-left: 8px; padding-right: 8px; }
+}
+@container bottompanel (max-width: 400px) {
+  .panel-actions-sep { margin: 0 2px; }
+  .bottom-tabs .icon-btn { width: 22px; }
+}

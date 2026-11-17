@@ -1,104 +1,163 @@
-# Changelog — Agzos Code
+# Changelog
 
-## [0.2.2] — 2026-10-31
+## 1.0.0 — 2026-11-16
 
-Correções vindas do teste do build Windows 0.2.1 no Windows 11 Pro 26H2
-(build 26300.9711), que passou no checklist. Fecha os detalhes que sobraram.
+### Agzos IA agêntico
 
-### Corrigido
+- Modo **Agente** no chat: a IA lê, busca, cria e edita arquivos, cria/move/apaga pastas e roda comandos dentro da pasta do projeto — corrige bugs, cria sites e projetos, faz melhorias.
+- Tool calling nos provedores OpenAI-compatíveis (OpenAI, Groq, OpenRouter, Gemini, Ollama) e Anthropic; modelo sem suporte a ferramentas cai para o chat com aviso.
+- Três modos de autonomia: **Perguntar tudo**, **Edição livre** (padrão: edita sozinho, pede OK para comandos e para apagar/mover) e **Automático**. Comandos de risco (apagar raiz, formatar, `git push --force`, `reset --hard`, `curl | sh`…) sempre pedem confirmação; nada fora da pasta do projeto.
+- Cartões por ação (ler, editar `+N −M` com diff, comando com saída ao vivo), cartão de aprovação com diff inline (`Enter` permite, `Esc` nega, "Permitir sempre nesta conversa").
+- Resumo final com arquivos alterados e **Desfazer tudo** (checkpoint antes de cada alteração).
+- Editor recarrega arquivos alterados pelo agente; se você também editou, pergunta qual versão manter.
+- Histórico guarda as ações do agente; segredos são redigidos da saída de comandos.
 
-- **`cls` não limpava o terminal**: o terminal rodava com `child_process.spawn` e canos, sem pty. Sem um terminal de verdade o PowerShell/bash não emitem a sequência de limpeza (e o PowerShell ignora `Clear-Host` quando a saída é redirecionada), então `cls` só aparecia como erro/ruído. Agora o terminal usa **`node-pty`** (pty real): `cls`/`clear` limpam, o que você digita aparece na tela, há cores, `Tab` e `Ctrl+C`.
-- **Eco de digitação ausente**: consequência do mesmo problema — sem pty o shell não ecoa o que é digitado, então só o resultado dos comandos aparecia. Corrigido junto com o pty.
-- **`spawn-helper` do node-pty sem bit de execução no pacote**: o tarball do npm entrega o binário como `-rw-r--r--`, mas no macOS ele é passado como `argv[0]` do `posix_spawn`; sem o bit o terminal não abriria em builds macOS. O hook `afterPack` agora marca o binário como executável.
-- **`term:resize` era um no-op**: o handler devolvia `true` sem fazer nada. Com pty ele repassa `cols`/`rows` de verdade, então o shell quebra linha no lugar certo.
+### Git e GitHub
 
-### Adicionado
+- Painel GIT: branch (trocar/criar, remotas), sincronizar ↓/↑, fetch/pull/push, áreas Preparadas/Alterações/Conflitos com stage/unstage/descartar e diff, commit (`Ctrl+Enter`) e "Commit e Push", histórico com commits não enviados destacados.
+- Barra de status com branch e sincronização; badge de alterações; cores de status na árvore de arquivos.
+- "Clonar Repo" funcionando (tela inicial e paleta) com barra de progresso.
+- Contas GitHub por token (PAT), várias contas, conta por repositório; token só no cofre do sistema, nunca no renderer, na IA ou no `.git/config`.
+- Publicar pasta no GitHub (pessoal ou organização, público/privado) e criar Pull Request da branch atual.
+- Comandos Git na paleta.
 
-- `src/main/lib/terminal-session.js`: sessão de terminal com pty real e **fallback automático para canos** quando o módulo nativo não carrega ou o ambiente bloqueia `/dev/ptmx`. No modo degradado o terminal avisa na primeira linha que está reduzido, em vez de falhar silenciosamente.
-- `node-pty` como dependência de runtime (o app deixou de ter zero dependências) com prebuilds N-API para win32-x64/arm64 e darwin-x64/arm64; empacotado fora do `app.asar` via `asarUnpack` e sem `npmRebuild` (os prebuilds são ABI-stable).
-- Testes unitários da sessão de terminal (pty e canos, normalização de CR só no modo cano, resize, fallback quando o pty falha) e da permissão do `spawn-helper`.
-- Testes E2E do terminal (execução de comando, modo pty/reduzido, `cls` limpando, Enter sem linha duplicada) e do shell: **segunda instância** focando/restaurando a janela existente sem abrir outra, e **“Revelar no Explorer”** por IPC, incluindo o guard que recusa caminho fora da workspace.
+### Correções
 
-### Notas
+- Botão "Abrir Arquivo" da tela inicial não fazia nada.
 
-- Assinatura de código do `.exe` (Windows) e Developer ID + notarização (macOS) seguem pendentes — exigem certificado, previstas para a Fase 5.
+### Release
 
-## [0.2.1] — 2026-10-29
+- Publicação na VPS mantém só as 2 releases mais recentes (`--keep`, padrão 2) e remove as antigas após trocar `current`.
 
-Correções vindas do teste do build Windows 0.2.0 no Windows 11 Pro 26H2
-(build 26300.9711). O build testado era anterior ao PR #4; esta versão é o
-primeiro build Windows com todas as correções.
+### Limitações conhecidas
 
-### Corrigido
+- Testado com servidores falsos (OpenAI/Anthropic/GitHub) e em Linux; falta validação em Windows real, no github.com e com modelos reais.
+- Login "Entrar com GitHub" (Device Flow) depende de um OAuth App da Agzos; por enquanto só token (PAT).
+- Sem interface de merge/rebase; conflitos aparecem na lista, mas são resolvidos no editor ou terminal.
+- Cabeçalho da sidebar mostra botões do Explorer também nas views Git e IA.
+- macOS não é buildado nesta release (depende de host macOS).
 
-- **Terminal não carregava no Windows** (`Can only have one anonymous define call per script file`): o UMD do xterm conflitava com o loader AMD do Monaco. O `define` global agora é desativado só durante o carregamento de `xterm.js` + `fit.js` e restaurado em seguida.
-- **Enter no terminal era ignorado**: sem pty, o shell não traduz `\r`; o `term:write` normaliza `\r\n`/`\r` para `\n`.
-- **“Copiar diagnóstico” com clipboard negado**: `copy()` devolvia a promise de `writeText` direto, então a rejeição não caía no fallback. Agora é `try/await` com `catch` → `execCommand` → textarea selecionada, e o texto aparece no diálogo se os dois falharem.
-- **Configurações abriam no painel lateral antigo**: agora são página cheia, com engrenagem da topbar, botão da activity bar, `Ctrl+,`/`Cmd+,`, `Esc` e botão voltar.
-- **`Ctrl+,` não fazia nada no Windows**: o atalho dependia só do acelerador do menu nativo, instável com `frame:false` + `autoHideMenuBar`. O renderer trata `Ctrl+,`/`Cmd+,` localmente.
-- **`settings.json` com BOM era tratado como corrompido**: o arquivo era renomeado para `.corrupt-*` e as configurações voltavam ao padrão (reabrindo welcome/onboarding). O BOM é removido antes do `JSON.parse`, aceitando UTF-8, UTF-16 LE e UTF-16 BE — o que o PowerShell 5.1 grava por padrão.
-- **Pacote vinha com arquivos `._*` do macOS** (`._Agzos Code.exe`, `._app.asar`): novo hook `afterPack` multiplataforma (`tools/after-pack.js`) varre a saída e remove `._*`, `.DS_Store`, `.LSOverride` e `.AppleDouble/`; `build.files` também exclui. O workflow Build falha se algo escapar para `dist/`.
+## 0.7.0 — 2026-11-16
 
-### Adicionado
+### Terminal multi-sessão
 
-- Testes unitários de BOM (UTF-8/UTF-16 LE/BE, BOM que não esconde JSON inválido), do removedor de lixo do macOS e do contrato do `package.json` de empacotamento.
-- Testes E2E da página cheia de Configurações (engrenagem, activity bar, `Ctrl+,`, `Esc`, voltar) e de `settings.json` com BOM de ponta a ponta.
-- `AGZOS_NO_GPU=1` nos helpers de E2E para rodar em ambientes sem processo de GPU.
+- Vários terminais ao mesmo tempo, cada um com seu shell e processo; lista lateral de sessões (aparece com 2+), com ícone por shell, renomear (duplo clique/F2) e lixeira.
+- Escolha de shell no `+ ⌄`: PowerShell 7, Windows PowerShell, Prompt de Comando, Git Bash e WSL no Windows (o que estiver instalado); bash/zsh/fish/sh no Linux/macOS.
+- Dividir terminais lado a lado com divisores arrastáveis.
+- Barra do painel: shell ativo, novo, perfis, dividir, matar, menu ⋯ (limpar, reiniciar, renomear, mover), maximizar e fechar.
+- Atalhos: `Ctrl+Shift+`` ` novo terminal, `Ctrl+Shift+5` dividir, `Ctrl+PageUp/PageDown` alternar. Comandos equivalentes na paleta.
+- Shell encerrado fica marcado; `Enter` reinicia na mesma sessão. Fechar o último terminal fecha o painel.
+- Cores do terminal seguem o tema do app (escuro, claro, monokai).
 
-## [0.2.0] — 2026-10-28
+### Aba PORTAS
 
-Fase 1.5 — Confiança e integridade.
+- Lista as portas TCP em escuta (porta, endereço, processo, PID), atualiza a cada 5s enquanto visível, com ações de abrir no navegador e copiar `http://localhost:<porta>`.
 
-### Adicionado
+## 0.6.1 — 2026-11-16
 
-- Bundles enxutos: Monaco, Lucide e xterm saíram de `dependencies` para `devDependencies`; macOS 322 MB, Linux 298 MB e Windows 388 MB no `--dir`. Linux com `desktopName`/`syncDesktopName` para associação de janela.
+### Terminal
 
-- Assinatura local do `.app` no macOS com identidade estável (`Rodrigo Dev Local`), bundle id `com.agzos.code`, via `tools/sign-mac-dev.js`, `tools/sign-mac-app.js` e hook `afterPack`.
-- Electron 44.10.0 e electron-builder 26.18.0; builds macOS arm64/x64, Windows x64/arm64 e Linux x64.
-- Workflow `.github/workflows/build.yml` para gerar artefatos dos três sistemas.
-- Proteção de alterações não salvas: fechar janela/`Cmd+Q`/`Cmd+W` pede **Salvar tudo / Descartar / Cancelar**.
-- Leitura de arquivos com detecção de encoding (UTF-8, BOM, UTF-16 LE/BE), EOL e binário; arquivos não reconhecidos abrem somente leitura com opção explícita de reabrir como Windows-1252.
-- Escrita atômica (tmp + rename) preservando encoding, EOL e permissões.
-- Diálogos internos para novo arquivo/pasta e renomear (substituem `window.prompt`, que o Electron não implementa).
-- Explorer mostra `.env`, `.github`, `.vscode` etc.; `node_modules`, `.git`, `dist` ficam ocultos por padrão, com toggle em Configurações.
-- Busca em arquivos inclui dotfiles, cancela buscas antigas e leva à linha/coluna do resultado.
-- Status bar com encoding/EOL reais, ícones preservados e sem `↑0 ↓0` fake.
-- Tema Monokai real no Monaco.
-- Logs em `userData/logs/main.log` com rotação e redação de segredos; menu Ajuda → Abrir logs; fallback de erro no renderer.
-- `sandbox: true` na janela principal, permission handler negando tudo e bloqueio de webviews.
-- Instância única: abrir o app de novo foca a janela existente.
-- Tema de ícones do Explorer e correção da árvore vertical (PR #3).
+- Windows: o shell nasce com ambiente limpo montado do registro (como o Windows Terminal), sem herdar variáveis velhas do processo que abriu o Agzos — ex.: `ANTHROPIC_MODEL`/`ANTHROPIC_BASE_URL` já removidas continuavam aparecendo. `AGZOS_TERM_INHERIT_ENV=1` restaura a herança.
+- Copiar e colar: `Ctrl+C` copia quando há seleção (sem seleção continua interrompendo), `Ctrl+Shift+C`, `Ctrl+V`, `Ctrl+Shift+V`, `Shift+Insert` e `Cmd+C/V` no macOS; botão direito copia a seleção ou cola.
 
-### Corrigido
+## 0.6.0 — 2026-11-16
 
-- Terminal abria com `Can only have one anonymous define call per script file`: o UMD do xterm conflitava com o loader AMD do Monaco. O `define` é desativado só durante o carregamento do xterm/fit e restaurado depois.
-- Terminal sem pty ignorava Enter (`\r`): o main normaliza CR para LF no `term:write`.
-- “Copiar diagnóstico” falhava com permissão de clipboard negada; agora há fallback por `execCommand` e textarea de diagnóstico.
-- Configurações deixaram de abrir na sidebar e viraram página cheia, com voltar/Esc.
+### Agzos IA — painel premium
 
-- Renomear arquivo aberto deixava aba órfã/duplicada e podia salvar no caminho antigo.
-- Novo arquivo/pasta e renomear não funcionavam por causa de `window.prompt`.
-- Arquivos Latin-1/UTF-16/binários eram corrompidos ao salvar (U+FFFD e troca de EOL).
-- Clique em resultado de busca não posicionava o cursor.
-- Ícones de performance/IA da status bar eram apagados ao atualizar o texto.
-- Botões mortos do welcome e passo de layout do onboarding sem efeito.
-- “Sobre” e README chamavam o projeto de fork do Code-OSS (não é).
-- Configuração de view “Extensões”/Open VSX contradizia o ADR-0001.
+- Painel acoplável: esquerda, direita (padrão, coluna redimensionável) ou embaixo (aba ao lado do terminal). Trocar de posição não perde a conversa nem a resposta em andamento; posição e largura ficam salvas.
+- `Ctrl+L` abre/fecha o painel (com seleção no editor, envia a seleção); comandos "Agzos IA: Mover para Esquerda/Direita/Embaixo" e "Alternar Painel" na paleta.
+- Novo visual: cabeçalho compacto com seletor perfil·modelo, mensagens com avatar Agzos, blocos de código com realce de sintaxe e ações Copiar / Inserir no cursor / Aplicar com diff, cursor de streaming, indicador "Pensando", erro com "Tentar de novo" e estado vazio com sugestões.
+- Composer que cresce sozinho com chips de contexto (arquivo atual, seleção com nº de linhas, terminal); `Enter` envia e `Shift+Enter` quebra linha (configurável para `Ctrl+Enter`).
+- Modo compacto automático quando o painel está estreito ou baixo.
+- Várias conversas por workspace, com histórico, títulos automáticos e exclusão (o histórico antigo é migrado).
+- Personalização em Configurações → Agzos IA: posição, tamanho da fonte, densidade, avatar, tecla de envio e contexto padrão.
 
-### Segurança
+### Correções
 
-- Electron 32 (EOL em 03/2025) substituído pelo 44.
-- `sandbox: true`, permissões negadas por padrão, webviews bloqueadas.
-- `fs:delete` não apaga a raiz da pasta aberta.
-- Nenhum segredo em logs, settings ou mensagens de erro.
+- Terminal no Windows: shells novos (e "Reiniciar") passam a enxergar variáveis de ambiente alteradas ou removidas depois que o app abriu (ex.: remover `ANTHROPIC_API_KEY`), relendo o ambiente do registro como o Windows Terminal faz.
+- Salvar configurações (ou mover o painel) podia apagar os perfis de IA salvos ("Perfil de IA não encontrado").
 
-### Documentação
+## 0.5.0 — 2026-11-16
 
-- ADR-0002 (Electron 44, builds e política de código nativo).
-- Plano da Fase 1.5 e backlog aprovado.
-- README, arquitetura, troubleshooting e PRD atualizados.
+### Correções críticas de layout
 
-## [0.1.0] — 2026-10-09
+- Área do editor colapsava (welcome cortado no topo, resto da tela preto) após a introdução do `#workbench-body`: `#editor-area` agora cresce com `flex: 1 1 0`, grid principal usa `minmax(0, 1fr)` e os contêineres usam `overflow: clip` para a página não "subir" ao focar o terminal.
+- Workers do Monaco: removido `MonacoEnvironment` que apontava direto para `tsWorker.js`/`jsonWorker.js` (módulos AMD), o que gerava `define is not defined` ao abrir arquivos `.js`, `.json`, `.css` e `.html`.
 
-- Fase 0: editor Electron + Monaco com branding Agzos, welcome/onboarding, terminal, command palette e builds básicos.
-- Fase 1: lint/testes, E2E, IPC modular, settings, cofre de segredos, path guard e CI.
+### Terminal
+
+- Terminal real com PTY via `node-pty` (ConPTY no Windows, forkpty no Linux/macOS): prompt, eco, Backspace, setas, histórico, programas em tela cheia e redimensionamento.
+- Fallback em modo pipe com disciplina de linha (eco local, Backspace, Ctrl+C/U/D, colar várias linhas) se o PTY não carregar.
+- xterm.js não carregava com o loader AMD do Monaco presente; por isso redimensionar, mover (embaixo/direita) e maximizar não funcionavam. Corrigido, com tamanho guardado por posição.
+- Shells encerrados (com a árvore de processos) ao recarregar/fechar a janela; `cwd` e shell validados (allowlist); EPIPE não derruba mais o processo principal.
+- `terminal.fontSize` e `terminal.scrollback` agora são aplicados.
+
+### Configurações
+
+- Opções booleanas (minimap, formatOnSave etc.) não eram salvas — corrigido.
+- "Restaurar Todas" não apaga mais perfis de IA, contas GitHub, pastas recentes e onboarding.
+- Importação do VS Code: parser JSONC correto (URLs, globs, vírgulas finais) e aplicação imediata das configurações importadas, inclusive pela paleta de comandos.
+- Campos numéricos validados e limitados ao intervalo permitido.
+
+### Atalhos e Quick Open
+
+- `Ctrl+W` volta a fechar a aba ativa; `Ctrl+K Ctrl+W` (fechar todas) e `Ctrl+K Ctrl+S` (atalhos) implementados.
+- Atalhos globais não roubam mais teclas do terminal e de campos de texto.
+- Atalhos independentes do layout de teclado (ABNT2, macOS Option): `Ctrl+'` também alterna o terminal.
+- Quick Open (`Ctrl+P`) atualiza ao criar/renomear/apagar arquivos e não mistura resultados ao alternar para comandos.
+- Auto-save salva o arquivo certo e só quando há alterações.
+- "Verificar Atualizações" da paleta de comandos voltou a funcionar.
+
+### OTA e release
+
+- macOS: nunca baixa o build arm64 em Mac Intel; instalação com backup (não apaga o app se a troca falhar); não baixa de novo a mesma versão; erro de disco não derruba o app.
+- `update.autoDownload` respeitado; aviso "Baixando atualização…" só em verificação manual no macOS.
+- Publicação na VPS recusa manifestos `latest*.yml` de outra versão e artefatos sem a versão no nome.
+
+## 0.4.0 — 2026-11-16
+
+### Configurações (Padrão VS Code)
+
+- Redesenho completo do menu de configurações: migrado de painel estreito na sidebar para modal dedicado centralizado no estilo VS Code (`Ctrl+,` ou `Cmd+,`).
+- Navegação por categorias: Mais Usadas, Editor, Aparência, Terminal, IA, Git, Atualizações e Privacidade.
+- Campo de busca instantânea com suporte ao filtro `@modified` para exibir apenas configurações alteradas.
+- Indicador visual em vermelho para itens modificados e botão de redefinição individual (`↺`) para restaurar o valor padrão.
+- Alternância instantânea entre visualização visual (formulário) e visualização de código JSON bruto (`{ }`) com validação de sintaxe.
+- Importação direta de configurações do VS Code e Cursor (`settings.json`) mapeando preferências de editor, terminal e aparência.
+
+### Editor e Monaco
+
+- Web Workers dedicados do Monaco configurados via `MonacoEnvironment` (`editor.worker`, `ts.worker`, `json.worker`, `css.worker`, `html.worker`), garantindo validação de sintaxe e IntelliSense sem travar o renderer.
+- Sincronização em tempo real das preferências no Monaco Editor: `fontSize`, `tabSize`, `wordWrap`, `minimap`, `lineNumbers`, `formatOnSave` e `autoSave` (`off`, `afterDelay`, `onFocusChange`).
+
+### OTA Multiplataforma
+
+- Atualização in-app para todas as plataformas: Windows (NSIS), Linux (AppImage) e macOS.
+- Gerenciador nativo de atualização para macOS (`mac-ota.js`): parsing de `latest-mac.yml`, download com streaming de progresso em tempo real, verificação estrita de hash SHA-512, descompactação atômica via `ditto`, remoção de quarentena (`xattr -cr`) e reinício automático.
+- Barra de progresso visual de download da atualização incorporada diretamente na categoria "Atualizações" do modal de configurações.
+- Validador estrito de referências em manifestos adicionado ao `tools/publish-vps-release.js`, prevenindo publicação na VPS de manifestos com links para arquivos ausentes.
+- Workflow GitHub Actions (`.github/workflows/release.yml`) configurado com matriz multiplataforma (`ubuntu-22.04`, `windows-latest`, `macos-14`) para compilação e empacotamento consolidado de releases por tag.
+
+## 0.3.0 — 2026-11-12
+
+### IA
+
+- Wizard de configuração para OpenAI, Anthropic, Groq, OpenRouter, Gemini, Ollama e endpoints customizados.
+- Chat com streaming, cancelamento, histórico persistente e Markdown sanitizado.
+- Contexto opcional do arquivo, seleção e saída recente do terminal.
+- Comandos rápidos para explicar, refatorar, documentar e gerar testes.
+- Revisão em diff antes de aplicar código, com suporte a desfazer.
+- Chaves mantidas no cofre do sistema e erros redigidos.
+
+### Editor e estabilidade
+
+- Explorer vertical corrigido, atualização externa e preservação de pastas expandidas.
+- Quatro estilos de ícones para Explorer e abas.
+- Lint sem avisos e cobertura E2E ampliada.
+
+### Atualizações
+
+- OTA próprio via `https://code.rsolutionsbr.com/release/`, sem GitHub Releases.
+- Download automático no Windows e Linux com confirmação antes da instalação.
+- Aviso e download manual no macOS enquanto o aplicativo não estiver assinado.
+- Publicação atômica na VPS, checksums SHA-256 e rollback por release imutável.

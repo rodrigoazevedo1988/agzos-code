@@ -10,7 +10,7 @@
  *  - Configurações persistentes em userData
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, safeStorage, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -42,64 +42,8 @@ const DATA_DIR = 'agzos-code';
 app.setName(APP_NAME);
 app.setPath('userData', process.env.AGZOS_USER_DATA || path.join(app.getPath('appData'), DATA_DIR));
 
-const { createLogger } = require('./lib/logger');
-const logger = createLogger({ filePath: path.join(app.getPath('userData'), 'logs', 'main.log') });
-logger.info('Agzos Code iniciando', {
-  version: app.getVersion(),
-  electron: process.versions.electron,
-  platform: process.platform,
-  arch: process.arch,
-});
-
-process.on('uncaughtException', (err) => logger.error('uncaughtException', err));
-process.on('unhandledRejection', (err) => logger.error('unhandledRejection', err));
-
 let mainWindow = null;
 let splashWindow = null;
-let quitRequested = false;
-
-// Janela única: abrir o app de novo foca a existente. O estado dirty é por webContents.
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
-if (!hasSingleInstanceLock) app.quit();
-const dirtyByWindow = new Map();
-
-function windowDirtyCount(win) {
-  if (!win || win.isDestroyed()) return 0;
-  return dirtyByWindow.get(win.webContents.id) || 0;
-}
-
-app.on('second-instance', () => {
-  const win = mainWindow || BrowserWindow.getAllWindows()[0];
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
-});
-
-app.on('before-quit', () => {
-  quitRequested = true;
-});
-
-ipcMain.on('window:set-dirty', (evt, count) => {
-  dirtyByWindow.set(evt.sender.id, Math.max(0, Number(count) || 0));
-});
-
-ipcMain.on('window:close-response', (evt, action) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  if (!win) return;
-  if (action !== 'close') {
-    // Cancelar também desfaz um Cmd+Q pendente.
-    quitRequested = false;
-    return;
-  }
-  win.__agzosAllowClose = true;
-  if (quitRequested) {
-    win.destroy();
-    app.quit();
-  } else {
-    win.close();
-  }
-});
 
 /* -------------------------------------------------------------------------- */
 /*  Janela splash (carregamento inicial)                                       */
@@ -121,16 +65,6 @@ function createSplash() {
   });
   splashWindow.loadFile(path.join(__dirname, '..', 'renderer', 'splash.html'));
   splashWindow.once('ready-to-show', () => splashWindow.show());
-
-  // Se a janela principal não abrir, não deixe a splash presa para sempre.
-  const splashTimeout = setTimeout(() => {
-    if (splashWindow) {
-      logger.warn('Splash expirou sem a janela principal');
-      splashWindow.close();
-      splashWindow = null;
-    }
-  }, 20000);
-  splashWindow.on('closed', () => clearTimeout(splashTimeout));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -150,7 +84,7 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
       spellcheck: false,
     },
   };
@@ -158,9 +92,6 @@ function createMainWindow() {
     winOpts.icon = APP_ICON;
   }
   mainWindow = new BrowserWindow(winOpts);
-  mainWindow.__agzosAllowClose = false;
-  logger.info('Janela principal criada');
-  const windowContentsId = mainWindow.webContents.id;
 
   // Menu nativo — escondemos a barra mas mantemos atalhos
   Menu.setApplicationMenu(buildAppMenu());
@@ -173,7 +104,6 @@ function createMainWindow() {
       splashWindow = null;
     }
     mainWindow.show();
-    logger.info('Janela principal pronta');
     if (openDevToolsOnStart) mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
@@ -183,22 +113,8 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
-  // Proteção de alterações não salvas: pergunta ao renderer antes de fechar.
-  mainWindow.on('close', (event) => {
-    if (mainWindow.__agzosAllowClose) return;
-    if (windowDirtyCount(mainWindow) === 0) return;
-    event.preventDefault();
-    mainWindow.webContents.send('window:request-close');
-  });
-
-  mainWindow.webContents.on('render-process-gone', (_e, details) => {
-    logger.error('Renderer encerrou inesperadamente', details);
-  });
-
   mainWindow.on('closed', () => {
-    dirtyByWindow.delete(windowContentsId);
     mainWindow = null;
-    logger.info('Janela principal fechada');
   });
 }
 
@@ -213,14 +129,14 @@ function buildAppMenu() {
       label: 'Arquivo',
       submenu: [
         {
+          label: 'Nova Janela',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => createMainWindow(),
+        },
+        {
           label: 'Abrir Pasta…',
           accelerator: 'CmdOrCtrl+O',
           click: () => mainWindow?.webContents.send('menu:open-folder'),
-        },
-        {
-          label: 'Preferências…',
-          accelerator: 'CmdOrCtrl+,',
-          click: () => mainWindow?.webContents.send('menu:settings'),
         },
         { type: 'separator' },
         {
@@ -230,17 +146,12 @@ function buildAppMenu() {
         },
         { type: 'separator' },
         {
-          label: 'Fechar Aba',
-          accelerator: 'CmdOrCtrl+W',
-          click: () => mainWindow?.webContents.send('menu:close-tab'),
-        },
-        {
-          label: 'Fechar Janela',
-          accelerator: 'CmdOrCtrl+Shift+W',
-          click: () => mainWindow?.close(),
+          label: 'Configurações…',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => mainWindow?.webContents.send('menu:open-settings'),
         },
         { type: 'separator' },
-        { role: 'quit' },
+        isMac ? { role: 'close' } : { role: 'quit' },
       ],
     },
     {
@@ -283,20 +194,21 @@ function buildAppMenu() {
       label: 'Ajuda',
       submenu: [
         {
+          label: 'Verificar atualizações…',
+          click: () => mainWindow?.webContents.send('menu:check-updates'),
+        },
+        { type: 'separator' },
+        {
           label: 'Sobre o Agzos Code',
           click: () => {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'Sobre',
               message: `${APP_NAME}`,
-              detail: `Versão ${app.getVersion()}\nElectron ${process.versions.electron}\nNode ${process.versions.node}\n\nEditor Electron + Monaco com identidade Agzos.\nLogs: ${logger.filePath}\n\n© 2026 Agzos`,
+              detail: `Versão ${app.getVersion()}\nElectron ${process.versions.electron}\nNode ${process.versions.node}\n\nEditor próprio construído com Electron + Monaco.\n\n© 2026 Agzos`,
               buttons: ['OK'],
             });
           },
-        },
-        {
-          label: 'Abrir logs',
-          click: () => { shell.openPath(path.dirname(logger.filePath)); },
         },
       ],
     },
@@ -319,6 +231,7 @@ const guard = createPathGuard();
 require('./ipc/fs').register(ipcMain, { guard });
 require('./ipc/dialog').register(ipcMain, { ...deps, guard });
 require('./ipc/term').register(ipcMain);
+require('./ipc/ports').register(ipcMain);
 const settingsStore = require('./ipc/settings').register(ipcMain, deps);
 require('./ipc/workspace').register(ipcMain, {
   guard,
@@ -335,6 +248,7 @@ if (process.env.AGZOS_TEST === '1') {
 }
 const { createSecretStore } = require('./lib/secrets');
 const { migrateLegacySecrets } = require('./lib/settings');
+const { migrateLegacyAi } = require('./ai/profiles');
 // Em testes E2E sem keyring (CI Linux), usa um cofre falso. Inerte fora de AGZOS_TEST=1.
 const secretsBackend = process.env.AGZOS_TEST === '1' && process.env.AGZOS_TEST_SAFESTORAGE === 'fake'
   ? {
@@ -348,24 +262,32 @@ const secretStore = createSecretStore({
   safeStorage: secretsBackend,
 });
 require('./ipc/secrets').register(ipcMain, { store: secretStore });
-require('./ipc/app-info').register(ipcMain, { ...deps, guard });
-require('./ipc/logs').register(ipcMain, { shell, logger });
+// Git + GitHub: contas (tokens só no main) e operações git do sistema.
+const githubAccounts = require('./ipc/github').register(ipcMain, { guard, settingsStore, store: secretStore, app });
+require('./ipc/git').register(ipcMain, { guard, accounts: githubAccounts });
+const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
+// Agente (tools no workspace): chave da IA só no main; raiz via guard.
+const agentSessions = require('./ipc/agent').register(ipcMain, { settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData') });
+require('./ipc/chat-history').register(ipcMain, deps);
+require('./ipc/app-info').register(ipcMain, deps);
+const updater = require('./updater').createUpdater({
+  app,
+  notify: (notice) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:notice', notice);
+  },
+});
+ipcMain.handle('update:check', () => updater.checkForUpdates({ manual: true }));
+ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
 
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
-  if (!hasSingleInstanceLock) return;
-
-  try {
-    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-  } catch (e) {
-    logger.warn('Não foi possível instalar o permission handler', e.message);
-  }
-
   // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
   const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);
-  if (migrated.changed) settingsStore.save(migrated.settings);
+  // Em seguida, associa o provider antigo à chave já guardada em ai.legacy.
+  const migratedAi = migrateLegacyAi(migrated.settings, secretStore);
+  if (migrated.changed || migratedAi.changed) settingsStore.save(migratedAi.settings);
 
   // macOS: seta o ícone da Dock enquanto o app roda (em dev e empacotado)
   if (process.platform === 'darwin' && app.dock && APP_ICON) {
@@ -376,7 +298,7 @@ app.whenReady().then(() => {
   // Windows: pin to taskbar / jump list com ícone correto
   if (process.platform === 'win32' && APP_ICON) {
     try {
-      app.setUserTasks?.([{ program: process.execPath, title: 'Abrir Agzos Code', iconPath: APP_ICON }]);
+      app.setUserTasks?.([{ program: process.execPath, title: 'Nova Janela', iconPath: APP_ICON }]);
     } catch { /* ignora */ }
   }
   // Linux: Unity launcher (best-effort)
@@ -387,17 +309,18 @@ app.whenReady().then(() => {
   createSplash();
   // Atrasa um pouquinho pra splash renderizar com calma
   setTimeout(() => createMainWindow(), 350);
+  updater.start({ checkOnStart: false });
+  setTimeout(() => updater.checkForUpdates({ manual: false }), 10_000);
+  setInterval(() => updater.checkForUpdates({ manual: false }), 6 * 60 * 60 * 1000).unref();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
-}).catch((err) => {
-  logger.error('Falha no boot do main', err);
-  dialog.showErrorBox('Agzos Code não pôde iniciar', err.message);
-  app.quit();
 });
 
 app.on('window-all-closed', () => {
+  aiSessions.cancelAll();
+  agentSessions.cancelAll();
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();
@@ -412,9 +335,5 @@ app.on('web-contents-created', (_e, contents) => {
       event.preventDefault();
       shell.openExternal(url);
     }
-  });
-  contents.on('will-attach-webview', (event) => {
-    event.preventDefault();
-    logger.warn('Webview bloqueado');
   });
 });

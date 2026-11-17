@@ -2,10 +2,7 @@
  * Editor — wrapper sobre o Monaco Editor.
  *
  * Estratégia: usar o loader AMD oficial do Monaco via require()
- * (carregado de src/renderer/vendor/monaco).
- *
- * A partir da Fase 1.5 o editor carrega metadados de encoding/EOL/binário,
- * protege dirty ao fechar e preserva o conteúdo ao trocar de aba.
+ * (carregado do node_modules com file:// no Electron).
  */
 
 import { toast } from './toast.js';
@@ -18,15 +15,12 @@ let monaco = null;
 let activeEditor = null;
 let currentModel = null;
 let saveHandler = null;
+const autoSaveTimers = new Map(); // path -> timeout (afterDelay)
+let applyingExternal = false; // recarga vinda do disco: não marca a aba como suja
+const conflicts = new Set(); // arquivos sujos alterados por fora (agente)
 
-const ENCODING_LABELS = {
-  utf8: 'UTF-8',
-  'windows-1252': 'Windows-1252',
-  utf16le: 'UTF-16 LE',
-  utf16be: 'UTF-16 BE',
-  binary: 'Binário',
-  unknown: 'Desconhecido',
-};
+// Workers: o loader AMD do Monaco resolve vs/base/worker/workerMain.js sozinho.
+// Apontar direto para tsWorker.js/jsonWorker.js quebra (são módulos AMD: "define is not defined").
 
 /* --------------------------------------------------------------------------
    Loader
@@ -34,97 +28,73 @@ const ENCODING_LABELS = {
 function loadMonaco() {
   if (monacoLoaded) return monacoLoaded;
   monacoLoaded = new Promise((resolve, reject) => {
+    // O caminho é relativo ao index.html. Como o Electron resolve
+    // `node_modules` no contexto do renderer (não por padrão),
+    // usamos o atalho: copiar/copiar-vincular os assets Monaco
+    // para dentro de `src/renderer/vendor/monaco` via script de postinstall.
+    // Para o caminho aqui, esperamos o loader oficial AMD.
     const loaderScript = document.createElement('script');
     loaderScript.src = 'vendor/monaco/vs/loader.js';
     loaderScript.onload = () => {
       window.require.config({ paths: { vs: 'vendor/monaco/vs' } });
       window.require(['vs/editor/editor.main'], () => {
         monaco = window.monaco;
-        defineThemes();
+        // Tema Agzos Dark
+        monaco.editor.defineTheme('agzos-dark', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [
+            { token: 'comment', foreground: '6A6A6A', fontStyle: 'italic' },
+            { token: 'keyword', foreground: 'D10A11' },
+            { token: 'string', foreground: '9ECE6A' },
+            { token: 'number', foreground: 'FF9E64' },
+            { token: 'type', foreground: '7DCFFF' },
+            { token: 'function', foreground: '7AA2F7' },
+          ],
+          colors: {
+            'editor.background': '#0E0E0E',
+            'editor.foreground': '#E8E8E8',
+            'editorLineNumber.foreground': '#5A5A5A',
+            'editorLineNumber.activeForeground': '#D10A11',
+            'editor.selectionBackground': '#D10A1133',
+            'editor.lineHighlightBackground': '#181818',
+            'editorCursor.foreground': '#D10A11',
+            'editorIndentGuide.background1': '#1F1F1F',
+            'editorBracketMatch.background': '#2A2A2A',
+            'editorWidget.background': '#181818',
+            'editorWidget.border': '#2E2E2E',
+            'editorSuggestWidget.background': '#181818',
+            'editorSuggestWidget.border': '#2E2E2E',
+            'editorSuggestWidget.selectedBackground': '#D10A11',
+            'scrollbarSlider.background': '#2E2E2E80',
+            'scrollbarSlider.hoverBackground': '#3A3A3A',
+            'scrollbarSlider.activeBackground': '#D10A11',
+          },
+        });
+        monaco.editor.defineTheme('agzos-light', {
+          base: 'vs',
+          inherit: true,
+          rules: [
+            { token: 'comment', foreground: '888888', fontStyle: 'italic' },
+            { token: 'keyword', foreground: 'D10A11' },
+            { token: 'string', foreground: '2E7D32' },
+          ],
+          colors: {
+            'editor.background': '#FFFFFF',
+            'editor.foreground': '#1A1A1A',
+            'editorLineNumber.foreground': '#999999',
+            'editorLineNumber.activeForeground': '#D10A11',
+            'editorCursor.foreground': '#D10A11',
+            'editor.selectionBackground': '#D10A1122',
+          },
+        });
         resolve(monaco);
       });
     };
-    loaderScript.onerror = () => reject(new Error('Falha ao carregar Monaco. Rode `npm run setup:vendor`.'));
+    loaderScript.onerror = () => reject(new Error('Falha ao carregar Monaco. Rode `npm run setup:monaco` ou copie os assets para src/renderer/vendor/monaco.'));
     document.head.appendChild(loaderScript);
   });
   return monacoLoaded;
-}
-
-function defineThemes() {
-  monaco.editor.defineTheme('agzos-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6A6A6A', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'D10A11' },
-      { token: 'string', foreground: '9ECE6A' },
-      { token: 'number', foreground: 'FF9E64' },
-      { token: 'type', foreground: '7DCFFF' },
-      { token: 'function', foreground: '7AA2F7' },
-    ],
-    colors: {
-      'editor.background': '#0E0E0E',
-      'editor.foreground': '#E8E8E8',
-      'editorLineNumber.foreground': '#5A5A5A',
-      'editorLineNumber.activeForeground': '#D10A11',
-      'editor.selectionBackground': '#D10A1133',
-      'editor.lineHighlightBackground': '#181818',
-      'editorCursor.foreground': '#D10A11',
-      'editorIndentGuide.background1': '#1F1F1F',
-      'editorBracketMatch.background': '#2A2A2A',
-      'editorWidget.background': '#181818',
-      'editorWidget.border': '#2E2E2E',
-      'editorSuggestWidget.background': '#181818',
-      'editorSuggestWidget.border': '#2E2E2E',
-      'editorSuggestWidget.selectedBackground': '#D10A11',
-      'scrollbarSlider.background': '#2E2E2E80',
-      'scrollbarSlider.hoverBackground': '#3A3A3A',
-      'scrollbarSlider.activeBackground': '#D10A11',
-    },
-  });
-
-  monaco.editor.defineTheme('agzos-light', {
-    base: 'vs',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '888888', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'D10A11' },
-      { token: 'string', foreground: '2E7D32' },
-    ],
-    colors: {
-      'editor.background': '#FFFFFF',
-      'editor.foreground': '#1A1A1A',
-      'editorLineNumber.foreground': '#999999',
-      'editorLineNumber.activeForeground': '#D10A11',
-      'editorCursor.foreground': '#D10A11',
-      'editor.selectionBackground': '#D10A1122',
-    },
-  });
-
-  monaco.editor.defineTheme('monokai', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '75715E', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'F92672' },
-      { token: 'string', foreground: 'E6DB74' },
-      { token: 'number', foreground: 'AE81FF' },
-      { token: 'type', foreground: '66D9EF' },
-      { token: 'function', foreground: 'A6E22E' },
-      { token: 'variable', foreground: 'FD971F' },
-    ],
-    colors: {
-      'editor.background': '#272822',
-      'editor.foreground': '#F8F8F2',
-      'editorLineNumber.foreground': '#90908A',
-      'editorLineNumber.activeForeground': '#F8F8F2',
-      'editor.selectionBackground': '#49483E',
-      'editor.lineHighlightBackground': '#3E3D32',
-      'editorCursor.foreground': '#F8F8F0',
-      'editorWidget.background': '#1E1F1C',
-      'editorWidget.border': '#34352F',
-    },
-  });
 }
 
 /* --------------------------------------------------------------------------
@@ -133,164 +103,173 @@ function defineThemes() {
 export async function setupEditor() {
   monaco = await loadMonaco();
   const host = document.getElementById('editor-host');
+  // Mantém o #welcome (estado vazio) ao recriar o editor
   [...host.children].filter((el) => el.id !== 'welcome').forEach((el) => el.remove());
+  const edCfg = State.settings.editor || {};
   activeEditor = monaco.editor.create(host, {
     value: '',
     language: 'plaintext',
     theme: themeIdToMonaco(State.settings.theme),
     automaticLayout: true,
-    minimap: { enabled: true, scale: 1, renderCharacters: false },
-    fontSize: State.settings.fontSize,
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
-    lineNumbers: 'on',
-    renderWhitespace: 'selection',
+    minimap: { enabled: edCfg.minimap !== false, scale: 1, renderCharacters: false },
+    fontSize: State.settings.fontSize || 14,
+    fontFamily: edCfg.fontFamily || 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
+    lineNumbers: edCfg.lineNumbers || 'on',
+    renderWhitespace: edCfg.renderWhitespace || 'selection',
     scrollBeyondLastLine: false,
-    smoothScrolling: true,
-    cursorBlinking: 'smooth',
-    cursorSmoothCaretAnimation: 'on',
-    bracketPairColorization: { enabled: true },
+    smoothScrolling: edCfg.smoothScrolling !== false,
+    cursorBlinking: edCfg.cursorBlinking || 'smooth',
+    cursorSmoothCaretAnimation: edCfg.cursorSmoothCaretAnimation || 'on',
+    bracketPairColorization: { enabled: edCfg.bracketPairColorization !== false },
     guides: { indentation: true, bracketPairs: 'active' },
     padding: { top: 12, bottom: 12 },
-    tabSize: 2,
-    wordWrap: 'off',
+    tabSize: Number(edCfg.tabSize) || 2,
+    insertSpaces: edCfg.insertSpaces !== false,
+    wordWrap: edCfg.wordWrap || 'off',
+    wordWrapColumn: Number(edCfg.wordWrapColumn) || 80,
   });
 
+  const aiActions = [
+    ['explain', 'Explicar', 'Explique o código selecionado de forma objetiva.'],
+    ['refactor', 'Refatorar', 'Refatore o código selecionado mantendo o comportamento. Responda só com o código final em um bloco.'],
+    ['document', 'Documentar', 'Adicione comentários de documentação ao código selecionado. Responda só com o código final em um bloco.'],
+    ['tests', 'Gerar testes', 'Escreva testes para o código selecionado.'],
+  ];
+  aiActions.forEach(([id, label, prompt], index) => activeEditor.addAction({
+    id: `agzos-ai.${id}`, label: `Agzos IA: ${label}`, contextMenuGroupId: 'agzos-ai', contextMenuOrder: index,
+    run: async () => {
+      const { captureAITarget, setAITarget } = await import('./ai-apply.js');
+      const { sendToChat, focusChat } = await import('./ai-chat.js');
+      setAITarget(captureAITarget());
+      sendToChat(prompt, { includeSelection: true });
+      focusChat();
+    },
+  }));
+
+  // Status bar: posição do cursor
   activeEditor.onDidChangeCursorPosition((e) => {
     document.getElementById('status-pos').textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
   });
+  // Status bar: linguagem
   activeEditor.onDidChangeModelLanguage((e) => {
     document.getElementById('status-lang').textContent = langLabel(e.newLanguage);
   });
 
-  // Marca dirty uma única vez por transição. O conteúdo é persistido ao
-  // trocar de aba/salvar, para não fazer getValue() a cada tecla.
+  // Detectar mudanças → marca tab como dirty
   activeEditor.onDidChangeModelContent(() => {
-    if (!currentModel || !State.activePath) return;
-    const file = State.files.get(State.activePath);
-    if (!file || file.readOnly) return;
-    if (!file.dirty) {
-      file.dirty = true;
-      renderTabs();
+    if (applyingExternal) return;
+    if (currentModel && State.activePath) {
+      const file = State.files.get(State.activePath);
+      if (file) {
+        file.content = activeEditor.getValue();
+        file.dirty = true;
+        renderTabs();
+      }
     }
-    updateWindowState();
+    if (State.settings.editor?.autoSave === 'afterDelay' && State.activePath) {
+      // Captura o arquivo agora: se o usuário trocar de aba, salva ESTE arquivo
+      const path = State.activePath;
+      clearTimeout(autoSaveTimers.get(path));
+      autoSaveTimers.set(path, setTimeout(() => {
+        autoSaveTimers.delete(path);
+        if (State.files.get(path)?.dirty) saveFile(path);
+      }, Number(State.settings.editor?.autoSaveDelay) || 1000));
+    }
   });
 
+  activeEditor.onDidBlurEditorWidget(() => {
+    if (State.settings.editor?.autoSave === 'onFocusChange' && State.files.get(State.activePath)?.dirty) {
+      saveActive();
+    }
+  });
+
+  // Chords Ctrl+K … com foco no Monaco: registrados no próprio editor para não
+  // brigar com os chords nativos (Ctrl+K Ctrl+C etc.). Fora dele: app.js.
+  const { KeyMod, KeyCode } = monaco;
+  activeEditor.addCommand(KeyMod.chord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyW), () => { closeAllTabs(); });
+  activeEditor.addCommand(KeyMod.chord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyS), () => {
+    import('./command-palette.js').then((m) => m.showShortcutsModal());
+  });
+
+  // Ctrl+S → salvar (ignora se o Monaco já consumiu, ex.: Ctrl+K Ctrl+S)
   saveHandler = (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    if (e.defaultPrevented) return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key.toLowerCase() === 's' || e.code === 'KeyS')) {
       e.preventDefault();
       saveActive();
     }
   };
   document.addEventListener('keydown', saveHandler);
-  updateWindowState();
 }
 
 /* --------------------------------------------------------------------------
    Abrir / criar arquivos
    -------------------------------------------------------------------------- */
 export async function openFile(filePath, contentOverride) {
-  if (State.activePath === filePath && currentModel) {
-    renderTabs();
-    focusTab(filePath);
-    return;
-  }
-
-  // Persiste o buffer atual antes de trocar o modelo.
-  persistActiveContent();
-
   let file = State.files.get(filePath);
   if (!file) {
     try {
-      const meta = contentOverride
-        ? { content: contentOverride, size: 0, mtime: 0, encoding: 'utf8', eol: 'LF', binary: false, readOnly: false, bom: false }
+      const { content, size, mtime } = contentOverride
+        ? { content: contentOverride, size: 0, mtime: 0 }
         : await window.agzos.fs.readFile(filePath);
-      file = { path: filePath, ...meta, dirty: false };
+      file = { path: filePath, content, size, mtime, dirty: false };
       State.files.set(filePath, file);
     } catch (e) {
       toast(`Não foi possível abrir: ${e.message}`, 'error');
       return;
     }
   }
-
   State.activePath = filePath;
   setModel(file);
   renderTabs();
   syncEditorWelcome();
   focusTab(filePath);
+  syncConflictBar();
   document.getElementById('welcome').style.display = 'none';
-  updateWindowState();
+  // Atualiza título da janela
+  document.title = `${basename(filePath)} — Agzos Code`;
 }
 
 function setModel(file) {
   const lang = detectLanguage(file.path);
   if (currentModel) currentModel.dispose();
   currentModel = monaco.editor.createModel(file.content, lang);
-  if (file.eol === 'CRLF') {
-    currentModel.setEOL(monaco.editor.EndOfLineSequence.CRLF);
-  } else if (file.eol === 'LF') {
-    currentModel.setEOL(monaco.editor.EndOfLineSequence.LF);
-  }
   activeEditor.setModel(currentModel);
-  activeEditor.updateOptions({ readOnly: !!file.readOnly });
   document.getElementById('status-lang').textContent = langLabel(lang);
-  updateEncodingStatus(file);
-  if (file.readOnly) showReadOnlyBanner(file);
-  else hideBanner();
-}
-
-function updateEncodingStatus(file) {
-  const enc = document.getElementById('status-encoding');
-  const eol = document.getElementById('status-eol');
-  if (enc) enc.textContent = ENCODING_LABELS[file.encoding] || 'UTF-8';
-  if (eol) eol.textContent = file.eol || 'LF';
-}
-
-function persistActiveContent() {
-  if (!State.activePath || !currentModel) return;
-  const file = State.files.get(State.activePath);
-  if (file) file.content = currentModel.getValue();
 }
 
 export async function saveActive() {
-  if (!State.activePath) return false;
-  const file = State.files.get(State.activePath);
-  if (!file) return false;
-  if (file.readOnly) {
-    toast('Arquivo somente leitura: não é possível salvar nesta codificação.', 'error', 5000);
-    return false;
+  if (!State.activePath) return;
+  await saveFile(State.activePath);
+}
+
+/**
+ * Salva um arquivo aberto. Se for o ativo, usa o conteúdo do editor (e formata
+ * se formatOnSave); senão, o conteúdo guardado em State.files.
+ */
+export async function saveFile(filePath) {
+  const file = State.files.get(filePath);
+  if (!file) return;
+  const isActive = filePath === State.activePath && !!activeEditor && !!currentModel;
+  if (isActive && State.settings.editor?.formatOnSave) {
+    try {
+      await activeEditor.getAction('editor.action.formatDocument')?.run();
+    } catch { }
   }
-  const content = activeEditor.getValue();
+  const stillActive = isActive && filePath === State.activePath;
+  const content = stillActive ? activeEditor.getValue() : file.content;
   try {
-    await window.agzos.fs.writeFile(State.activePath, content, {
-      encoding: file.encoding,
-      eol: file.eol,
-      bom: file.bom,
-    });
-    file.content = content;
-    file.dirty = false;
+    await window.agzos.fs.writeFile(filePath, content);
+    // Só limpa o dirty se nada mudou durante a escrita
+    if (file.content === content) file.dirty = false;
     file.mtime = Date.now();
+    if (conflicts.delete(filePath)) syncConflictBar();
     renderTabs();
-    updateWindowState();
-    toast(`Salvo: ${basename(State.activePath)}`, 'success', 1800);
-    return true;
+    window.dispatchEvent(new CustomEvent('agzos:file-saved', { detail: { path: filePath } }));
+    toast(`Salvo: ${basename(filePath)}`, 'success', 1800);
   } catch (e) {
-    toast(`Erro ao salvar: ${e.message}`, 'error', 6000);
-    return false;
+    toast(`Erro ao salvar: ${e.message}`, 'error');
   }
-}
-
-export async function saveAll() {
-  const dirtyPaths = [...State.files.entries()].filter(([, f]) => f.dirty).map(([p]) => p);
-  for (const path of dirtyPaths) {
-    if (State.activePath !== path) await openFile(path);
-    const ok = await saveActive();
-    if (!ok) return false;
-  }
-  return true;
-}
-
-export function getDirtyFiles() {
-  return [...State.files.values()].filter((f) => f.dirty);
 }
 
 export async function closeTab(filePath) {
@@ -298,11 +277,13 @@ export async function closeTab(filePath) {
   if (file?.dirty) {
     if (!confirm(`${basename(filePath)} tem mudanças não salvas. Fechar?`)) return;
   }
+  // Dispose do model se for o ativo
   if (State.activePath === filePath && currentModel) {
     currentModel.dispose();
     currentModel = null;
   }
   State.files.delete(filePath);
+  if (conflicts.delete(filePath)) syncConflictBar();
   syncEditorWelcome();
   if (State.activePath === filePath) {
     State.activePath = null;
@@ -311,63 +292,23 @@ export async function closeTab(filePath) {
       await openFile(remaining[remaining.length - 1]);
     } else {
       activeEditor.setModel(monaco.editor.createModel('', 'plaintext'));
-      activeEditor.updateOptions({ readOnly: false });
-      hideBanner();
-      document.getElementById('welcome').style.display = '';
-      document.title = 'Agzos Code';
-      updateWindowState();
-    }
-  }
-  renderTabs();
-  updateWindowState();
-}
-
-export async function closeActiveTab() {
-  if (State.activePath) {
-    await closeTab(State.activePath);
-    return;
-  }
-  window.close();
-}
-
-// Remove abas cujos caminhos foram apagados (arquivo ou diretório).
-export function handleDeletedPath(target) {
-  const sep = pathSep();
-  const affected = [...State.files.keys()].filter((p) => p === target || p.startsWith(target + sep));
-  if (affected.length === 0) return;
-  const activeAffected = affected.includes(State.activePath);
-  for (const p of affected) State.files.delete(p);
-  if (activeAffected) {
-    if (currentModel) currentModel.dispose();
-    currentModel = null;
-    State.activePath = null;
-    const remaining = [...State.files.keys()];
-    if (remaining.length > 0) {
-      openFile(remaining[remaining.length - 1]);
-    } else {
-      activeEditor.setModel(monaco.editor.createModel('', 'plaintext'));
-      activeEditor.updateOptions({ readOnly: false });
-      hideBanner();
       document.getElementById('welcome').style.display = '';
       document.title = 'Agzos Code';
     }
   }
   renderTabs();
-  syncEditorWelcome();
-  updateWindowState();
 }
 
-export async function reopenWithEncoding(filePath, encoding) {
-  const file = State.files.get(filePath);
-  if (!file) return;
-  try {
-    const meta = await window.agzos.fs.readFile(filePath, { encoding });
-    Object.assign(file, meta, { dirty: false });
-    if (State.activePath === filePath) setModel(file);
-    renderTabs();
-    toast(`Arquivo reaberto como ${ENCODING_LABELS[meta.encoding] || encoding}.`, 'info', 4000);
-  } catch (e) {
-    toast(`Não foi possível reabrir: ${e.message}`, 'error');
+/**
+ * Fecha todos os editores. Arquivos sujos pedem confirmação (como closeTab);
+ * os recusados continuam abertos. Fecha os inativos primeiro para não
+ * reabrir modelos à toa.
+ */
+export async function closeAllTabs() {
+  const paths = [...State.files.keys()];
+  const ordered = [...paths.filter((p) => p !== State.activePath), ...paths.filter((p) => p === State.activePath)];
+  for (const p of ordered) {
+    if (State.files.has(p)) await closeTab(p);
   }
 }
 
@@ -380,23 +321,10 @@ function syncEditorWelcome() {
 export function getActiveEditor() { return activeEditor; }
 export function getMonaco() { return monaco; }
 
-export async function revealLocation(filePath, line, column = 1) {
-  await openFile(filePath);
-  const editor = getActiveEditor();
-  const model = editor?.getModel();
-  if (!editor || !model) return;
-  const lineNumber = Math.max(1, Math.min(Number(line) || 1, model.getLineCount()));
-  const col = Math.max(1, Math.min(Number(column) || 1, model.getLineMaxColumn(lineNumber)));
-  editor.revealLineInCenter(lineNumber);
-  editor.setPosition({ lineNumber, column: col });
-  editor.focus();
-}
-
 export function applyTheme(themeName) {
   if (!monaco) return;
   monaco.editor.setTheme(themeIdToMonaco(themeName));
   State.settings.theme = themeName;
-  document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${themeName}`;
   window.agzos.settings.save(State.settings);
 }
 
@@ -407,73 +335,119 @@ export function applyFontSize(size) {
   window.agzos.settings.save(State.settings);
 }
 
-/* --------------------------------------------------------------------------
-   Banner do editor (somente leitura / encoding)
-   -------------------------------------------------------------------------- */
-function bannerElement() {
-  return document.getElementById('editor-banner');
-}
-
-export function hideBanner() {
-  const el = bannerElement();
-  if (!el) return;
-  el.hidden = true;
-  el.replaceChildren();
-}
-
-function showReadOnlyBanner(file) {
-  const el = bannerElement();
-  if (!el) return;
-  el.replaceChildren();
-  el.hidden = false;
-
-  const msg = document.createElement('span');
-  msg.className = 'editor-banner-text';
-  if (file.binary) {
-    msg.textContent = 'Arquivo binário — aberto somente para leitura.';
-  } else if (file.encoding === 'unknown') {
-    msg.textContent = 'Codificação não reconhecida (provável Windows-1252/Latin-1). O arquivo está somente leitura para não corromper.';
-  } else {
-    msg.textContent = 'Arquivo somente leitura.';
-  }
-  el.appendChild(msg);
-
-  if (file.encoding === 'unknown' && !file.binary) {
-    const btn = document.createElement('button');
-    btn.className = 'primary-btn editor-banner-action';
-    btn.textContent = 'Abrir como Windows-1252';
-    btn.addEventListener('click', () => reopenWithEncoding(file.path, 'windows-1252'));
-    el.appendChild(btn);
-  }
+export function applyEditorSettings(customSettings) {
+  if (!activeEditor) return;
+  const ed = { ...(State.settings.editor || {}), ...(customSettings || {}) };
+  activeEditor.updateOptions({
+    fontSize: State.settings.fontSize || 14,
+    fontFamily: ed.fontFamily || 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
+    tabSize: Number(ed.tabSize) || 2,
+    insertSpaces: ed.insertSpaces !== false,
+    wordWrap: ed.wordWrap || 'off',
+    wordWrapColumn: Number(ed.wordWrapColumn) || 80,
+    lineNumbers: ed.lineNumbers || 'on',
+    minimap: { enabled: ed.minimap !== false, scale: 1, renderCharacters: false },
+    renderWhitespace: ed.renderWhitespace || 'selection',
+    bracketPairColorization: { enabled: ed.bracketPairColorization !== false },
+    cursorBlinking: ed.cursorBlinking || 'smooth',
+    cursorSmoothCaretAnimation: ed.cursorSmoothCaretAnimation || 'on',
+    smoothScrolling: ed.smoothScrolling !== false,
+  });
 }
 
 /* --------------------------------------------------------------------------
-   Estado da janela (dirty/título)
+   Mudanças feitas por fora (agente da IA)
    -------------------------------------------------------------------------- */
-function dirtyCount() {
-  let count = 0;
-  for (const f of State.files.values()) if (f.dirty) count++;
-  return count;
+const normPath = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '');
+
+/** Caminho como está em State.files (aceita separadores diferentes; case-insensitive no Windows). */
+function openPathFor(filePath) {
+  if (State.files.has(filePath)) return filePath;
+  const target = normPath(filePath);
+  const win = /^[a-z]:/i.test(target);
+  for (const key of State.files.keys()) {
+    const k = normPath(key);
+    if (k === target || (win && k.toLowerCase() === target.toLowerCase())) return key;
+  }
+  return null;
 }
 
-let lastDirtyCount = -1;
-let lastTitle = '';
-
-function updateWindowState() {
-  const active = State.activePath ? State.files.get(State.activePath) : null;
-  const prefix = active?.dirty ? '● ' : '';
-  const title = active ? `${prefix}${basename(active.path)} — Agzos Code` : 'Agzos Code';
-  if (title !== lastTitle) {
-    document.title = title;
-    lastTitle = title;
+/**
+ * Um arquivo mudou no disco por fora do editor (ex.: o agente editou).
+ * Aberto e limpo → recarrega mantendo cursor/rolagem (e o Ctrl+Z desfaz a mudança).
+ * Aberto e sujo → mantém o texto do usuário e mostra o aviso de conflito.
+ * @returns {Promise<'closed'|'conflict'|'reloaded'|'same'|'missing'>}
+ */
+export async function handleExternalChange(filePath, { force = false } = {}) {
+  const key = openPathFor(filePath);
+  if (!key) return 'closed';
+  const file = State.files.get(key);
+  if (file.dirty && !force) {
+    conflicts.add(key);
+    syncConflictBar();
+    return 'conflict';
   }
-  const count = dirtyCount();
-  if (count !== lastDirtyCount) {
-    lastDirtyCount = count;
+  let disk;
+  try {
+    disk = await window.agzos.fs.readFile(key);
+  } catch {
+    // Apagado: fecha a aba se não houver nada a perder.
+    if (!file.dirty) await closeTab(key);
+    return 'missing';
+  }
+  const current = State.files.get(key);
+  if (!current) return 'closed';
+  if (current.dirty && !force) { conflicts.add(key); syncConflictBar(); return 'conflict'; }
+  conflicts.delete(key);
+  const changed = disk.content !== current.content;
+  Object.assign(current, { content: disk.content, size: disk.size, mtime: disk.mtime, dirty: false });
+  if (key === State.activePath && currentModel && activeEditor && currentModel.getValue() !== disk.content) {
+    const view = activeEditor.saveViewState();
+    applyingExternal = true;
     try {
-      window.agzos.windowState?.setDirty(count);
-    } catch {}
+      currentModel.pushEditOperations([], [{ range: currentModel.getFullModelRange(), text: disk.content }], () => null);
+    } finally {
+      applyingExternal = false;
+    }
+    if (view) activeEditor.restoreViewState(view);
   }
+  renderTabs();
+  syncConflictBar();
+  return changed ? 'reloaded' : 'same';
+}
+
+function syncConflictBar() {
+  const host = document.getElementById('editor-host');
+  if (!host) return;
+  let bar = document.getElementById('agent-conflict');
+  const path = State.activePath && conflicts.has(State.activePath) ? State.activePath : null;
+  if (!path) { bar?.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'agent-conflict';
+    bar.className = 'agent-conflict';
+    bar.setAttribute('role', 'alert');
+    host.append(bar);
+  }
+  const text = document.createElement('span');
+  text.className = 'agent-conflict-text';
+  text.textContent = `${basename(path)} foi alterado pelo agente, mas você tem mudanças não salvas aqui.`;
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.className = 'agent-conflict-reload';
+  reload.textContent = 'Usar a versão do disco';
+  reload.addEventListener('click', () => handleExternalChange(path, { force: true }));
+  const keep = document.createElement('button');
+  keep.type = 'button';
+  keep.className = 'agent-conflict-keep';
+  keep.textContent = 'Manter as minhas';
+  keep.addEventListener('click', () => { conflicts.delete(path); syncConflictBar(); });
+  bar.replaceChildren(text, reload, keep);
+}
+
+/** Linguagem do Monaco para um caminho (usado pelo diff do agente). */
+export function languageForPath(filePath) {
+  return detectLanguage(filePath);
 }
 
 /* --------------------------------------------------------------------------
@@ -512,12 +486,8 @@ function langLabel(lang) {
 }
 
 function themeIdToMonaco(name) {
-  if (name === 'agzos-light' || name === 'monokai') return name;
+  if (name === 'agzos-light') return 'agzos-light';
   return 'agzos-dark';
-}
-
-function pathSep() {
-  return navigator.userAgent.includes('Windows') ? '\\' : '/';
 }
 
 function basename(p) {

@@ -10,9 +10,31 @@ function register(ipcMain, { app }) {
 
   ipcMain.handle('settings:load', () => loadSettings(settingsPath));
   // recentFolders é do main (ver ipc/workspace.js): mantém o valor do disco.
+  // Perfis de IA também são do main (ver ipc/ai.js): o renderer guarda uma cópia
+  // que pode estar velha, então perfis e perfil ativo vêm sempre do disco.
   ipcMain.handle('settings:save', (_evt, settings) => {
-    const { recentFolders } = loadSettings(settingsPath);
-    return saveSettings(settingsPath, { ...settings, recentFolders });
+    const { recentFolders, ai, github } = loadSettings(settingsPath);
+    const nextAi = { ...(settings?.ai || {}), profiles: ai?.profiles || [], activeProfileId: ai?.activeProfileId ?? null };
+    // Contas GitHub são do main (ver ipc/github.js): mantém o valor do disco.
+    return saveSettings(settingsPath, { ...settings, recentFolders, ai: nextAi, github });
+  });
+  ipcMain.handle('settings:import-vscode', (_evt, editor = 'vscode') => {
+    const { importFromVSCode } = require('../lib/import-vscode');
+    const res = importFromVSCode({ editor });
+    if (res.ok && res.mapped) {
+      const current = loadSettings(settingsPath);
+      const merged = {
+        ...current,
+        ...res.mapped,
+        editor: {
+          ...(current.editor || {}),
+          ...(res.mapped.editor || {}),
+        },
+      };
+      saveSettings(settingsPath, merged);
+      return { ok: true, imported: res.imported, path: res.path };
+    }
+    return res;
   });
 
   // Usado pelo main no boot (migrações), fora do IPC.

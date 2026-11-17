@@ -12,15 +12,14 @@ contextBridge.exposeInMainWorld('agzos', {
   app: {
     info: () => ipcRenderer.invoke('app:info'),
     openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
-    reveal: (p) => ipcRenderer.invoke('app:reveal', p),
-    log: (level, message) => ipcRenderer.send('log:write', level, message),
   },
 
   // File system
   fs: {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
-    readFile: (p, opts) => ipcRenderer.invoke('fs:readFile', p, opts),
-    writeFile: (p, c, opts) => ipcRenderer.invoke('fs:writeFile', p, c, opts),
+    findFiles: (p, maxResults) => ipcRenderer.invoke('fs:findFiles', p, maxResults),
+    readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
+    writeFile: (p, c) => ipcRenderer.invoke('fs:writeFile', p, c),
     mkdir: (p) => ipcRenderer.invoke('fs:mkdir', p),
     exists: (p) => ipcRenderer.invoke('fs:exists', p),
     stat: (p) => ipcRenderer.invoke('fs:stat', p),
@@ -38,10 +37,13 @@ contextBridge.exposeInMainWorld('agzos', {
 
   // Terminal
   term: {
-    create: (cols, rows) => ipcRenderer.invoke('term:create', cols, rows),
+    profiles: () => ipcRenderer.invoke('term:profiles'),
+    create: (cols, rows, options) => ipcRenderer.invoke('term:create', cols, rows, options),
     write: (id, data) => ipcRenderer.invoke('term:write', id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke('term:resize', id, cols, rows),
     kill: (id) => ipcRenderer.invoke('term:kill', id),
+    clipboardRead: () => ipcRenderer.invoke('term:clipboard:read'),
+    clipboardWrite: (text) => ipcRenderer.invoke('term:clipboard:write', text),
     onData: (cb) => {
       const handler = (_e, id, data) => cb(id, data);
       ipcRenderer.on('term:data', handler);
@@ -54,6 +56,11 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Portas TCP em escuta (aba PORTAS do painel).
+  ports: {
+    list: () => ipcRenderer.invoke('ports:list'),
+  },
+
   // Segredos (cofre do SO). Não há get: o valor nunca vai para o renderer.
   secrets: {
     set: (key, value) => ipcRenderer.invoke('secrets:set', key, value),
@@ -61,31 +68,114 @@ contextBridge.exposeInMainWorld('agzos', {
     has: (key) => ipcRenderer.invoke('secrets:has', key),
   },
 
+  ai: {
+    presets: () => ipcRenderer.invoke('ai:presets'),
+    profiles: () => ipcRenderer.invoke('ai:profiles'),
+    saveProfile: (profile, apiKey) => ipcRenderer.invoke('ai:profile:save', profile, apiKey),
+    removeProfile: (id) => ipcRenderer.invoke('ai:profile:remove', id),
+    activateProfile: (id) => ipcRenderer.invoke('ai:profile:activate', id),
+    models: (idOrDraft, apiKey) => ipcRenderer.invoke('ai:models', idOrDraft, apiKey),
+    test: (draft, apiKey) => ipcRenderer.invoke('ai:test', draft, apiKey),
+    detectOllama: () => ipcRenderer.invoke('ai:detectOllama'),
+    chat: (requestId, payload) => ipcRenderer.invoke('ai:chat', requestId, payload),
+    cancel: (requestId) => ipcRenderer.invoke('ai:cancel', requestId),
+    onChunk: (cb) => {
+      const handler = (_event, id, text) => cb(id, text);
+      ipcRenderer.on('ai:chunk', handler);
+      return () => ipcRenderer.removeListener('ai:chunk', handler);
+    },
+    onDone: (cb) => {
+      const handler = (_event, id) => cb(id);
+      ipcRenderer.on('ai:done', handler);
+      return () => ipcRenderer.removeListener('ai:done', handler);
+    },
+    onError: (cb) => {
+      const handler = (_event, id, message) => cb(id, message);
+      ipcRenderer.on('ai:error', handler);
+      return () => ipcRenderer.removeListener('ai:error', handler);
+    },
+  },
+
+  // Agente (tools no workspace). Eventos: (requestId, evt) — ver src/main/agent/loop.js.
+  agent: {
+    run: (requestId, payload) => ipcRenderer.invoke('agent:run', requestId, payload),
+    approve: (requestId, callId, decision) => ipcRenderer.invoke('agent:approve', requestId, callId, decision),
+    cancel: (requestId) => ipcRenderer.invoke('agent:cancel', requestId),
+    undo: (checkpointId) => ipcRenderer.invoke('agent:undo', checkpointId),
+    setMode: (mode) => ipcRenderer.invoke('agent:setMode', mode),
+    onEvent: (cb) => {
+      const handler = (_event, id, evt) => cb(id, evt);
+      ipcRenderer.on('agent:event', handler);
+      return () => ipcRenderer.removeListener('agent:event', handler);
+    },
+  },
+
+  // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
+  git: {
+    available: () => ipcRenderer.invoke('git:available'),
+    status: (cwd) => ipcRenderer.invoke('git:status', cwd),
+    init: (cwd) => ipcRenderer.invoke('git:init', cwd),
+    stage: (cwd, paths) => ipcRenderer.invoke('git:stage', cwd, paths),
+    unstage: (cwd, paths) => ipcRenderer.invoke('git:unstage', cwd, paths),
+    discard: (cwd, paths) => ipcRenderer.invoke('git:discard', cwd, paths),
+    commit: (cwd, message, options) => ipcRenderer.invoke('git:commit', cwd, message, options),
+    log: (cwd, limit) => ipcRenderer.invoke('git:log', cwd, limit),
+    branches: (cwd) => ipcRenderer.invoke('git:branches', cwd),
+    checkout: (cwd, name) => ipcRenderer.invoke('git:checkout', cwd, name),
+    createBranch: (cwd, name, options) => ipcRenderer.invoke('git:createBranch', cwd, name, options),
+    fetch: (cwd) => ipcRenderer.invoke('git:fetch', cwd),
+    pull: (cwd) => ipcRenderer.invoke('git:pull', cwd),
+    push: (cwd) => ipcRenderer.invoke('git:push', cwd),
+    sync: (cwd) => ipcRenderer.invoke('git:sync', cwd),
+    diffFile: (cwd, relPath, options) => ipcRenderer.invoke('git:diffFile', cwd, relPath, options),
+    clone: (url, parentDir, options) => ipcRenderer.invoke('git:clone', url, parentDir, options),
+    onProgress: (cb) => {
+      const handler = (_event, progress) => cb(progress);
+      ipcRenderer.on('git:progress', handler);
+      return () => ipcRenderer.removeListener('git:progress', handler);
+    },
+  },
+
+  // Contas GitHub. O token entra por addPat e nunca volta ao renderer.
+  github: {
+    accounts: () => ipcRenderer.invoke('github:accounts'),
+    addPat: (token) => ipcRenderer.invoke('github:addPat', token),
+    remove: (id) => ipcRenderer.invoke('github:remove', id),
+    setDefault: (id) => ipcRenderer.invoke('github:setDefault', id),
+    accountForCwd: (cwd) => ipcRenderer.invoke('github:accountForCwd', cwd),
+    assign: (cwd, accountId) => ipcRenderer.invoke('github:assign', cwd, accountId),
+    orgs: (accountId) => ipcRenderer.invoke('github:orgs', accountId),
+    publish: (cwd, options) => ipcRenderer.invoke('github:publish', cwd, options),
+    prDefaults: (cwd) => ipcRenderer.invoke('github:prDefaults', cwd),
+    createPr: (cwd, options) => ipcRenderer.invoke('github:createPr', cwd, options),
+  },
+
+  chat: {
+    // Histórico por workspace: { conversations: [{ id, title, updatedAt, messages }], activeId }
+    loadHistory: (root) => ipcRenderer.invoke('chat:history:load', root),
+    saveHistory: (root, history) => ipcRenderer.invoke('chat:history:save', root, history),
+  },
+
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onNotice: (cb) => {
+      const handler = (_event, notice) => cb(notice);
+      ipcRenderer.on('update:notice', handler);
+      return () => ipcRenderer.removeListener('update:notice', handler);
+    },
+  },
+
   // Workspace (libera a pasta no guard de arquivos)
   workspace: {
     open: (p) => ipcRenderer.invoke('workspace:open', p),
-  },
-
-  // Logs/diagnóstico
-  logs: {
-    open: () => ipcRenderer.invoke('logs:open'),
   },
 
   // Settings
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (s) => ipcRenderer.invoke('settings:save', s),
-  },
-
-  // Estado da janela: dirty + confirmação de fechamento
-  windowState: {
-    setDirty: (count) => ipcRenderer.send('window:set-dirty', count),
-    respondClose: (action) => ipcRenderer.send('window:close-response', action),
-    onRequestClose: (cb) => {
-      const handler = () => cb();
-      ipcRenderer.on('window:request-close', handler);
-      return () => ipcRenderer.removeListener('window:request-close', handler);
-    },
+    importVSCode: (editor) => ipcRenderer.invoke('settings:import-vscode', editor),
   },
 
   // Menu events (main → renderer)
@@ -96,9 +186,8 @@ contextBridge.exposeInMainWorld('agzos', {
       'menu:command-palette',
       'menu:toggle-terminal',
       'menu:toggle-sidebar',
-      'menu:close-tab',
-      'menu:close-window',
-      'menu:settings',
+      'menu:check-updates',
+      'menu:open-settings',
     ];
     const handler = (channel) => (_e, ...args) => cb(channel, ...args);
     const handlers = channels.map((ch) => {

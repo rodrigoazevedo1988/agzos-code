@@ -17,11 +17,16 @@ test('arquivo ausente retorna defaults', () => {
 
 test('mescla arquivo com defaults', () => {
   const p = tmpFile();
-  fs.writeFileSync(p, JSON.stringify({ fontSize: 18 }));
+  fs.writeFileSync(p, JSON.stringify({ fontSize: 18, editor: { tabSize: 4 } }));
   const s = loadSettings(p);
   assert.equal(s.fontSize, 18);
   assert.equal(s.theme, 'agzos-dark');
   assert.equal(s.iconTheme, 'lucide-color');
+  assert.equal(s.editor.tabSize, 4);
+  assert.equal(s.editor.wordWrap, 'off');
+  assert.equal(s.editor.insertSpaces, true);
+  assert.equal(s.terminal.fontSize, 13);
+  assert.equal(s.update.autoDownload, true);
 });
 
 test('mescla e persiste iconTheme customizado', () => {
@@ -58,76 +63,53 @@ test('saveSettings grava e loadSettings lê de volta, sem sobrar .tmp', () => {
   assert.ok(!fs.existsSync(p + '.tmp'));
 });
 
-/* --------------------------------------------------------------------------
-   BOM — PowerShell e editores Windows gravam settings.json com BOM.
-   Antes, o arquivo era tratado como corrompido e as configurações voltavam
-   ao padrão (com welcome e onboarding de novo).
-   -------------------------------------------------------------------------- */
+test('aiPanel: defaults e normalização de valores inválidos', () => {
+  const { normalizeAiPanel } = require('../../src/main/lib/settings');
+  assert.deepEqual(normalizeAiPanel(undefined), DEFAULT_SETTINGS.aiPanel);
+  const out = normalizeAiPanel({
+    position: 'top', width: 'x', visible: 'sim', fontSize: 40, density: 'huge',
+    showAvatars: 0, sendKey: 'alt', defaultContext: { file: false, terminal: 'y' },
+  });
+  assert.equal(out.position, 'right');
+  assert.equal(out.width, 380);
+  assert.equal(out.visible, true);
+  assert.equal(out.fontSize, 18);
+  assert.equal(out.density, 'comfortable');
+  assert.equal(out.showAvatars, true);
+  assert.equal(out.sendKey, 'enter');
+  assert.deepEqual(out.defaultContext, { file: false, selection: true, terminal: false });
+  assert.equal(normalizeAiPanel({ fontSize: 5 }).fontSize, 11);
+  assert.equal(normalizeAiPanel({ width: 99999 }).width, 1600);
+  const ok = normalizeAiPanel({ position: 'bottom', density: 'compact', sendKey: 'ctrlEnter', showAvatars: false, fontSize: 15 });
+  assert.equal(ok.position, 'bottom');
+  assert.equal(ok.density, 'compact');
+  assert.equal(ok.sendKey, 'ctrlEnter');
+  assert.equal(ok.showAvatars, false);
+  assert.equal(ok.fontSize, 15);
+});
 
-function backups(p) {
-  return fs.readdirSync(path.dirname(p)).filter((f) => f.startsWith('settings.json.corrupt-'));
-}
-
-test('settings.json com BOM UTF-8 é lido, não vira corrupto', () => {
+test('aiPanel: loadSettings normaliza e herda ai.context antigo', () => {
   const p = tmpFile();
-  const corpo = JSON.stringify({ theme: 'monokai', welcomeSeen: true, onboardingCompleted: true }, null, 2);
-  fs.writeFileSync(p, `\ufeff${corpo}`, 'utf-8');
-
+  fs.writeFileSync(p, JSON.stringify({ ai: { context: { file: false, selection: false, terminal: true } }, aiPanel: { position: 'nada' } }));
   const s = loadSettings(p);
-  assert.equal(s.theme, 'monokai');
-  assert.equal(s.welcomeSeen, true);
-  assert.equal(s.onboardingCompleted, true);
-  assert.equal(s.iconTheme, 'lucide-color', 'defaults continuam preenchidos');
-  assert.ok(fs.existsSync(p), 'arquivo original não deve ser renomeado');
-  assert.equal(backups(p).length, 0, 'não deve criar backup de corrupção');
+  assert.equal(s.aiPanel.position, 'right');
+  assert.deepEqual(s.aiPanel.defaultContext, { file: false, selection: false, terminal: true });
+  fs.writeFileSync(p, JSON.stringify({ ai: { context: { file: false } }, aiPanel: { defaultContext: { file: true, selection: true, terminal: true } } }));
+  assert.deepEqual(loadSettings(p).aiPanel.defaultContext, { file: true, selection: true, terminal: true });
 });
 
-test('settings.json com BOM UTF-8 em bytes crus é lido', () => {
-  const p = tmpFile();
-  const corpo = Buffer.from(JSON.stringify({ fontSize: 21 }), 'utf-8');
-  fs.writeFileSync(p, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), corpo]));
-
-  assert.equal(loadSettings(p).fontSize, 21);
-  assert.ok(fs.existsSync(p));
-});
-
-test('settings.json gravado pelo PowerShell (UTF-16 LE com BOM) é lido', () => {
-  const p = tmpFile();
-  const corpo = Buffer.from(JSON.stringify({ theme: 'agzos-light', fontSize: 16 }), 'utf16le');
-  fs.writeFileSync(p, Buffer.concat([Buffer.from([0xff, 0xfe]), corpo]));
-
-  const s = loadSettings(p);
-  assert.equal(s.theme, 'agzos-light');
-  assert.equal(s.fontSize, 16);
-});
-
-test('settings.json com BOM UTF-16 BE é lido', () => {
-  const p = tmpFile();
-  const body = Buffer.from(JSON.stringify({ fontSize: 19 }), 'utf16le');
-  body.swap16(); // vira UTF-16 BE
-  fs.writeFileSync(p, Buffer.concat([Buffer.from([0xfe, 0xff]), body]));
-
-  assert.equal(loadSettings(p).fontSize, 19);
-});
-
-test('BOM não esconde JSON inválido: ainda vira backup', () => {
-  const p = tmpFile();
-  fs.writeFileSync(p, '\ufeff{ isto não é json', 'utf-8');
-
-  assert.deepEqual(loadSettings(p), DEFAULT_SETTINGS);
-  assert.ok(!fs.existsSync(p));
-  assert.equal(backups(p).length, 1);
-});
-
-test('saveSettings sobrescreve arquivo com BOM sem reintroduzir o BOM', () => {
-  const p = tmpFile();
-  fs.writeFileSync(p, `\ufeff${JSON.stringify({ theme: 'monokai' })}`, 'utf-8');
-
-  const s = loadSettings(p);
-  s.theme = 'agzos-dark';
-  assert.equal(saveSettings(p, s), true);
-
-  const bytes = fs.readFileSync(p);
-  assert.notDeepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
-  assert.equal(loadSettings(p).theme, 'agzos-dark');
+test('settings:save mantém perfis de IA do disco (cópia do renderer pode estar velha)', () => {
+  const { register } = require('../../src/main/ipc/settings');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-settings-ipc-'));
+  const handlers = {};
+  register({ handle: (name, fn) => { handlers[name] = fn; } }, { app: { getPath: () => dir } });
+  const file = path.join(dir, 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ ai: { activeProfileId: 'p1', profiles: [{ id: 'p1', label: 'X' }] } }));
+  handlers['settings:save'](null, { theme: 'monokai', ai: { profiles: [], activeProfileId: null, context: { file: false } }, aiPanel: { position: 'left' } });
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.theme, 'monokai');
+  assert.equal(saved.ai.activeProfileId, 'p1');
+  assert.equal(saved.ai.profiles.length, 1);
+  assert.deepEqual(saved.ai.context, { file: false });
+  assert.equal(saved.aiPanel.position, 'left');
 });

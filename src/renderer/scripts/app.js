@@ -5,36 +5,28 @@
  */
 
 import { toast } from './toast.js';
-import {
-  setupEditor,
-  openFile,
-  saveActive,
-  saveAll,
-  getDirtyFiles,
-  getActiveEditor,
-  revealLocation,
-  closeActiveTab,
-} from './editor.js';
-import { setupCloseGuard } from './close-guard.js';
-import { showInputDialog } from './dialog.js';
-import { setupErrorBoundary } from './error-boundary.js';
-import { setupCommandPalette, showCommandPalette, hideCommandPalette } from './command-palette.js';
-import { setupAI } from './ai-chat.js';
+import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings } from './editor.js';
+import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette, showShortcutsModal, invalidateQuickOpenCache } from './command-palette.js';
+import { setupAI, sendToChat } from './ai-chat.js';
+import { captureAITarget, setAITarget } from './ai-apply.js';
 import { setupSearch } from './search.js';
-import { initTerminal, toggleTerminal } from './terminal.js';
+import {
+  initTerminal, setupTerminalPanel, toggleTerminal, selectBottomTab, setBottomPanelVisible, getActiveBottomTab,
+  createTerminal, splitTerminal, focusNextTerminal,
+} from './terminal.js';
+import { setupAiDock } from './ai-dock.js';
 import { openWorkspace } from './file-tree.js';
+import { setupGitPanel } from './git-panel.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
 import { startOnboarding, exitOnboarding } from './onboarding.js';
+import { setupSettingsModal, openSettingsModal, updateOTAProgress } from './settings-modal.js';
+import { closeTab, closeAllTabs } from './editor.js';
+import { createChord, matchShortcut, isEditableTarget, isMonacoTarget, shouldHandleInTarget } from './keymap.js';
 
 const State = window.AgzosState;
-
-setupErrorBoundary();
-
-const HIDDEN_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'out', 'build', '.cache', 'coverage', '.next', '.nuxt',
-]);
+let aiDock = null; // API do dock (ai-dock.js), definida no boot
 
 /* --------------------------------------------------------------------------
    Boot
@@ -74,62 +66,63 @@ async function boot() {
   // 7) Setup command palette
   setupCommandPalette();
 
-  // 7.1) Guard de fechamento com arquivos dirty
-  setupCloseGuard({ getDirtyFiles, saveAll });
-
-  // 8) Setup panels
-  setupAI();
+  // 8) Setup panels — o dock posiciona o #ai-panel antes de o chat renderizar nele
+  aiDock = setupAiDock({ switchSidebarView, selectBottomTab, setBottomPanelVisible, getActiveBottomTab });
+  try {
+    setupAI();
+  } catch (e) {
+    // Falha do chat não pode derrubar o boot (editor, terminal, atalhos).
+    console.error('[Agzos IA] setupAI falhou:', e);
+  }
   setupSearch();
+  try {
+    setupGitPanel({ switchSidebarView });
+  } catch (e) {
+    console.error('[Git] setupGitPanel falhou:', e);
+  }
 
   // 9) Welcome do editor (estado vazio)
   showEditorWelcome();
 
-  // 10) Topbar search
-  document.getElementById('search').addEventListener('keydown', async (e) => {
-    if (e.key === 'Enter') {
-      const q = e.target.value.trim();
-      if (!q) return;
-      await quickOpen(q);
-    }
-  });
+  // 10) Topbar search — clique ou foco abre o Quick Open
+  const searchInput = document.getElementById('search');
+  searchInput.addEventListener('click', () => showQuickOpen());
+  searchInput.addEventListener('focus', () => showQuickOpen());
 
-  // 11) Botões topbar
+  // 11) Botões topbar e configurações
+  setupSettingsModal();
   document.getElementById('btn-command-palette').addEventListener('click', showCommandPalette);
   document.getElementById('btn-toggle-terminal').addEventListener('click', toggleTerminal);
   document.getElementById('btn-toggle-sidebar').addEventListener('click', () => {
     document.body.classList.toggle('sidebar-hidden');
     State.sidebarHidden = document.body.classList.contains('sidebar-hidden');
   });
-  document.getElementById('btn-settings').addEventListener('click', openSettingsPage);
-  document.getElementById('btn-settings-back').addEventListener('click', closeSettingsPage);
+  document.getElementById('btn-settings').addEventListener('click', () => openSettingsModal());
+  const btnActSettings = document.getElementById('btn-activity-settings');
+  if (btnActSettings) btnActSettings.addEventListener('click', () => openSettingsModal());
 
   // 12) Botões do header da sidebar
   document.getElementById('btn-open-folder').addEventListener('click', openFolderDialog);
   document.getElementById('btn-open-folder-2').addEventListener('click', openFolderDialog);
   document.getElementById('btn-new-file').addEventListener('click', newFileInRoot);
   document.getElementById('btn-new-folder').addEventListener('click', newFolderInRoot);
-  document.getElementById('btn-close-bottom').addEventListener('click', () => {
-    document.getElementById('bottom-panel').hidden = true;
-    State.bottomHidden = true;
-  });
+  // Toolbar do painel (fechar, mover, maximizar, abas) e splitter: terminal.js
+  setupTerminalPanel();
 
   // 13) Activity bar
   document.querySelectorAll('.activity-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.view === 'settings') openSettingsPage();
-      else switchSidebarView(btn.dataset.view);
+      // Botão da IA: na sidebar abre a view; acoplada à direita/embaixo alterna o dock.
+      if (btn.dataset.view === 'ai') {
+        if (aiDock.getPosition() === 'left') aiDock.show({ focus: true });
+        else aiDock.toggle({ focus: true });
+        return;
+      }
+      switchSidebarView(btn.dataset.view);
     });
   });
 
-  // 14) Bottom tabs
-  document.querySelectorAll('.bottom-tab').forEach((t) => {
-    t.addEventListener('click', () => {
-      document.querySelectorAll('.bottom-tab').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.bottom-pane').forEach((p) => p.classList.remove('active'));
-      t.classList.add('active');
-      document.getElementById(`pane-${t.dataset.tab}`).classList.add('active');
-    });
-  });
+  // 14) Bottom tabs: ligadas em setupTerminalPanel() (terminal.js)
 
   // 15) Settings inputs
   bindSettingsInputs();
@@ -144,9 +137,31 @@ async function boot() {
     else if (channel === 'menu:command-palette') showCommandPalette();
     else if (channel === 'menu:toggle-terminal') toggleTerminal();
     else if (channel === 'menu:toggle-sidebar') document.body.classList.toggle('sidebar-hidden');
-    else if (channel === 'menu:close-tab') closeActiveTab();
-    else if (channel === 'menu:close-window') window.close();
-    else if (channel === 'menu:settings') openSettingsPage();
+    else if (channel === 'menu:check-updates') window.agzos.update.check();
+    else if (channel === 'menu:open-settings') openSettingsModal();
+  });
+
+  window.agzos.update.onNotice(async (notice) => {
+    if (notice.type === 'progress') {
+      updateOTAProgress(notice);
+      return;
+    }
+    if (notice.type === 'ready') {
+      const hasUnsaved = [...State.files.values()].some((file) => file.dirty);
+      const warning = hasUnsaved ? '\n\nHá arquivos não salvos. Salve-os antes de continuar.' : '';
+      if (window.confirm(`A versão ${notice.version || 'nova'} foi baixada. Reiniciar e instalar agora?${warning}`)) {
+        if (hasUnsaved) return;
+        await window.agzos.update.install();
+      }
+      return;
+    }
+    if (notice.type === 'manual-download') {
+      toast(`Atualização ${notice.version || ''} disponível para download em code.rsolutionsbr.com.`, 'info', 7000);
+      return;
+    }
+    if (notice.type === 'not-available') toast('Você já está usando a versão mais recente.', 'success');
+    else if (notice.type === 'error') toast(`Falha ao verificar atualização: ${notice.message}`, 'error', 6000);
+    else if (notice.type === 'available') toast(`Baixando atualização ${notice.version || ''}…`, 'info', 5000);
   });
 
   // 18) Init terminal (lazy no primeiro toggle)
@@ -160,8 +175,8 @@ async function boot() {
   });
   observer.observe(document.getElementById('bottom-panel'), { attributes: true, attributeFilter: ['hidden'] });
 
-  // 19) Expor para debug/testes
-  window.AgzosEditor = { openFile, saveActive, getActiveEditor, revealLocation, closeActiveTab };
+  // 19) Expor para debug
+  window.AgzosEditor = { openFile, saveActive };
   window.AgzosOnboarding = { start: startOnboarding, exit: exitOnboarding };
 
   // 20) Atalho no menu: Help → Onboarding
@@ -178,9 +193,9 @@ async function boot() {
   // - Se viu welcome mas não completou onboarding → onboarding
   // - Se completou → só o editor welcome normal
   if (!State.settings.welcomeSeen) {
-    showWelcome();
+    setTimeout(() => showWelcome(), 400);
   } else if (!State.settings.onboardingCompleted && !State.settings.onboardingSkipped) {
-    startOnboarding();
+    setTimeout(() => startOnboarding(), 400);
   }
 
   console.log(`[Agzos Code] v${info.version} • Electron ${info.electron} • ${info.platform}/${info.arch}`);
@@ -197,9 +212,12 @@ function hydrateLucideIcons() {
     'btn-toggle-terminal': 'square-terminal',
     'btn-command-palette': 'square-asterisk',
     'btn-settings': 'settings',
+    'btn-activity-settings': 'settings',
     'btn-new-file': 'file-plus',
     'btn-new-folder': 'folder-plus',
     'btn-open-folder': 'folder-open',
+    'btn-pos-terminal': 'panel-right',
+    'btn-maximize-bottom': 'maximize-2',
     'btn-close-bottom': 'x',
     'cmd-palette-input-icon': 'square-asterisk',
     'status-remote': 'git-branch',
@@ -213,7 +231,6 @@ function hydrateLucideIcons() {
     'git': 'git-branch',
     'extensions': 'puzzle',
     'ai': 'sparkles',
-    'settings': 'settings',
   };
   document.querySelectorAll('.activity-btn').forEach((btn) => {
     const view = btn.dataset.view;
@@ -236,183 +253,240 @@ function applySettingsToUI() {
   document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${s.theme}`;
   if (s.performanceMode === 'economy') document.body.classList.add('perf-economy');
   if (s.performanceMode === 'high') document.body.classList.add('perf-high');
-  document.getElementById('setting-theme').value = s.theme;
+  const themeEl = document.getElementById('setting-theme');
+  if (themeEl) themeEl.value = s.theme;
   const iconThemeEl = document.getElementById('setting-icon-theme');
   if (iconThemeEl) iconThemeEl.value = s.iconTheme || 'lucide-color';
-  document.getElementById('setting-perf').value = s.performanceMode;
-  const showHidden = document.getElementById('setting-show-hidden');
-  if (showHidden) showHidden.checked = s.showHiddenFiles !== false;
-  document.getElementById('setting-fontsize').value = s.fontSize;
-  document.getElementById('setting-ai-provider').value = s.aiProvider || '';
-  refreshAiKeyPlaceholder();
-  const perfLabelEl = document.getElementById('status-perf-label');
-  if (perfLabelEl) perfLabelEl.textContent = perfLabel(s.performanceMode);
+  const perfEl = document.getElementById('setting-perf');
+  if (perfEl) perfEl.value = s.performanceMode;
+  const telEl = document.getElementById('setting-telemetry');
+  if (telEl) telEl.checked = !!s.telemetry;
+  const fsEl = document.getElementById('setting-fontsize');
+  if (fsEl) fsEl.value = s.fontSize;
+  const statusPerf = document.getElementById('status-perf');
+  if (statusPerf) statusPerf.textContent = perfLabel(s.performanceMode);
 }
 
 function bindSettingsInputs() {
-  document.getElementById('setting-theme').addEventListener('change', async (e) => {
-    const theme = e.target.value;
-    document.body.className = document.body.className.replace(/theme-[\w-]+/g, '').trim() + ` theme-${theme}`;
-    const mod = await import('./editor.js');
-    mod.applyTheme(theme);
-    // Re-renderiza welcome com novo logo
-    if (!State.workspaceRoot || !State.activePath) showEditorWelcome();
-  });
-  const iconThemeSelect = document.getElementById('setting-icon-theme');
-  if (iconThemeSelect) {
-    iconThemeSelect.addEventListener('change', async (e) => {
-      const theme = e.target.value;
-      State.settings.iconTheme = theme;
-      await window.agzos.settings.save(State.settings);
-      const fileTreeMod = await import('./file-tree.js');
-      fileTreeMod.refreshTree(true);
-      const tabsMod = await import('./tabs.js');
-      tabsMod.renderTabs();
-      toast('Tema de ícones atualizado.', 'info', 1500);
-    });
-  }
-  document.getElementById('setting-perf').addEventListener('change', async (e) => {
-    const mode = e.target.value;
-    State.settings.performanceMode = mode;
-    document.body.classList.remove('perf-economy', 'perf-high');
-    if (mode === 'economy') document.body.classList.add('perf-economy');
-    if (mode === 'high') document.body.classList.add('perf-high');
-    const perfLabelEl = document.getElementById('status-perf-label');
-    if (perfLabelEl) perfLabelEl.textContent = perfLabel(mode);
-    await window.agzos.settings.save(State.settings);
-  });
-  const showHidden = document.getElementById('setting-show-hidden');
-  if (showHidden) {
-    showHidden.addEventListener('change', async (e) => {
-      State.settings.showHiddenFiles = e.target.checked;
-      await window.agzos.settings.save(State.settings);
-      const fileTreeMod = await import('./file-tree.js');
-      fileTreeMod.refreshTree(false);
-    });
-  }
-  document.getElementById('setting-fontsize').addEventListener('change', async (e) => {
-    const size = parseInt(e.target.value, 10) || 14;
-    const mod = await import('./editor.js');
-    mod.applyFontSize(size);
-  });
-  document.getElementById('setting-ai-provider').addEventListener('change', async (e) => {
-    State.settings.aiProvider = e.target.value || null;
-    await window.agzos.settings.save(State.settings);
-    updateStatusAI();
-  });
-  document.getElementById('setting-ai-key').addEventListener('change', async (e) => {
-    const value = e.target.value.trim();
-    e.target.value = '';
-    try {
-      if (value) {
-        await window.agzos.secrets.set('ai.legacy', value);
-        toast('Chave salva no cofre do sistema.', 'success');
-      } else {
-        await window.agzos.secrets.delete('ai.legacy');
-      }
-    } catch (err) {
-      toast(`Erro ao salvar a chave: ${err.message}`, 'error', 5000);
-    }
-    refreshAiKeyPlaceholder();
-  });
+  const statusAi = document.getElementById('status-ai');
+  if (statusAi) statusAi.addEventListener('click', openAISettings);
 }
 
-// Campo de chave nunca mostra o valor: placeholder indica se há chave salva.
-async function refreshAiKeyPlaceholder() {
-  const el = document.getElementById('setting-ai-key');
-  if (!el) return;
-  let saved = false;
-  try { saved = await window.agzos.secrets.has('ai.legacy'); } catch {}
-  if (el.disabled) el.placeholder = 'em breve';
-  else el.placeholder = saved ? '•••• salva no cofre' : 'sk-…';
+async function openAISettings() {
+  const { openAIWizard } = await import('./ai-wizard.js');
+  await openAIWizard({ profileId: State.settings.ai?.activeProfileId });
+  updateStatusAI();
 }
 
 function updateStatusAI() {
-  const el = document.getElementById('status-ai-label');
-  if (!el) return;
-  el.textContent = State.settings.aiProvider ? `IA: ${State.settings.aiProvider}` : 'IA: off';
+  const ai = State.settings.ai;
+  const profile = ai?.profiles?.find((item) => item.id === ai.activeProfileId);
+  document.getElementById('status-ai').textContent = profile ? `IA: ${profile.model || profile.label}` : 'IA: off';
 }
 
 /* --------------------------------------------------------------------------
    Atalhos
    -------------------------------------------------------------------------- */
+const isMacPlatform = () => /mac/i.test(navigator.platform || '') || State.platform === 'darwin';
+const shortcutChord = createChord();
+
+function saveSettingsAndApplyEditor() {
+  window.agzos.settings.save(State.settings);
+  applyEditorSettings(State.settings);
+}
+
+function runEditorAction(e, actionId, { focus = true } = {}) {
+  const editor = getActiveEditor();
+  if (!editor) return;
+  e.preventDefault();
+  if (focus) editor.focus();
+  editor.getAction(actionId)?.run();
+}
+
+function setFontSize(next, message) {
+  State.settings.fontSize = next;
+  saveSettingsAndApplyEditor();
+  toast(message, 'info', 800);
+}
+
+function runChordAction(action) {
+  if (action === 'shortcuts.show') showShortcutsModal();
+  else if (action === 'tabs.closeAll') closeAllTabs();
+}
+
 function bindShortcuts() {
   document.addEventListener('keydown', (e) => {
-    const ctrl = e.ctrlKey || e.metaKey;
-    const settingsPage = document.getElementById('settings-page');
-    if (settingsPage && !settingsPage.hidden) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeSettingsPage();
-      }
-      return;
-    }
     if (State.onboardingActive || State.welcomeOpen) {
-      // Bloqueia atalhos durante onboarding/welcome
-      if (e.key === 'Escape') {
-        // permite ESC pra fechar welcome
-        if (State.welcomeOpen && e.key === 'Escape') {
-          // não fecha, mas absorve
-          e.preventDefault();
-        }
-      }
+      // Bloqueia atalhos durante onboarding/welcome; ESC no welcome é absorvido
+      if (State.welcomeOpen && e.key === 'Escape') e.preventDefault();
       return;
     }
-    if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'w') {
-      e.preventDefault();
-      closeActiveTab();
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'w') {
-      e.preventDefault();
-      window.close();
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
-      e.preventDefault();
-      showCommandPalette();
-    } else if (ctrl && e.key.toLowerCase() === 'p') {
-      e.preventDefault();
-      document.getElementById('search').focus();
-    } else if (ctrl && e.key === '`') {
-      e.preventDefault();
-      toggleTerminal();
-    } else if (ctrl && (e.key === ',' || e.code === 'Comma')) {
-      // Ctrl+, (Windows/Linux) e Cmd+, (macOS). Não confiamos só no acelerador
-      // do menu nativo: ele não dispara de forma confiável no Windows com
-      // frame:false + autoHideMenuBar.
-      e.preventDefault();
-      openSettingsPage();
-    } else if (ctrl && e.key.toLowerCase() === 'b') {
-      e.preventDefault();
-      document.body.classList.toggle('sidebar-hidden');
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'e') {
-      e.preventDefault();
-      switchSidebarView('explorer');
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
-      e.preventDefault();
-      switchSidebarView('search');
-      setTimeout(() => document.getElementById('search-text')?.focus(), 50);
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'g') {
-      e.preventDefault();
-      switchSidebarView('git');
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'x') {
-      e.preventDefault();
-      switchSidebarView('extensions');
-    } else if (e.key === 'Escape') {
-      hideCommandPalette();
+
+    // Terminal (xterm) e campos de texto fora do Monaco recebem as teclas;
+    // só atalhos globais (GLOBAL_IN_EDITABLE) passam.
+    const inEditable = isEditableTarget(e.target);
+    const inMonaco = isMonacoTarget(e.target);
+
+    // Chords Ctrl+K …: no Monaco, o próprio editor resolve (addCommand em
+    // editor.js) para não conflitar com os chords nativos dele (Ctrl+K Ctrl+C…).
+    if (!inEditable) {
+      const chord = shortcutChord.feed(e);
+      if (chord.handled) {
+        if (chord.action === 'chord.start') {
+          if (!inMonaco) e.preventDefault();
+        } else if (chord.action && !inMonaco) {
+          e.preventDefault();
+          e.stopPropagation();
+          runChordAction(chord.action);
+        }
+        return;
+      }
     }
-  });
+
+    const action = matchShortcut(e, { isMac: isMacPlatform() });
+    if (!action) {
+      if (e.key === 'Escape') hideCommandPalette();
+      return;
+    }
+    // Ctrl+L / Ctrl+Shift+A valem também em inputs (inclusive na caixa do chat,
+    // para fechar), mas nunca no xterm: lá Ctrl+L é o "clear" do shell.
+    const aiAction = action === 'ai.sendSelection' || action === 'ai.focus';
+    if (aiAction) {
+      if (e.target?.closest?.('.xterm')) return;
+    } else if (!shouldHandleInTarget(action, inEditable)) return;
+    // Ctrl+PageUp/PageDown só trocam de terminal com foco no painel do terminal
+    // (no editor/inputs seguem o comportamento nativo).
+    if ((action === 'terminal.prev' || action === 'terminal.next') && !e.target?.closest?.('#pane-terminal')) return;
+
+    switch (action) {
+      case 'ai.focus':
+        e.preventDefault(); e.stopPropagation();
+        aiDock.show({ focus: true });
+        break;
+      case 'ai.sendSelection': {
+        // Ctrl+L (padrão VS Code/Cursor, sobrepõe o "expandir seleção de linha" do Monaco):
+        // com seleção no editor → envia ao chat; senão alterna o painel / foca a caixa.
+        e.preventDefault(); e.stopPropagation();
+        const editor = inMonaco ? getActiveEditor() : null;
+        const selection = editor?.getSelection();
+        const text = selection && !selection.isEmpty() ? editor.getModel()?.getValueInRange(selection) : '';
+        if (text) {
+          setAITarget(captureAITarget());
+          aiDock.show();
+          sendToChat(text, { includeSelection: true });
+          aiDock.focusInput();
+        } else {
+          toggleAiPanel(e.target);
+        }
+        break;
+      }
+      case 'palette.commands':
+        e.preventDefault();
+        showCommandPalette();
+        break;
+      case 'palette.quickOpen':
+        e.preventDefault();
+        showQuickOpen();
+        break;
+      case 'tab.close':
+        e.preventDefault();
+        if (State.activePath) closeTab(State.activePath);
+        break;
+      case 'editor.find':
+        runEditorAction(e, 'actions.find');
+        break;
+      case 'editor.replace':
+        runEditorAction(e, 'editor.action.startFindReplaceAction');
+        break;
+      case 'editor.gotoLine':
+        runEditorAction(e, 'editor.action.gotoLine');
+        break;
+      case 'editor.format':
+        runEditorAction(e, 'editor.action.formatDocument', { focus: false });
+        break;
+      case 'editor.toggleWordWrap': {
+        e.preventDefault();
+        const curr = State.settings?.editor?.wordWrap || 'off';
+        const next = curr === 'on' ? 'off' : 'on';
+        State.settings.editor = State.settings.editor || {};
+        State.settings.editor.wordWrap = next;
+        saveSettingsAndApplyEditor();
+        toast(`Quebra de linha: ${next.toUpperCase()}`, 'info', 1000);
+        break;
+      }
+      case 'zoom.in': {
+        e.preventDefault();
+        const next = Math.min(32, (State.settings.fontSize || 14) + 1);
+        setFontSize(next, `Fonte: ${next}px`);
+        break;
+      }
+      case 'zoom.out': {
+        e.preventDefault();
+        const next = Math.max(8, (State.settings.fontSize || 14) - 1);
+        setFontSize(next, `Fonte: ${next}px`);
+        break;
+      }
+      case 'zoom.reset':
+        e.preventDefault();
+        setFontSize(14, 'Fonte resetada: 14px');
+        break;
+      case 'terminal.toggle':
+        e.preventDefault();
+        toggleTerminal();
+        break;
+      case 'terminal.new':
+        e.preventDefault(); e.stopPropagation();
+        createTerminal();
+        break;
+      case 'terminal.split':
+        e.preventDefault(); e.stopPropagation();
+        splitTerminal();
+        break;
+      case 'terminal.prev':
+      case 'terminal.next':
+        e.preventDefault(); e.stopPropagation();
+        focusNextTerminal(action === 'terminal.next' ? 1 : -1);
+        break;
+      case 'sidebar.toggle':
+        e.preventDefault();
+        document.body.classList.toggle('sidebar-hidden');
+        break;
+      case 'view.explorer':
+        e.preventDefault();
+        switchSidebarView('explorer');
+        break;
+      case 'view.search':
+        e.preventDefault();
+        switchSidebarView('search');
+        setTimeout(() => document.getElementById('search-text')?.focus(), 50);
+        break;
+      case 'view.git':
+        e.preventDefault();
+        switchSidebarView('git');
+        break;
+      case 'view.extensions':
+        e.preventDefault();
+        switchSidebarView('extensions');
+        break;
+      // 'settings.open' é tratado em settings-modal.js (abre de forma idempotente)
+      default:
+        break;
+    }
+  }, true);
 }
 
-function openSettingsPage() {
-  const page = document.getElementById('settings-page');
-  if (!page) return;
-  page.hidden = false;
-  document.getElementById('btn-settings-back')?.focus();
-}
-
-function closeSettingsPage() {
-  const page = document.getElementById('settings-page');
-  if (!page) return;
-  page.hidden = true;
-  document.getElementById('btn-settings')?.focus();
+// Ctrl+L sem seleção: fechado → abre e foca; aberto com foco fora → foca;
+// aberto com foco dentro do chat → fecha e devolve o foco ao editor.
+function toggleAiPanel(target) {
+  const inPanel = !!target?.closest?.('#ai-panel');
+  if (!aiDock.isVisible()) {
+    aiDock.show({ focus: true });
+  } else if (!inPanel) {
+    if (!aiDock.focusInput()) aiDock.hide();
+  } else {
+    aiDock.hide();
+    getActiveEditor()?.focus();
+  }
 }
 
 function switchSidebarView(view) {
@@ -420,7 +494,7 @@ function switchSidebarView(view) {
     explorer: { panel: 'file-tree', title: 'EXPLORER' },
     search:   { panel: 'panel-search', title: 'BUSCAR' },
     git:      { panel: 'panel-git', title: 'GIT' },
-    extensions: { panel: 'panel-extensions', title: 'INTEGRAÇÕES' },
+    extensions: { panel: 'panel-extensions', title: 'EXTENSÕES' },
     ai:       { panel: 'panel-ai', title: 'AGZOS IA' },
   };
   const cfg = map[view];
@@ -451,97 +525,34 @@ async function openFolderDialog() {
 }
 async function newFileInRoot() {
   if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
-  const name = await showInputDialog({
-    title: 'Novo arquivo',
-    label: 'Nome do arquivo na raiz da pasta aberta',
-    placeholder: 'ex.: notas.md',
-    confirmLabel: 'Criar arquivo',
-    validate: validateEntryName,
-  });
+  const name = prompt('Nome do arquivo:');
   if (!name) return;
-  const newPath = joinPath(State.workspaceRoot, name);
+  const newPath = State.workspaceRoot + sep() + name;
   try {
-    if (await window.agzos.fs.exists(newPath)) {
-      toast('Já existe um arquivo ou pasta com esse nome.', 'error');
-      return;
-    }
     await window.agzos.fs.writeFile(newPath, '');
+    invalidateQuickOpenCache();
     const mod = await import('./file-tree.js');
-    mod.refreshTree(false);
+    mod.refreshTree();
     await openFile(newPath);
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
-
 async function newFolderInRoot() {
   if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
-  const name = await showInputDialog({
-    title: 'Nova pasta',
-    label: 'Nome da pasta na raiz da pasta aberta',
-    placeholder: 'ex.: componentes',
-    confirmLabel: 'Criar pasta',
-    validate: validateEntryName,
-  });
+  const name = prompt('Nome da pasta:');
   if (!name) return;
-  const newPath = joinPath(State.workspaceRoot, name);
+  const newPath = State.workspaceRoot + sep() + name;
   try {
-    if (await window.agzos.fs.exists(newPath)) {
-      toast('Já existe um arquivo ou pasta com esse nome.', 'error');
-      return;
-    }
     await window.agzos.fs.mkdir(newPath);
+    invalidateQuickOpenCache();
     const mod = await import('./file-tree.js');
-    mod.refreshTree(false);
+    mod.refreshTree();
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
 
-function validateEntryName(name) {
-  if (!name) return 'Informe um nome.';
-  if (name === '.' || name === '..') return 'Nome inválido.';
-  if (/[\\/]/.test(name)) return 'Use apenas o nome, sem barras.';
-  if (name.includes('\0')) return 'Nome inválido.';
-  return null;
-}
-
-async function quickOpen(query) {
-  if (!State.workspaceRoot) { toast('Abra uma pasta primeiro.', 'error'); return; }
-  const lower = query.toLowerCase();
-  const results = [];
-  await walkForQuickOpen(State.workspaceRoot, lower, results);
-  if (results.length === 0) { toast(`Nenhum arquivo combina com "${query}"`, 'info'); return; }
-  await openFile(results[0]);
-  toast(`Aberto: ${results[0].split(/[\\/]/).pop()}`, 'success', 1500);
-}
-async function walkForQuickOpen(dir, q, results, depth = 0) {
-  if (depth > 6 || results.length > 1) return;
-  let entries;
-  try { entries = await window.agzos.fs.readDir(dir); } catch { return; }
-  for (const e of entries) {
-    if (isIgnoredEntry(e.name)) continue;
-    if (e.isDirectory) await walkForQuickOpen(e.path, q, results, depth + 1);
-    else if (e.name.toLowerCase().includes(q)) results.push(e.path);
-  }
-}
-
-function isIgnoredEntry(name) {
-  if (HIDDEN_DIRS.has(name)) return true;
-  if (name === '.DS_Store') return true;
-  if (State.settings.showHiddenFiles === false && name.startsWith('.')) return true;
-  return false;
-}
-
-function joinPath(a, b) { return a.replace(/[\\/]+$/, '') + sep() + b.replace(/^[\\/]+/, ''); }
-
 function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }
 
-function start() {
-  boot().catch((e) => {
-    console.error(e);
-    import('./error-boundary.js').then((m) => m.showFatal(e.message));
-  });
-}
-
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', start);
+  document.addEventListener('DOMContentLoaded', boot);
 } else {
-  start();
+  boot();
 }

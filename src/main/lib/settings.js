@@ -11,14 +11,55 @@ const DEFAULT_SETTINGS = {
   performanceMode: 'balanced', // economy | balanced | high
   telemetry: false,
   fontSize: 14,
-  showHiddenFiles: true,
   recentFolders: [],
   welcomeSeen: false,
   onboardingCompleted: false,
   onboardingSkipped: false,
   onboardingAnswers: null,
-  ai: { activeProfileId: null, profiles: [] },
-  github: { accounts: [], repoAccounts: {} },
+  ai: { activeProfileId: null, profiles: [], context: { file: true, selection: true, terminal: false } },
+  aiPanel: {
+    position: 'right', // left | right | bottom
+    width: 380,
+    visible: true,
+    fontSize: 13, // 11–18
+    density: 'comfortable', // compact | comfortable
+    showAvatars: true,
+    sendKey: 'enter', // enter | ctrlEnter
+    defaultContext: { file: true, selection: true, terminal: false },
+  },
+  // Agente: modo de autonomia ask | edit | auto. Dono: ipc/agent.js (agent:setMode).
+  aiAgent: { mode: 'edit' },
+  // Contas GitHub (só metadados; tokens no cofre em github.<id>). Dono: ipc/github.js.
+  github: { accounts: [], defaultAccountId: null, repoAccounts: {} },
+  editor: {
+    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
+    tabSize: 2,
+    insertSpaces: true,
+    wordWrap: 'off', // off | on | wordWrapColumn
+    wordWrapColumn: 80,
+    lineNumbers: 'on', // on | off | relative
+    minimap: true,
+    renderWhitespace: 'selection', // none | boundary | selection | all
+    bracketPairColorization: true,
+    cursorBlinking: 'smooth', // blink | smooth | phase | expand | solid
+    cursorSmoothCaretAnimation: 'on', // on | off | explicit
+    smoothScrolling: true,
+    formatOnSave: false,
+    autoSave: 'off', // off | afterDelay | onFocusChange
+    autoSaveDelay: 1000,
+  },
+  workbench: {
+    sidebarPosition: 'left', // left | right
+    statusBarVisible: true,
+  },
+  terminal: {
+    fontSize: 13,
+    scrollback: 1000,
+  },
+  update: {
+    autoDownload: true,
+    channel: 'stable', // stable | beta
+  },
 };
 
 function defaults() {
@@ -29,42 +70,64 @@ function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-// BOMs aceitos. `JSON.parse` não tolera BOM, então ele é removido antes.
-const BOM_UTF8 = Buffer.from([0xef, 0xbb, 0xbf]);
-const BOM_UTF16LE = Buffer.from([0xff, 0xfe]);
-const BOM_UTF16BE = Buffer.from([0xfe, 0xff]);
+function deepMerge(target, source) {
+  const output = isPlainObject(target) ? { ...target } : {};
+  if (!isPlainObject(source)) return output;
 
-/**
- * Decodifica o conteúdo de settings.json tolerando BOM.
- * PowerShell (5.1) grava UTF-16 LE com BOM em `>`/`Out-File`, e editores
- * Windows gravam UTF-8 com BOM; nos dois casos o arquivo é JSON válido.
- */
-function decodeText(buffer) {
-  if (buffer.subarray(0, 3).equals(BOM_UTF8)) {
-    return buffer.subarray(3).toString('utf-8');
+  for (const [key, value] of Object.entries(source)) {
+    if (isPlainObject(value) && isPlainObject(output[key])) {
+      output[key] = deepMerge(output[key], value);
+    } else {
+      output[key] = value;
+    }
   }
-  if (buffer.subarray(0, 2).equals(BOM_UTF16LE)) {
-    return buffer.subarray(2).toString('utf16le');
+  return output;
+}
+
+const AI_PANEL_WIDTH = { min: 240, max: 1600 };
+
+/** Valores inválidos de `aiPanel` voltam ao padrão (campo a campo). */
+function normalizeAiPanel(value, legacyContext) {
+  const def = DEFAULT_SETTINGS.aiPanel;
+  const v = isPlainObject(value) ? value : {};
+  const pick = (val, allowed, fallback) => (allowed.includes(val) ? val : fallback);
+  const int = (val, min, max, fallback) => {
+    const n = typeof val === 'number' ? val : Number.NaN;
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
+  };
+  const ctxSource = isPlainObject(v.defaultContext) ? v.defaultContext
+    : (isPlainObject(legacyContext) ? legacyContext : def.defaultContext);
+  const defaultContext = {};
+  for (const key of ['file', 'selection', 'terminal']) {
+    defaultContext[key] = typeof ctxSource[key] === 'boolean' ? ctxSource[key] : def.defaultContext[key];
   }
-  if (buffer.subarray(0, 2).equals(BOM_UTF16BE)) {
-    const body = Buffer.from(buffer.subarray(2));
-    body.swap16(); // utf16le lendo bytes trocados = utf16be
-    return body.toString('utf16le');
-  }
-  const text = buffer.toString('utf-8');
-  // Cinto e suspensório: BOM pode sobrar como U+FEFF se decodificado antes.
-  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  return {
+    ...v,
+    position: pick(v.position, ['left', 'right', 'bottom'], def.position),
+    width: int(v.width, AI_PANEL_WIDTH.min, AI_PANEL_WIDTH.max, def.width),
+    visible: typeof v.visible === 'boolean' ? v.visible : def.visible,
+    fontSize: int(v.fontSize, 11, 18, def.fontSize),
+    density: pick(v.density, ['compact', 'comfortable'], def.density),
+    showAvatars: typeof v.showAvatars === 'boolean' ? v.showAvatars : def.showAvatars,
+    sendKey: pick(v.sendKey, ['enter', 'ctrlEnter'], def.sendKey),
+    defaultContext,
+  };
+}
+
+/** `aiAgent.mode` inválido volta a 'edit'. */
+function normalizeAiAgent(value) {
+  const v = isPlainObject(value) ? value : {};
+  return { ...v, mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode };
 }
 
 /**
  * Lê as settings. Arquivo ausente → defaults. JSON inválido → move o arquivo
  * para `settings.json.corrupt-<timestamp>` e retorna defaults.
- * BOM (UTF-8 ou UTF-16) não torna o arquivo inválido.
  */
 function loadSettings(filePath) {
   let raw;
   try {
-    raw = decodeText(fs.readFileSync(filePath));
+    raw = fs.readFileSync(filePath, 'utf-8');
   } catch (e) {
     if (e.code !== 'ENOENT') console.error('settings read error', e);
     return defaults();
@@ -84,7 +147,11 @@ function loadSettings(filePath) {
   }
 
   if (!isPlainObject(parsed)) return defaults();
-  return { ...defaults(), ...parsed };
+  const merged = deepMerge(defaults(), parsed);
+  // Contexto padrão herda a escolha antiga (ai.context) de quem já usava o chat.
+  merged.aiPanel = normalizeAiPanel(parsed.aiPanel, parsed.ai?.context);
+  merged.aiAgent = normalizeAiAgent(parsed.aiAgent);
+  return merged;
 }
 
 /**
@@ -141,4 +208,4 @@ function migrateLegacySecrets(settings, store) {
   return { settings: out, changed };
 }
 
-module.exports = { DEFAULT_SETTINGS, loadSettings, saveSettings, migrateLegacySecrets };
+module.exports = { DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, loadSettings, saveSettings, migrateLegacySecrets };

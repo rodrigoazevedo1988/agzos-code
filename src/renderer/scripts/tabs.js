@@ -2,8 +2,10 @@
  * Tabs — gerencia as abas de arquivos abertos.
  */
 
-import { openFile, closeTab } from './editor.js';
+import { openFile, closeTab, closeAllTabs } from './editor.js';
 import { renderTabIcon } from './icon-theme.js';
+
+export { closeTab, closeAllTabs };
 
 const State = window.AgzosState;
 

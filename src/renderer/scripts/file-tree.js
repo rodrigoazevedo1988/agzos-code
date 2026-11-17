@@ -11,16 +11,12 @@
  */
 
 import { toast } from './toast.js';
-import { openFile, handleDeletedPath } from './editor.js';
-import { renderTabs } from './tabs.js';
-import { showInputDialog } from './dialog.js';
+import { openFile } from './editor.js';
 import { renderFileIcon, renderFolderIcon } from './icon-theme.js';
+import { invalidateQuickOpenCache } from './command-palette.js';
+import { gitStatusFor } from './git-decorations.js';
 
 const State = window.AgzosState;
-
-const HIDDEN_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'out', 'build', '.cache', 'coverage', '.next', '.nuxt',
-]);
 
 const treeHost = () => document.getElementById('file-tree');
 const emptyHost = () => document.getElementById('empty-explorer');
@@ -54,13 +50,10 @@ export function render() {
       children: null,
       expanded: true,
     };
-    if (window.agzos?.fs?.readDir) {
-      window.agzos.fs.readDir(State.workspaceRoot).then((items) => {
-        if (!treeRoot) return;
-        treeRoot.children = mapItems(items);
-        render();
-      }).catch((e) => console.error('Erro ao ler pasta raiz:', e));
-    }
+    const root = treeRoot;
+    loadChildren(root).then(() => {
+      if (treeRoot === root) render();
+    }).catch((e) => console.error('Erro ao ler pasta raiz:', e));
   }
 
   host.appendChild(buildNode(treeRoot, 0));
@@ -78,6 +71,8 @@ function buildNode(node, depth) {
   row.dataset.isDir = String(node.isDirectory);
   row.style.paddingLeft = `${6 + depth * 14}px`;
   row.title = node.path;
+  const gitKind = gitStatusFor(node.path);
+  if (gitKind) row.dataset.git = gitKind;
 
   if (State.activePath === node.path && !node.isDirectory) {
     row.classList.add('selected', 'active-file');
@@ -164,24 +159,52 @@ export function highlightActiveFile(filePath) {
   if (el) el.classList.add('selected', 'active-file');
 }
 
+async function loadChildren(node) {
+  const items = await window.agzos.fs.readDir(node.path);
+  node.children = items
+    .map((it) => ({
+      name: it.name,
+      path: it.path,
+      isDirectory: it.isDirectory,
+      children: null,
+      expanded: it.isDirectory && State.expandedDirs.has(it.path),
+    }))
+    .sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  await Promise.all(node.children.filter((child) => child.expanded).map(async (child) => {
+    try {
+      await loadChildren(child);
+    } catch (err) {
+      child.expanded = false;
+      State.expandedDirs.delete(child.path);
+      console.error('Erro ao ler diretório:', err);
+    }
+  }));
+}
+
 async function toggleDir(node) {
-  if (!node.isDirectory) return;
+  if (!node.isDirectory || node.loading) return;
   if (node.expanded) {
     node.expanded = false;
     State.expandedDirs.delete(node.path);
     render();
     return;
   }
-  // Expande — carrega filhos se ainda não tem
+  const root = treeRoot;
   if (!node.children) {
+    node.loading = true;
     try {
-      const items = await window.agzos.fs.readDir(node.path);
-      node.children = mapItems(items);
-    } catch (e) {
-      toast(`Erro ao ler pasta: ${e.message}`, 'error');
+      await loadChildren(node);
+    } catch (err) {
+      toast(`Erro ao ler diretório: ${err.message}`, 'error');
       return;
+    } finally {
+      node.loading = false;
     }
   }
+  if (treeRoot !== root) return;
   node.expanded = true;
   State.expandedDirs.add(node.path);
   render();
@@ -217,71 +240,42 @@ if (ctx) {
 
     try {
       if (action === 'rename') {
-        const newName = await showInputDialog({
-          title: 'Renomear',
-          label: `Novo nome para "${basename(target)}"`,
-          value: basename(target),
-          confirmLabel: 'Renomear',
-          validate: validateEntryName,
-        });
+        const newName = prompt('Novo nome:', basename(target));
         if (!newName || newName === basename(target)) return;
         const newPath = joinPath(dirname(target), newName);
-        if (await window.agzos.fs.exists(newPath)) {
-          toast('Já existe um arquivo ou pasta com esse nome.', 'error');
-          return;
-        }
         await window.agzos.fs.rename(target, newPath);
-        renameOpenPaths(target, newPath);
-        invalidateTree();
-        toast('Renomeado', 'success');
-        render();
+        // Atualiza paths em State.files
+        for (const [p, f] of State.files) {
+          if (p === target) State.files.set(newPath, f);
+          else if (p.startsWith(target + sep())) {
+            const replaced = newPath + p.slice(target.length);
+            const v = State.files.get(p);
+            State.files.delete(p);
+            State.files.set(replaced, { ...v, path: replaced });
+          }
+        }
+        invalidateTree(); toast('Renomeado', 'success'); render();
       } else if (action === 'delete') {
         if (!confirm(`Excluir "${basename(target)}"?`)) return;
         await window.agzos.fs.delete(target);
-        handleDeletedPath(target);
-        invalidateTree();
-        toast('Excluído', 'success');
-        render();
+        invalidateTree(); toast('Excluído', 'success'); render();
       } else if (action === 'new-file') {
-        const name = await showInputDialog({
-          title: 'Novo arquivo',
-          label: `Criar dentro de "${basename(isDir ? target : dirname(target))}"`,
-          placeholder: 'ex.: index.js',
-          confirmLabel: 'Criar arquivo',
-          validate: validateEntryName,
-        });
+        const name = prompt('Nome do arquivo:');
         if (!name) return;
         const parentDir = isDir ? target : dirname(target);
         const newPath = joinPath(parentDir, name);
-        if (await window.agzos.fs.exists(newPath)) {
-          toast('Já existe um arquivo ou pasta com esse nome.', 'error');
-          return;
-        }
         await window.agzos.fs.writeFile(newPath, '');
-        invalidateTree();
-        render();
-        await openFile(newPath);
+        invalidateTree(); render();
+        openFile(newPath);
       } else if (action === 'new-folder') {
-        const name = await showInputDialog({
-          title: 'Nova pasta',
-          label: `Criar dentro de "${basename(isDir ? target : dirname(target))}"`,
-          placeholder: 'ex.: components',
-          confirmLabel: 'Criar pasta',
-          validate: validateEntryName,
-        });
+        const name = prompt('Nome da pasta:');
         if (!name) return;
         const parentDir = isDir ? target : dirname(target);
         const newPath = joinPath(parentDir, name);
-        if (await window.agzos.fs.exists(newPath)) {
-          toast('Já existe um arquivo ou pasta com esse nome.', 'error');
-          return;
-        }
         await window.agzos.fs.mkdir(newPath);
-        invalidateTree();
-        render();
+        invalidateTree(); render();
       } else if (action === 'reveal') {
-        const ok = await window.agzos.app.reveal(target);
-        if (!ok) toast('Não foi possível revelar este item.', 'error');
+        window.agzos.app.openExternal('file://' + target);
       }
     } catch (err) {
       toast(`Erro: ${err.message}`, 'error');
@@ -289,54 +283,10 @@ if (ctx) {
   });
 }
 
-// Atualiza as chaves/abas abertas depois de renomear arquivo ou diretório.
-function renameOpenPaths(oldPath, newPath) {
-  const updates = [];
-  for (const [p, f] of State.files) {
-    if (p === oldPath) updates.push([p, newPath, f]);
-    else if (p.startsWith(oldPath + sep())) {
-      updates.push([p, newPath + p.slice(oldPath.length), f]);
-    }
-  }
-  for (const [oldP, newP, f] of updates) {
-    State.files.delete(oldP);
-    State.files.set(newP, { ...f, path: newP });
-    if (State.activePath === oldP) State.activePath = newP;
-  }
-  if (updates.length) renderTabs();
-}
-
-function validateEntryName(name) {
-  if (!name) return 'Informe um nome.';
-  if (name === '.' || name === '..') return 'Nome inválido.';
-  if (/[\\/]/.test(name)) return 'Use apenas o nome, sem barras.';
-  if (name.includes('\0')) return 'Nome inválido.';
-  return null;
-}
-
-function mapItems(items) {
-  return items
-    .filter((it) => !isHidden(it.name))
-    .map((it) => ({
-      name: it.name,
-      path: it.path,
-      isDirectory: it.isDirectory,
-      children: null,
-      expanded: State.expandedDirs.has(it.path),
-    }))
-    .sort((a, b) => {
-      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-}
-
-function isHidden(name) {
-  if (HIDDEN_DIRS.has(name) || name === '.DS_Store') return true;
-  return State.settings.showHiddenFiles === false && name.startsWith('.');
-}
-
 function invalidateTree() {
   treeRoot = null;
+  // create/rename/delete mudam a lista de arquivos do Quick Open
+  invalidateQuickOpenCache();
 }
 
 /* --------------------------------------------------------------------------
@@ -349,6 +299,7 @@ export async function openWorkspace(folderPath) {
     return;
   }
   State.workspaceRoot = folderPath;
+  window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
   State.expandedDirs.add(folderPath);
   treeRoot = {
     name: basename(folderPath),
@@ -357,18 +308,19 @@ export async function openWorkspace(folderPath) {
     children: null,
     expanded: true,
   };
+  const root = treeRoot;
   try {
-    const items = await window.agzos.fs.readDir(folderPath);
-    treeRoot.children = mapItems(items);
+    await loadChildren(root);
   } catch (err) {
     console.error('Erro ao ler diretório raiz do workspace:', err);
   }
+  if (treeRoot !== root) return;
   const topbar = document.getElementById('topbar-workspace');
   if (topbar) topbar.textContent = `— ${basename(folderPath)}`;
   render();
 }
 
-export function refreshTree(keepState = true) {
+export function refreshTree(keepState = false) {
   if (!keepState) {
     treeRoot = null;
   }
@@ -389,14 +341,12 @@ function basename(p) {
 }
 function dirname(p) {
   if (!p) return '';
-  const normalized = p.replace(/[\\/]+$/, '');
-  const idx = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
-  if (idx < 0) return '.';
-  if (idx === 0) return normalized[0];
-  return normalized.slice(0, idx);
+  const parts = p.split(/[\\/]/).filter(Boolean);
+  parts.pop();
+  return parts.join(sep()) || sep();
 }
 function joinPath(a, b) { return a.replace(/[\\/]+$/, '') + sep() + b.replace(/^[\\/]+/, ''); }
-function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }
+function sep() { return navigator.userAgent.includes('Windows') || window.agzos?.app?.info?.()?.platform === 'win32' ? '\\' : '/'; }
 function cssEscape(s) {
   return s.replace(/[\\"]/g, '\\$&');
 }

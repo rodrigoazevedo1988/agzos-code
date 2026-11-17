@@ -9,22 +9,23 @@ function needsNoSandbox() {
   return process.platform === 'linux' && typeof process.getuid === 'function' && process.getuid() === 0;
 }
 
-async function launchApp({ userData, settings } = {}) {
+async function launchApp({ userData, settings, env: extraEnv } = {}) {
   const dir = userData || fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-e2e-'));
   if (settings) {
     fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2));
   }
 
   const args = ['.'];
-  if (needsNoSandbox() || process.env.AGZOS_NO_SANDBOX === '1') args.push('--no-sandbox');
-  // Ambientes restritos (sandbox de CI/agente) não deixam o Electron subir o
-  // processo de GPU: sem isso o app morre com "GPU process isn't usable".
-  if (process.env.AGZOS_NO_GPU === '1') args.push('--disable-gpu', '--disable-software-rasterizer');
+  if (needsNoSandbox()) args.push('--no-sandbox');
+
+  const env = { ...process.env, AGZOS_USER_DATA: dir, AGZOS_TEST: '1', AGZOS_TEST_SAFESTORAGE: 'fake' };
+  delete env.ELECTRON_RUN_AS_NODE;
+  if (extraEnv) Object.assign(env, extraEnv);
 
   const app = await electron.launch({
     args,
     cwd: ROOT,
-    env: { ...process.env, AGZOS_USER_DATA: dir, AGZOS_TEST: '1', AGZOS_TEST_SAFESTORAGE: 'fake' },
+    env,
   });
 
   const errors = [];
@@ -50,9 +51,7 @@ async function waitForMainWindow(app, timeout = 15000) {
 }
 
 function readSettings(userData) {
-  const raw = fs.readFileSync(path.join(userData, 'settings.json'), 'utf-8');
-  // settings.json pode ter sido gravado com BOM (PowerShell/Windows).
-  return JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+  return JSON.parse(fs.readFileSync(path.join(userData, 'settings.json'), 'utf-8'));
 }
 
 async function completeOnboarding(page) {

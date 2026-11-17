@@ -139,6 +139,18 @@ function copyLucide() {
   console.log(`✓ Lucide sprite copiado (${formatSize(size)}) + inline.js gerado`);
 }
 
+function copyMarkdown() {
+  for (const [pkg, source, target] of [
+    ['marked', 'lib/marked.umd.js', 'marked.umd.js'],
+    ['dompurify', 'dist/purify.min.js', 'purify.min.js'],
+  ]) {
+    const dst = path.join(VENDOR, pkg);
+    fs.mkdirSync(dst, { recursive: true });
+    fs.copyFileSync(path.join(ROOT, 'node_modules', pkg, source), path.join(dst, target));
+  }
+  console.log('✓ Marked e DOMPurify copiados');
+}
+
 function dirSize(p) {
   let total = 0;
   function walk(d) {
@@ -162,6 +174,7 @@ function main() {
   copyMonaco();
   copyXterm();
   copyLucide();
+  copyMarkdown();
   console.log('\nVendor pronto. Rode `npm start` para abrir o Agzos Code.');
 }
 

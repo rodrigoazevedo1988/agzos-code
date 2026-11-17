@@ -1,12 +1,12 @@
 # PRD — Agzos Code
 
-**Versão:** 0.2
-**Data:** 28/10/2026
-**Status:** Em execução — Fase 1.5 (confiança) em finalização
-**Base:** Electron 44 + Monaco próprio — ver [ADR-0001](../decisoes/ADR-0001-base-do-editor.md) e [ADR-0002](../decisoes/ADR-0002-electron-e-codigo-nativo.md)
+**Versão:** 0.1 (Draft)
+**Data:** 12/11/2026
+**Status:** Documento de visão; execução acompanhada no roadmap
+**Base:** Electron + Monaco próprio — ver [ADR-0001](../decisoes/ADR-0001-base-do-editor.md)
 **Plataformas:** Windows (x64/arm64), Linux (AppImage/DEB/RPM) e macOS (DMG/ZIP)
 
-> Decisão de 09/10/2026 (ADR-0001): sem fork do Code-OSS. Extensões do VS Code não são suportadas.
+> Decisão de 09/10/2026 (ADR-0001): sem fork do Code-OSS. Extensões do VS Code e marketplace Open VSX não são suportados.
 
 ## 1. Visão do Produto
 
@@ -27,7 +27,7 @@ Objetivo: ambiente familiar (quem usa VS Code já sabe usar), com produtividade 
 | IA nativa fácil | Configuração guiada + chat agent multi-provider | Alta |
 | Integração Agzos | Conectar com Browser, Key, Project e outros serviços | Alta |
 | Performance | Bom desempenho em máquinas modestas + modo de alta performance | Alta |
-| Privacidade | Nenhuma telemetria; dados só com ação do usuário | Alta |
+| Privacidade | Telemetria mínima e sempre com consentimento explícito | Alta |
 | Evolução | Base gratuita com possibilidade de freemium | Média |
 
 ## 3. Público-alvo
@@ -48,7 +48,7 @@ Objetivo: ambiente familiar (quem usa VS Code já sabe usar), com produtividade 
 | IA | Via extensões | Nativa profunda | Nativa + wizard + APIs livres |
 | Extensões | Marketplace Microsoft | Compatível (~90%) | Não suporta; features Agzos nativas |
 | Integrações | Nenhuma específica | Nenhuma | Ecossistema Agzos |
-| Telemetria | Presente (configurável) | Presente | Nenhuma |
+| Telemetria | Presente (configurável) | Presente | Mínima + consentimento |
 | Multi-GitHub | Limitado | Limitado | Nativo |
 | Temas | Padrão | Padrão + custom | Personalizáveis + identidade Agzos |
 
@@ -66,7 +66,7 @@ Objetivo: ambiente familiar (quem usa VS Code já sabe usar), com produtividade 
 - Terminal integrado com pty e busca rápida em arquivos
 - Multi-conta GitHub (switcher de contas)
 - Modos de performance (economia / balanceado / alta performance)
-- Privacidade por padrão: nenhuma telemetria
+- Telemetria com consentimento explícito
 - Instaladores para Windows, Linux e macOS
 - Auto-update
 
@@ -109,21 +109,22 @@ Permite vários providers salvos e troca rápida.
 
 ### 6.4 Temas e Personalização
 - Tema Agzos (preto `#0E0E0E`, vermelho `#D10A11`, branco) em destaque
-- Suporte a temas VS Code existentes
+- Temas de editor disponíveis hoje: Agzos Dark, Agzos Light e Monokai
+- Explorer com quatro estilos próprios de ícones selecionáveis
 - Futuro: editor visual de cores e exportação de temas
 
-### 6.5 Performance e Privacidade
+### 6.5 Performance e Telemetria
 - **Modos:** Economia (menos animações e processos em background), Balanceado (padrão), Alta performance (prioriza responsividade)
-- **Telemetria:** não existe. Nenhum dado sai da máquina sem ação explícita do usuário; API keys ficam no cofre do SO e conversas vão direto ao provider escolhido.
+- **Telemetria:** desligada por padrão. Settings → Privacy com opt-in explícito e explicação do que é coletado.
 
 ## 7. Arquitetura Técnica
 
 | Camada | Tecnologia |
 |--------|------------|
-| Runtime | Electron 44 |
+| Runtime | Electron |
 | Linguagem | JavaScript (ESM no renderer, CommonJS no main) |
 | Editor | Monaco Editor |
-| Terminal | xterm.js (pty real na Fase 4) |
+| Terminal | xterm.js + node-pty |
 | Busca | ripgrep (`@vscode/ripgrep`) |
 | Empacotamento | electron-builder |
 | Secrets | `safeStorage` do Electron (Keychain / DPAPI / libsecret) |
@@ -136,7 +137,7 @@ Detalhes em [tecnico/arquitetura.md](../tecnico/arquitetura.md).
 - **Performance:** inicialização aceitável em máquinas de 8 GB RAM. Modo economia reduz memória e CPU.
 - **Privacidade:** nenhum dado enviado sem consentimento. API keys em cofre seguro.
 - **Compatibilidade:** IntelliSense para TS/JS/JSON/CSS/HTML; demais linguagens com syntax highlight.
-- **Segurança:** `contextIsolation`, `nodeIntegration: false`, `sandbox: true`, path guard, permissões negadas por padrão e CSP restritiva.
+- **Segurança:** boas práticas de Electron (contextIsolation, sandbox quando possível).
 - **Manutenção:** rebase periódico com upstream (se fork).
 
 ## 9. Monetização
@@ -150,20 +151,18 @@ Ver [plano/ROADMAP.md](../plano/ROADMAP.md) — versão viva e detalhada.
 
 | Fase | Foco |
 |------|------|
-| 0 — Protótipo | Editor + branding + builds básicos |
-| 1 — Fundação | Lint/testes, IPC modular, cofre, path guard, CI |
-| 1.5 — Confiança | Electron 44, assinatura local, dirty close, encoding, arquivos, busca, status, logs |
-| 2 — IA | Wizard + chat + contexto + aplicar diff |
-| 3 — Git/GitHub | Status/diff/commit/push/pull + multi-conta |
-| 4 — Editor completo | pty, ripgrep, sessão, performance, importar VS Code |
-| 5 — Distribuição | Release 3 SO, auto-update, privacidade, assinatura |
+| 0 — Protótipo | Editor + branding |
+| 1 — Fundação | Testes, segurança, modularização e CI (concluída) |
+| 2 — IA | Providers, streaming, wizard e painel de chat (próxima) |
+| 3 — Git e GitHub | Git integrado e contas GitHub |
+| 4 — Editor completo | IntelliSense, terminal, busca e sessão |
+| 5 — Distribuição e v1.0 | Releases e atualização automática |
 
 ## 11. Riscos e Mitigações
 
 | Risco | Impacto | Mitigação |
 |-------|---------|-----------|
-| Manutenção do fork (upstream) | Alto | Rebase documentado + testes automatizados |
-| Sem extensões do VS Code | Médio | Priorizar features nativas que o time mais usa; reavaliar no ADR-0001 |
+| Ausência de extensões do VS Code | Médio | Priorizar recursos nativos usados pelo time; decisão registrada no ADR-0001 |
 | Performance da IA | Médio | Modos de performance + streaming + cache |
 | Licença / branding | Médio | Nunca usar marcas Microsoft; seguir MIT |
 | Assinatura de apps (macOS) | Médio | CI com certificados (GitHub Actions + runner Mac) |

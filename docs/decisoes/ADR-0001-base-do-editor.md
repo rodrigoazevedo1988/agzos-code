@@ -5,8 +5,8 @@
 
 ## Contexto
 
-O PRD define o Agzos Code como fork do Code-OSS, com "100% de compatibilidade com extensões do VS Code".
-A v0.1 foi feita como app Electron próprio usando só o Monaco (o componente de edição do VS Code).
+O PRD inicial definia o Agzos Code como fork do Code-OSS, com "100% de compatibilidade com extensões do VS Code".
+A aplicação foi construída como app Electron próprio usando o Monaco (o componente de edição do VS Code), e o PRD foi alinhado a essa decisão.
 
 Monaco não é o VS Code. Ele não tem extension host, API `vscode.*`, LSP client, debugger (DAP), SCM, tasks, settings sync nem workbench.
 Extensões do VS Code **não rodam** no app atual. Para rodar, seria preciso reimplementar boa parte do workbench.

@@ -2,7 +2,7 @@
  * IPC: informações do app e links externos (app:*).
  */
 
-function register(ipcMain, { app, shell, isDev, APP_NAME, guard }) {
+function register(ipcMain, { app, shell, isDev, APP_NAME }) {
   ipcMain.handle('app:info', () => ({
     name: APP_NAME,
     version: app.getVersion(),
@@ -20,14 +20,6 @@ function register(ipcMain, { app, shell, isDev, APP_NAME, guard }) {
       return true;
     }
     return false;
-  });
-
-  // Revela no Finder/Explorer/gerenciador de arquivos, sem abrir o arquivo.
-  ipcMain.handle('app:reveal', (_evt, p) => {
-    if (typeof p !== 'string' || !p) return false;
-    if (guard && !guard.isAllowed(p)) return false;
-    shell.showItemInFolder(p);
-    return true;
   });
 }
 

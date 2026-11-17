@@ -11,7 +11,6 @@
 
 import { lucideIcon } from './lucide.js';
 import { startOnboarding } from './onboarding.js';
-import { openFile } from './editor.js';
 import { toast } from './toast.js';
 
 const State = window.AgzosState;
@@ -119,6 +118,10 @@ export function showEditorWelcome() {
         <span class="welcome-action-icon"></span>
         Abrir Arquivo
       </button>
+      <button class="primary-btn welcome-action" data-action="clone">
+        <span class="welcome-action-icon"></span>
+        Clonar Repo
+      </button>
     </div>
     <div class="welcome-shortcuts">
       <div><kbd>Ctrl+P</kbd> Buscar arquivo</div>
@@ -133,16 +136,26 @@ export function showEditorWelcome() {
   actions.forEach((btn) => {
     const iconHost = btn.querySelector('.welcome-action-icon');
     const action = btn.dataset.action;
-    const iconName = action === 'open-folder' ? 'folder-open' : 'file-plus';
+    const iconName = action === 'open-folder' ? 'folder-open'
+                   : action === 'open-file' ? 'file-plus'
+                   : 'git-branch';
     iconHost.appendChild(lucideIcon(iconName, { size: 16, strokeWidth: 2 }));
   });
 
   // Handlers
   welcome.querySelector('[data-action="open-folder"]').addEventListener('click', () => {
+    document.getElementById('welcome-open-folder')?.click() ||
     document.querySelector('#btn-open-folder')?.click();
   });
-  welcome.querySelector('[data-action="open-file"]').addEventListener('click', async () => {
-    const p = await window.agzos.dialog.openFile();
-    if (p) await openFile(p);
+  welcome.querySelector('[data-action="open-file"]').addEventListener('click', () => {
+    window.agzos.dialog.openFile().then(async (p) => {
+      if (!p) return;
+      const mod = await import('./editor.js');
+      await mod.openFile(p);
+    }).catch(() => {});
+  });
+  welcome.querySelector('[data-action="clone"]').addEventListener('click', async () => {
+    const { openCloneDialog } = await import('./git-panel.js');
+    openCloneDialog();
   });
 }
