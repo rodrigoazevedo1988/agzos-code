@@ -38,6 +38,22 @@ let isMaximized = false;
 let panelBound = false;
 // Tamanho escolhido pelo usuário em cada posição (px); null = padrão do CSS.
 const panelSize = { bottom: null, right: null };
+const LIST_COLLAPSED_KEY = 'agzos.terminal.listCollapsed';
+
+/** Lista de sessões recolhida (só ícones). Preferência local; nunca lança. */
+function readListCollapsed() {
+  try { return localStorage.getItem(LIST_COLLAPSED_KEY) === '1'; } catch { return false; }
+}
+let listCollapsed = readListCollapsed();
+
+export function isTerminalListCollapsed() { return listCollapsed; }
+
+export function setTerminalListCollapsed(value) {
+  listCollapsed = !!value;
+  try { localStorage.setItem(LIST_COLLAPSED_KEY, listCollapsed ? '1' : '0'); } catch { /* ignora */ }
+  renderList();
+  requestAnimationFrame(() => fitVisible());
+}
 
 const FALLBACK_PROFILE = { id: null, label: 'Terminal', shell: '', icon: 'terminal' };
 // Atalhos que o xterm não deve consumir (seguem para o handler global em app.js).
@@ -703,6 +719,7 @@ function renderList() {
   const many = store.size > 1;
   list.hidden = !many;
   pane?.classList.toggle('has-session-list', many);
+  list.classList.toggle('collapsed', listCollapsed);
   if (!many) { list.replaceChildren(); return; }
   const editing = list.querySelector('.term-rename-input');
   if (editing) return; // não destrói o campo de renomear em uso
@@ -750,7 +767,25 @@ function renderList() {
     }
     return row;
   });
-  list.replaceChildren(...rows);
+  list.replaceChildren(listToggle(), ...rows);
+}
+
+function listToggle() {
+  let btn = $('term-list-toggle');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'term-list-toggle';
+    btn.className = 'term-list-toggle';
+    btn.type = 'button';
+    btn.tabIndex = -1;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); setTerminalListCollapsed(!listCollapsed); });
+  }
+  const label = listCollapsed ? 'Expandir nomes dos terminais' : 'Recolher nomes dos terminais';
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('aria-expanded', String(!listCollapsed));
+  btn.replaceChildren(lucideIcon(listCollapsed ? 'chevrons-left' : 'chevrons-right', { size: 13 }));
+  return btn;
 }
 
 function createRow(id) {
@@ -1217,6 +1252,12 @@ function openMoreMenu(anchor, { focusFirst = false } = {}) {
       { label: 'Limpar', icon: 'eraser', action: 'clear', run: clearTerminal },
       { label: 'Reiniciar shell', icon: 'rotate-ccw', action: 'restart', run: restartTerminal },
       { label: 'Renomear…', icon: 'pencil', action: 'rename', run: () => beginRename() },
+      {
+        label: listCollapsed ? 'Expandir nomes dos terminais' : 'Recolher nomes dos terminais',
+        icon: listCollapsed ? 'chevrons-left' : 'chevrons-right',
+        action: 'toggle-list',
+        run: () => setTerminalListCollapsed(!listCollapsed),
+      },
       { separator: true },
     );
   }
