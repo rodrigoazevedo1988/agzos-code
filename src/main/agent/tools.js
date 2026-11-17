@@ -32,6 +32,7 @@ const { lineStats, truncateMiddle, stripAnsi, redact, SECRET_NAME } = require('.
 const { runCommand: defaultRunCommand } = require('./exec');
 const { redactSecrets, isPlaceholder, shannon } = require('../modules/envvault/detect');
 const { _scan: scanEnv } = require('../modules/envvault/parse');
+const { recordBefore } = require('../modules/history');
 
 const ENV_FILE_RE = /^\.env(?:\..+)?$/;
 const ENV_TEMPLATE_RE = /\.(?:example|sample|template)$/i;
@@ -418,6 +419,7 @@ function createToolbox({
       execute: async () => {
         checkpoint?.recordParents(abs);
         checkpoint?.record(abs);
+        if (!created) recordBefore(abs, 'agente');
         fs.mkdirSync(path.dirname(abs), { recursive: true });
         fs.writeFileSync(abs, input.content, 'utf8');
         const stats = lineStats(before, input.content);
@@ -471,6 +473,7 @@ function createToolbox({
         const current = readTextFile(abs);
         if (current !== before) throw new ToolError(`${rel(abs)} mudou desde a leitura; leia de novo`);
         checkpoint?.record(abs);
+        recordBefore(abs, 'agente');
         fs.writeFileSync(abs, after, 'utf8');
         const stats = lineStats(before, after);
         return {
@@ -556,6 +559,7 @@ function createToolbox({
           try { removed = lineStats(readTextFile(abs), null).removed; } catch {}
         }
         checkpoint?.recordTree(abs);
+        if (!isDir && st.isFile()) recordBefore(abs, 'agente');
         fs.rmSync(abs, { recursive: true, force: true });
         return {
           ok: true, result: `Apagado: ${rel(abs)}`, summary: 'apagado',

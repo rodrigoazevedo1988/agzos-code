@@ -83,6 +83,9 @@ const DEFAULT_SETTINGS = {
       allowlist: [], // valores/hashes de valores que nunca bloqueiam
       revealTimeoutSec: 10, // 3–120
     },
+    // Histórico local e Git Slider (1.2.0). Normalização em normalizeHistoryModules.
+    localHistory: { enabled: true, maxPerFile: 50, maxDays: 30, maxTotalMB: 300 },
+    gitSlider: { enabled: true, maxCommits: 200 },
   },
 };
 
@@ -186,6 +189,28 @@ function isValidRegex(src) {
   }
 }
 
+/** localHistory/gitSlider: inteiros fora da faixa voltam ao padrão, campo a campo. */
+function normalizeHistoryModules(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const int = (val, min, max, fallback) => (Number.isInteger(val) && val >= min && val <= max ? val : fallback);
+  const h = isPlainObject(v.localHistory) ? v.localHistory : {};
+  const g = isPlainObject(v.gitSlider) ? v.gitSlider : {};
+  return {
+    localHistory: {
+      ...h,
+      enabled: typeof h.enabled === 'boolean' ? h.enabled : def.localHistory.enabled,
+      maxPerFile: int(h.maxPerFile, 1, 1000, def.localHistory.maxPerFile),
+      maxDays: int(h.maxDays, 1, 3650, def.localHistory.maxDays),
+      maxTotalMB: int(h.maxTotalMB, 10, 10000, def.localHistory.maxTotalMB),
+    },
+    gitSlider: {
+      ...g,
+      enabled: typeof g.enabled === 'boolean' ? g.enabled : def.gitSlider.enabled,
+      maxCommits: int(g.maxCommits, 10, 2000, def.gitSlider.maxCommits),
+    },
+  };
+}
+
 /** Valores inválidos de `modules` voltam ao padrão (campo a campo; listas item a item). */
 function normalizeModules(value) {
   const def = DEFAULT_SETTINGS.modules;
@@ -233,6 +258,7 @@ function normalizeModules(value) {
       allowlist,
       revealTimeoutSec,
     },
+    ...normalizeHistoryModules(v),
   };
 }
 
