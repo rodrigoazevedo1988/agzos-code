@@ -83,6 +83,20 @@ const DEFAULT_SETTINGS = {
       allowlist: [], // valores/hashes de valores que nunca bloqueiam
       revealTimeoutSec: 10, // 3–120
     },
+    // Snippets (1.2.0): variáveis da marca trocadas em {{nome}} na inserção.
+    snippets: {
+      enabled: true,
+      variables: [
+        { name: 'cor_primaria', value: '#D10A11' },
+        { name: 'cor_fundo', value: '#0E0E0E' },
+        { name: 'cor_texto', value: '#E8E8E8' },
+        { name: 'cor_secundaria', value: '#1A1A1A' },
+        { name: 'fonte', value: 'Inter, sans-serif' },
+        { name: 'nome_marca', value: 'Agzos' },
+        { name: 'url_site', value: 'https://seudominio.com.br' },
+        { name: 'email_contato', value: 'contato@seudominio.com.br' },
+      ],
+    },
   },
 };
 
@@ -186,6 +200,8 @@ function isValidRegex(src) {
   }
 }
 
+const SNIPPET_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,39}$/;
+
 /** Valores inválidos de `modules` voltam ao padrão (campo a campo; listas item a item). */
 function normalizeModules(value) {
   const def = DEFAULT_SETTINGS.modules;
@@ -215,8 +231,18 @@ function normalizeModules(value) {
   const revealTimeoutSec = typeof t === 'number' && Number.isInteger(t) && t >= 3 && t <= 120
     ? t : def.envVault.revealTimeoutSec;
 
+  const sn = isPlainObject(v.snippets) ? v.snippets : {};
+  const seenVars = new Set();
+  const variables = Array.isArray(sn.variables)
+    ? sn.variables
+      .filter((x) => isPlainObject(x) && typeof x.name === 'string' && SNIPPET_VAR_NAME.test(x.name)
+        && typeof x.value === 'string' && !seenVars.has(x.name) && seenVars.add(x.name))
+      .map((x) => ({ name: x.name, value: x.value }))
+    : def.snippets.variables.map((x) => ({ ...x }));
+
   return {
     ...v,
+    snippets: { ...sn, enabled: bool(sn.enabled, def.snippets.enabled), variables },
     broom: {
       ...b,
       enabled: bool(b.enabled, def.broom.enabled),

@@ -1,0 +1,25 @@
+<header class="relative bg-[{{cor_fundo}}] text-[{{cor_texto}}]" style="font-family: {{fonte}}">
+  <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+    <a href="{{url_site}}" class="inline-flex items-center gap-2 text-lg font-semibold tracking-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]"><svg class="h-7 w-7 text-[{{cor_primaria}}]" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M0 0h32v32H0z" /><path d="M9 23l7-14 7 14h-4l-3-6-3 6z" fill="#fff" /></svg>{{nome_marca}}</a>
+    <nav aria-label="Principal" class="hidden items-center gap-8 text-sm md:flex">
+      <a href="{{url_site}}/servicos" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Serviços</a>
+      <a href="{{url_site}}/cases" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Cases</a>
+      <a href="{{url_site}}/precos" class="text-[{{cor_texto}}]/75 transition hover:text-[{{cor_texto}}] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Preços</a>
+      <a href="{{url_site}}/contato" class="border border-[{{cor_primaria}}] px-4 py-2 font-semibold transition hover:bg-[{{cor_primaria}}] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Contato</a>
+    </nav>
+    <details class="group md:hidden">
+      <summary class="grid h-10 w-10 cursor-pointer list-none place-items-center border border-[{{cor_texto}}]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}] [&::-webkit-details-marker]:hidden" aria-label="Abrir menu">
+        <svg class="h-5 w-5 group-open:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" /></svg>
+        <svg class="hidden h-5 w-5 group-open:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </summary>
+      <nav aria-label="Menu móvel" class="absolute inset-x-0 top-16 z-20 border-y border-[{{cor_texto}}]/10 bg-[{{cor_fundo}}] px-6 pb-8 pt-4">
+        <ul class="divide-y divide-[{{cor_texto}}]/10 text-2xl font-semibold tracking-tight">
+          <li><a href="{{url_site}}/servicos" class="block py-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Serviços</a></li>
+          <li><a href="{{url_site}}/cases" class="block py-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Cases</a></li>
+          <li><a href="{{url_site}}/precos" class="block py-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Preços</a></li>
+        </ul>
+        <a href="{{url_site}}/contato" class="mt-6 block bg-[{{cor_primaria}}] px-6 py-4 text-center text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Contato</a>
+      </nav>
+    </details>
+  </div>
+</header>

@@ -381,6 +381,10 @@ const modulesDeps = {
   settingsStore, userDataDir: app.getPath('userData'), workerHost: modulesWorker };
 require('./ipc/broom').register(ipcMain, modulesDeps);
 require('./ipc/envvault').register(ipcMain, modulesDeps);
+// Snippets (1.2.0): biblioteca em userData/snippets.json; import/export só por diálogo nativo.
+require('./ipc/snippets').register(ipcMain, {
+  ...modulesDeps, dialog, getWindowFor: (sender) => BrowserWindow.fromWebContents(sender),
+});
 require('./ipc/chat-history').register(ipcMain, {
   ...deps, BrowserWindow, attachments: chatAttachments,
   getRecentFolders: () => settingsStore.load().recentFolders || [],

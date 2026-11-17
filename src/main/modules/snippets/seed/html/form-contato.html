@@ -1,0 +1,49 @@
+<section class="bg-[{{cor_fundo}}] px-6 py-20 text-[{{cor_texto}}] md:py-24" style="font-family: {{fonte}}">
+  <div class="mx-auto grid max-w-6xl gap-12 md:grid-cols-[1fr_1.4fr]">
+    <div>
+      <h2 class="text-3xl font-semibold tracking-tight md:text-5xl">Fale com a {{nome_marca}}</h2>
+      <p class="mt-4 max-w-sm leading-relaxed text-[{{cor_texto}}]/75">Responda o essencial e retornamos em até um dia útil com próximos passos e uma estimativa.</p>
+      <dl class="mt-10 space-y-6 text-sm">
+        <div>
+          <dt class="font-mono text-xs uppercase tracking-[0.2em] text-[{{cor_texto}}]/60">E-mail</dt>
+          <dd class="mt-1"><a href="mailto:{{email_contato}}" class="underline decoration-[{{cor_primaria}}] underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">{{email_contato}}</a></dd>
+        </div>
+        <div>
+          <dt class="font-mono text-xs uppercase tracking-[0.2em] text-[{{cor_texto}}]/60">Horário</dt>
+          <dd class="mt-1">Segunda a sexta, 9h às 18h</dd>
+        </div>
+      </dl>
+    </div>
+    <form action="#" method="post" class="grid gap-5 sm:grid-cols-2">
+      <div>
+        <label for="contato-nome" class="mb-2 block text-sm font-medium">Nome</label>
+        <input id="contato-nome" name="nome" type="text" autocomplete="name" required class="w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none" />
+      </div>
+      <div>
+        <label for="contato-email" class="mb-2 block text-sm font-medium">E-mail</label>
+        <input id="contato-email" name="email" type="email" autocomplete="email" required class="w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none" />
+      </div>
+      <div>
+        <label for="contato-empresa" class="mb-2 block text-sm font-medium">Empresa <span class="text-[{{cor_texto}}]/60">(opcional)</span></label>
+        <input id="contato-empresa" name="empresa" type="text" autocomplete="organization" class="w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none" />
+      </div>
+      <div>
+        <label for="contato-verba" class="mb-2 block text-sm font-medium">Investimento previsto</label>
+        <select id="contato-verba" name="verba" class="w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none">
+          <option>Até R$ 10 mil</option>
+          <option>R$ 10 a 30 mil</option>
+          <option>R$ 30 a 80 mil</option>
+          <option>Acima de R$ 80 mil</option>
+        </select>
+      </div>
+      <div class="sm:col-span-2">
+        <label for="contato-mensagem" class="mb-2 block text-sm font-medium">O que você precisa?</label>
+        <textarea id="contato-mensagem" name="mensagem" rows="5" required class="w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none" placeholder="Ex.: nova landing page para a campanha de março"></textarea>
+      </div>
+      <div class="flex flex-col gap-4 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-xs text-[{{cor_texto}}]/60">Usamos seus dados só para responder este contato.</p>
+        <button type="submit" class="bg-[{{cor_primaria}}] px-7 py-3 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Enviar mensagem</button>
+      </div>
+    </form>
+  </div>
+</section>

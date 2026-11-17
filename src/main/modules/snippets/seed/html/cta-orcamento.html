@@ -1,0 +1,20 @@
+<section class="bg-[{{cor_fundo}}] px-6 py-20 text-[{{cor_texto}}] md:py-24" style="font-family: {{fonte}}">
+  <div class="mx-auto grid max-w-6xl overflow-hidden border border-[{{cor_texto}}]/15 md:grid-cols-[1.3fr_1fr]">
+    <div class="p-8 md:p-12">
+      <p class="font-mono text-xs uppercase tracking-[0.2em] text-[{{cor_texto}}]/70">Orçamento em 24 h</p>
+      <h2 class="mt-4 text-3xl font-semibold leading-tight tracking-tight md:text-5xl">Conte o problema.<br />A gente traz o plano.</h2>
+      <ul class="mt-8 space-y-3 text-[{{cor_texto}}]/80">
+        <li class="flex gap-3"><svg class="mt-1 h-4 w-4 shrink-0 text-[{{cor_primaria}}]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>Escopo fechado, sem surpresa na fatura</li>
+        <li class="flex gap-3"><svg class="mt-1 h-4 w-4 shrink-0 text-[{{cor_primaria}}]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>Cronograma por semana, com entregas visíveis</li>
+        <li class="flex gap-3"><svg class="mt-1 h-4 w-4 shrink-0 text-[{{cor_primaria}}]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>Código seu desde o primeiro commit</li>
+      </ul>
+    </div>
+    <div class="flex flex-col justify-between gap-10 bg-[{{cor_secundaria}}] p-8 md:p-12">
+      <div>
+        <p class="text-sm text-[{{cor_texto}}]/70">Prefere escrever?</p>
+        <a href="mailto:{{email_contato}}" class="mt-2 inline-block break-all text-xl font-semibold underline decoration-[{{cor_primaria}}] decoration-2 underline-offset-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">{{email_contato}}</a>
+      </div>
+      <a href="{{url_site}}/orcamento" class="bg-[{{cor_primaria}}] px-6 py-4 text-center text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Pedir orçamento</a>
+    </div>
+  </div>
+</section>
