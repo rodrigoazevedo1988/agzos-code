@@ -27,6 +27,9 @@ const DEFAULT_SETTINGS = {
     showAvatars: true,
     sendKey: 'enter', // enter | ctrlEnter
     defaultContext: { file: true, selection: true, terminal: false },
+    // Compactar conversa: automática antes do pedido e dentro do agente (ai/compact.js).
+    autoCompact: true,
+    compactThresholdTokens: 60000, // 8k–400k
   },
   // Agente: modo de autonomia ask | edit | auto. Dono: ipc/agent.js (agent:setMode).
   aiAgent: { mode: 'edit', maxSteps: 100 },
@@ -112,6 +115,7 @@ function deepMerge(target, source) {
 }
 
 const AI_PANEL_WIDTH = { min: 240, max: 1600 };
+const COMPACT_THRESHOLD = { min: 8000, max: 400000 };
 
 /** Valores inválidos de `aiPanel` voltam ao padrão (campo a campo). */
 function normalizeAiPanel(value, legacyContext) {
@@ -138,6 +142,12 @@ function normalizeAiPanel(value, legacyContext) {
     showAvatars: typeof v.showAvatars === 'boolean' ? v.showAvatars : def.showAvatars,
     sendKey: pick(v.sendKey, ['enter', 'ctrlEnter'], def.sendKey),
     defaultContext,
+    autoCompact: typeof v.autoCompact === 'boolean' ? v.autoCompact : def.autoCompact,
+    // Campo numérico das Configurações pode chegar como string.
+    compactThresholdTokens: int(
+      typeof v.compactThresholdTokens === 'string' && v.compactThresholdTokens.trim() ? Number(v.compactThresholdTokens) : v.compactThresholdTokens,
+      COMPACT_THRESHOLD.min, COMPACT_THRESHOLD.max, def.compactThresholdTokens,
+    ),
   };
 }
 

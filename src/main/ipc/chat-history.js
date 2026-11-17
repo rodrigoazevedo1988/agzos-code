@@ -10,7 +10,9 @@
  * todas as pastas, com busca por título/conteúdo. As operações em conversas de outras
  * pastas usam a `key` (hash do arquivo) devolvida pelo índice.
  *
- * Mensagens: { role, content, attachments?, model?, skill? }. Anexos guardam só o
+ * Mensagens: { role, content, attachments?, model?, skill? }. Resumo de compactação (1.2.0):
+ * { role: 'assistant', kind: 'summary', content, compactedCount, createdAt } — só ele e as
+ * mensagens posteriores vão ao modelo; as anteriores continuam salvas (UI e export). Anexos guardam só o
  * descritor (id/hash, nome, tipo, tamanho, miniatura pequena); os bytes ficam em
  * userData/chat-attachments (ver ai/attachments.js), limpos quando nenhuma conversa
  * os referencia mais.
@@ -63,6 +65,11 @@ function cleanMessages(list) {
       if (attachments.length) out.attachments = attachments;
       if (typeof m.model === 'string' && m.model) out.model = m.model.slice(0, 120);
       if (typeof m.skill === 'string' && /^(?:project:)?[a-z0-9-]{1,40}$/.test(m.skill)) out.skill = m.skill;
+      if (m.kind === 'summary' && m.role === 'assistant') {
+        out.kind = 'summary';
+        out.compactedCount = Number.isInteger(m.compactedCount) && m.compactedCount > 0 ? m.compactedCount : 0;
+        if (Number.isFinite(m.createdAt) && m.createdAt > 0) out.createdAt = m.createdAt;
+      }
       return out;
     })
     .slice(-MAX_MESSAGES);

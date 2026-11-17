@@ -101,6 +101,14 @@ XLSX/XLS/ODS e CSV/TSV em grade virtual, pré-visualização de Markdown e telas
 - **Fila persistente.** A fila de mensagens vive só na sessão do painel (some ao trocar de
   pasta ou reiniciar).
 - **Renomear/apagar várias conversas de uma vez e exportar todas** no histórico global.
+- **Compactar conversa — próximos passos (1.2.0 entregou o básico).** (a) Contagem real de
+  tokens por provider/modelo (hoje é caracteres ÷ 4); (b) limite automático pela janela de
+  contexto conhecida do modelo em vez de um número fixo nas Configurações; (c) dentro de uma
+  execução do agente, resumir com o modelo quando encurtar as saídas antigas não bastar (hoje
+  o laço só troca saídas antigas por `[saída compactada: …]`); (d) "Desfazer compactação"
+  (remover o marcador e voltar a mandar o histórico inteiro); (e) mostrar no composer o
+  tamanho estimado do contexto. Código: `src/main/ai/compact.js`, `ai-chat.js`
+  (`compactConversation`).
 - **Exportar com diffs completos.** O transcript traz o resumo das ações (+/− linhas, exit
   code); os diffs inteiros não são guardados no histórico.
 

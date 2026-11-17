@@ -125,3 +125,22 @@ test('IPC: all/get/rename/delete/export por chave; arquivo grava root', async ()
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test('transcriptMarkdown: resumo de compactação aparece marcado, junto com as mensagens antigas', () => {
+  const md = transcriptMarkdown({
+    id: 'k', title: 'Longa', updatedAt: Date.UTC(2026, 10, 17),
+    messages: [
+      { role: 'user', content: 'mensagem antiga' },
+      { role: 'assistant', content: 'resposta antiga' },
+      { role: 'assistant', kind: 'summary', content: '## Objetivo\nTerminar o app.', compactedCount: 2, createdAt: Date.UTC(2026, 10, 17) },
+      { role: 'user', content: 'mensagem nova' },
+    ],
+  }, { timeZone: 'UTC' });
+  assert.match(md, /mensagem antiga/);
+  assert.match(md, /resposta antiga/);
+  assert.match(md, /## Conversa compactada — 2 mensagens resumidas/);
+  assert.match(md, /Terminar o app\./);
+  assert.ok(md.indexOf('resposta antiga') < md.indexOf('Conversa compactada'));
+  assert.ok(md.indexOf('Conversa compactada') < md.indexOf('mensagem nova'));
+  assert.doesNotMatch(md, /## Agzos IA[^\n]*\n\n## Objetivo/);
+});

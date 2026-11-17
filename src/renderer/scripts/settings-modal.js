@@ -75,6 +75,8 @@ const DEFAULTS = {
     showAvatars: true,
     sendKey: 'enter',
     defaultContext: { file: true, selection: true, terminal: false },
+    autoCompact: true,
+    compactThresholdTokens: 60000,
   },
   // Espelho de DEFAULT_SETTINGS.modules (src/main/lib/settings.js).
   modules: {
@@ -458,6 +460,22 @@ const SETTINGS_DEF = [
     categories: ['ai'],
     type: 'boolean',
     apply: notifyAiPanel,
+  },
+  {
+    key: 'aiPanel.autoCompact',
+    title: 'Agzos IA: Compactar Conversa Automaticamente',
+    desc: 'Quando a conversa passa do limite abaixo, resume as mensagens antigas antes de enviar (e, numa execução longa do agente, encurta saídas antigas de ferramentas). As mensagens antigas continuam visíveis.',
+    categories: ['ai'],
+    type: 'boolean',
+  },
+  {
+    key: 'aiPanel.compactThresholdTokens',
+    title: 'Agzos IA: Limite para Compactar (tokens)',
+    desc: 'Tamanho estimado do histórico (caracteres ÷ 4) a partir do qual a conversa é compactada. De 8000 a 400000.',
+    categories: ['ai'],
+    type: 'number',
+    min: 8000,
+    max: 400000,
   },
   {
     key: 'aiAgent.mode',

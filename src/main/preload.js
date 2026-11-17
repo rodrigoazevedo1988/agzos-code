@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld('agzos', {
     test: (draft, apiKey) => ipcRenderer.invoke('ai:test', draft, apiKey),
     detectOllama: () => ipcRenderer.invoke('ai:detectOllama'),
     chat: (requestId, payload) => ipcRenderer.invoke('ai:chat', requestId, payload),
+    summarize: (requestId, payload) => ipcRenderer.invoke('ai:summarize', requestId, payload),
     cancel: (requestId) => ipcRenderer.invoke('ai:cancel', requestId),
     // Anexos: save({ name, bytes }) → { ok, attachment | error }; read(paths?) → [{ name, bytes | error }]
     // (sem caminhos abre o diálogo nativo; caminhos do Explorer passam pelo guard).

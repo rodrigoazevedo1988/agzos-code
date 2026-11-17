@@ -105,6 +105,13 @@ function previewDiff(step) {
 }
 
 /** Mensagem do usuário enviada durante a execução ("Enviar agora"). */
+function compactedElement(seg) {
+  const chars = Number(seg.removedChars) || 0;
+  const amount = chars >= 1000 ? `${Math.round(chars / 1000)} mil` : String(chars);
+  return h('div', { class: 'ag-compacted', role: 'note', title: 'Saídas antigas de ferramentas foram encurtadas para caber no contexto do modelo. As últimas 10 continuam completas.' },
+    icon('fold-vertical', 11), h('span', { text: `Contexto compactado (−${amount} caracteres de saídas antigas)` }));
+}
+
 function steerElement(seg) {
   return h('div', { class: 'ag-steer', 'data-steer-id': seg.id || null },
     h('div', { class: 'ag-steer-bubble', text: seg.text || '' }),
@@ -423,6 +430,14 @@ export class TurnView {
         // Mensagem "Enviar agora" incorporada neste ponto da execução.
         if (!this.blocks[blockIndex]) {
           const block = { kind: 'steer', el: steerElement(seg) };
+          this.blocks.push(block);
+          this.el.insertBefore(block.el, this.tail);
+        }
+        blockIndex++;
+      } else if (seg.t === 'compacted') {
+        // Contexto compactado no meio da execução: selo discreto.
+        if (!this.blocks[blockIndex]) {
+          const block = { kind: 'compacted', el: compactedElement(seg) };
           this.blocks.push(block);
           this.el.insertBefore(block.el, this.tail);
         }
