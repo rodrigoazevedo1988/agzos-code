@@ -23,6 +23,7 @@ const {
   createBroomEngine, optionsFromSettings, summarize, setDefaultEngine,
 } = require('../modules/broom/engine');
 const { guardResolver } = require('../lib/window-guards');
+const { recordBefore } = require('../modules/history');
 
 const CHANNELS = ['analyzeFile', 'cleanFile', 'scanWorkspace', 'cleanWorkspace', 'cancel', 'undo'];
 
@@ -101,6 +102,7 @@ function register(ipcMain, {
     if (!p.edits.length) return { checkpointId: null, removed: 0, ...(p.error ? { error: p.error } : {}) };
     const cp = checkpoints.create({ root: path.dirname(abs) });
     cp.record(abs);
+    recordBefore(abs, 'vassoura');
     await engine.write(abs, p.text, p.after);
     cp.finalize();
     own(cp.id, event?.sender);
@@ -138,6 +140,7 @@ function register(ipcMain, {
         const p = await engine.plan(abs[i], opts);
         if (p.edits.length) {
           cp.record(abs[i]);
+          recordBefore(abs[i], 'vassoura');
           await engine.write(abs[i], p.text, p.after);
           files++;
           removed += p.edits.length;

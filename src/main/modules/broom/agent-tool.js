@@ -124,6 +124,7 @@ async function prepare(input, ctx) {
       const lines = [];
       for (const p of plans) {
         ctx.checkpoint?.record(p.path);
+        require('../history').recordBefore(p.path, 'vassoura');
         await engine.write(p.path, p.text, p.after);
         changed.push(p.path);
         removed += p.edits.length;

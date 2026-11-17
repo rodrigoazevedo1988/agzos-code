@@ -32,6 +32,7 @@ const hook = require('../modules/envvault/hook');
 const vault = require('../modules/envvault/vault');
 const { findExampleFile } = require('../modules/envvault/compare');
 const { guardResolver } = require('../lib/window-guards');
+const { recordBefore } = require('../modules/history');
 
 const CHANNELS = [
   'list', 'reveal', 'setValue', 'addKey', 'removeKey', 'generateExample', 'copy', 'scanStaged',
@@ -95,6 +96,7 @@ function register(ipcMain, {
       }
       const cp = checkpoints.create({ root: path.dirname(abs) });
       cp.record(abs);
+      recordBefore(abs, 'cofre');
       fs.writeFileSync(abs, text);
       cp.finalize();
       owners.set(cp.id, senderId(sender));

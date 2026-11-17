@@ -25,6 +25,7 @@ import { setupModulesHub } from './modules-hub.js';
 import { setupBroom } from './broom.js';
 import { setupEnvVault } from './envvault.js';
 import { setupSsh } from './ssh.js';
+import { setupTimeline } from './timeline.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -113,7 +114,7 @@ async function boot() {
   } catch (e) {
     console.error('[Módulos] setupModulesHub falhou:', e);
   }
-  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh]]) {
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh], ['Git Slider', setupTimeline]]) {
     try {
       setup();
     } catch (e) {
@@ -454,6 +455,10 @@ function bindShortcuts() {
         break;
       case 'editor.format':
         runEditorAction(e, 'editor.action.formatDocument', { focus: false });
+        break;
+      case 'history.timeline':
+        e.preventDefault(); e.stopPropagation();
+        runCommand('history.timeline');
         break;
       case 'editor.toggleWordWrap': {
         e.preventDefault();
