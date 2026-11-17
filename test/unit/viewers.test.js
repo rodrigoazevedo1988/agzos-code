@@ -110,3 +110,21 @@ test('resolveMarkdownPath ignora URLs externas, data: e âncoras', async () => {
   assert.equal(resolveMarkdownPath('/ws/README.md', 'mailto:a@b.c'), null);
   assert.equal(resolveMarkdownPath('/ws/README.md', ''), null);
 });
+
+test('formatBytes em pt-BR', async () => {
+  const { formatBytes } = await load('format');
+  assert.equal(formatBytes(0), '0 B');
+  assert.equal(formatBytes(275), '275 B');
+  assert.equal(formatBytes(4096), '4,0 KB');
+  assert.equal(formatBytes(1536 * 1024), '1,5 MB');
+  assert.equal(formatBytes(3 * 1024 ** 3), '3,0 GB');
+  assert.equal(formatBytes(undefined), '—');
+});
+
+test('formatDuration', async () => {
+  const { formatDuration } = await load('format');
+  assert.equal(formatDuration(1.2), '0:01');
+  assert.equal(formatDuration(75), '1:15');
+  assert.equal(formatDuration(3725), '1:02:05');
+  assert.equal(formatDuration(NaN), '—');
+});

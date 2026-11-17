@@ -5,7 +5,9 @@
  */
 
 import { toast } from './toast.js';
-import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings } from './editor.js';
+import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings, openMarkdownPreview } from './editor.js';
+import { setupMarkdownSide } from './viewers/markdown-side.js';
+import { setupFileDrop } from './viewers/drop.js';
 import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette, showShortcutsModal, invalidateQuickOpenCache } from './command-palette.js';
 import { setupAI, sendToChat } from './ai-chat.js';
 import { captureAITarget, setAITarget } from './ai-apply.js';
@@ -62,6 +64,10 @@ async function boot() {
     toast(`Monaco não pôde ser carregado: ${e.message}`, 'error', 6000);
     return;
   }
+
+  // Visualizadores: pré-visualização de Markdown ao lado e arquivos soltos do SO.
+  setupMarkdownSide();
+  setupFileDrop(openFile);
 
   // 6) Aplica settings à UI
   applySettingsToUI();
@@ -400,6 +406,10 @@ function bindShortcuts() {
       case 'palette.commands':
         e.preventDefault();
         showCommandPalette();
+        break;
+      case 'markdown.previewSide':
+        e.preventDefault(); e.stopPropagation();
+        openMarkdownPreview(State.activePath, 'side');
         break;
       case 'palette.quickOpen':
         e.preventDefault();

@@ -333,7 +333,7 @@ if (ctx) {
         await window.agzos.fs.mkdir(newPath);
         invalidateTree(); render();
       } else if (action === 'reveal') {
-        window.agzos.app.openExternal('file://' + target);
+        await window.agzos.fs.reveal(target);
       }
     } catch (err) {
       toast(`Erro: ${err.message}`, 'error');

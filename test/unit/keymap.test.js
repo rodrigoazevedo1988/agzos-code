@@ -115,3 +115,11 @@ test('matchShortcut: Ctrl+Shift+X abre o hub Módulos Agzos', async () => {
   assert.equal(matchShortcut(ev({ key: 'X', code: 'KeyX', ctrlKey: true, shiftKey: true })), 'view.modules');
   assert.equal(matchShortcut(ev({ key: 'x', code: 'KeyX', metaKey: true, shiftKey: true }), { isMac: true }), 'view.modules');
 });
+
+test('matchShortcut: Ctrl+Shift+V abre a pré-visualização de Markdown ao lado', async () => {
+  const { matchShortcut, shouldHandleInTarget } = await load('keymap.js');
+  assert.equal(matchShortcut(ev({ key: 'V', code: 'KeyV', ctrlKey: true, shiftKey: true })), 'markdown.previewSide');
+  assert.equal(matchShortcut(ev({ key: 'v', code: 'KeyV', ctrlKey: true })), null);
+  // No terminal/inputs, Ctrl+Shift+V continua sendo colar.
+  assert.equal(shouldHandleInTarget('markdown.previewSide', true), false);
+});

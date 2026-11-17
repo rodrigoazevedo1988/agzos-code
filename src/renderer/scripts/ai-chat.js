@@ -284,7 +284,8 @@ function makeContextMessage(includeSelection) {
   if (contextOptions.file && State.activePath) {
     const file = State.files.get(State.activePath);
     const model = editor?.getModel();
-    if (file) context.file = {
+    // Abas de visualização (imagem, PDF…) não têm texto para enviar.
+    if (file && !file.viewer && !file.preview) context.file = {
       path: file.path,
       language: model?.getLanguageId() || 'plaintext',
       content: editor?.getValue() ?? file.content,
