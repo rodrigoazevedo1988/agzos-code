@@ -13,6 +13,7 @@
 const path = require('path');
 const ts = require('typescript');
 const { pieces } = require('./apply');
+const { jsxFactoryNames } = require('./jsx-config');
 
 const RULES = ['console', 'comments', 'unusedImports', 'deadCode'];
 
@@ -95,6 +96,7 @@ function analyze(fullText, options = {}) {
   }
 
   const raw = [];
+  let jsxNamesCache = null;
 
   // ------------------------------------------------------------ utilitários de linha
   function lineStartOf(pos) {
@@ -177,6 +179,12 @@ function analyze(fullText, options = {}) {
     return callee.name.text;
   }
 
+
+  /** Argumentos de console.* removíveis só se nenhum tiver efeito colateral. */
+  function consoleArgsPure(call) {
+    return call.arguments.every(isPure);
+  }
+
   // ----------------------------------------------------------------- deadCode
   const isFalseLiteral = (e) => e.kind === ts.SyntaxKind.FalseKeyword
     || (ts.isNumericLiteral(e) && Number(e.text) === 0);
@@ -184,12 +192,19 @@ function analyze(fullText, options = {}) {
     || ts.isBreakStatement(s) || ts.isContinueStatement(s);
 
   function deadIf(node) {
+    // Bloco morto com var/function: as declarações são içadas para fora — mantém tudo.
+    if (containsHoisted(node.thenStatement)) return;
     const start = node.getStart(sf);
     const end = node.getEnd();
     const els = node.elseStatement;
     if (!els) { push('deadCode', statementRange(start, end), start, end); return; }
     if (ts.isBlock(els) && els.statements.length === 0) { push('deadCode', statementRange(start, end), start, end); return; }
     const whole = wholeLines(start, end);
+    if (ts.isBlock(els) && hasBlockScopedDeclaration(els)) {
+      // let/const/class/function no else: desembrulhar mudaria o escopo — mantém as chaves.
+      push('deadCode', [start, end], start, end, [els.getStart(sf), els.getEnd()]);
+      return;
+    }
     if (ts.isBlock(els)) {
       const open = els.getStart(sf) + 1;
       const close = els.getEnd() - 1;
@@ -217,7 +232,7 @@ function analyze(fullText, options = {}) {
     let dead = false;
     for (const s of list) {
       if (dead) {
-        if (!ts.isFunctionDeclaration(s)) {
+        if (!isDeclarationStatement(s) && !containsHoisted(s)) {
           const start = s.getStart(sf);
           push('deadCode', statementRange(start, s.getEnd()), start, s.getEnd());
         }
@@ -239,7 +254,7 @@ function analyze(fullText, options = {}) {
     if (isStatementList(node.parent)) {
       if (opts.rules.console && ts.isExpressionStatement(node)) {
         const m = consoleMethod(node.expression);
-        if (m !== null && !opts.keepConsole.includes(m)) {
+        if (m !== null && !opts.keepConsole.includes(m) && consoleArgsPure(node.expression)) {
           const start = node.getStart(sf);
           push('console', statementRange(start, node.getEnd()), start, node.getEnd());
         }
@@ -307,12 +322,25 @@ function analyze(fullText, options = {}) {
     }
   }
 
+  // Fábrica JSX: nomes clássicos, pragmas @jsx/@jsxFrag e jsxFactory do tsconfig.
+  function jsxNames() {
+    if (jsxNamesCache) return jsxNamesCache;
+    const names = new Set(JSX_FACTORY_NAMES);
+    for (const c of comments) {
+      const body = text.slice(c.pos, c.end);
+      for (const m of body.matchAll(/@jsx(?:Frag)?\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1]);
+    }
+    for (const n of jsxFactoryNames(opts.fileName)) names.add(n);
+    jsxNamesCache = names;
+    return names;
+  }
+
   function unusedInImport(decl, used) {
     const clause = decl.importClause;
     if (!clause) return; // import 'x' (efeito colateral)
     const declStart = decl.getStart(sf);
     const declEnd = decl.getEnd();
-    const keepReact = (id) => hasJsx && id.text === 'React';
+    const keepReact = (id) => hasJsx && jsxNames().has(id.text);
     const isUsed = (id) => used(id) || keepReact(id);
     const def = clause.name || null;
     const nb = clause.namedBindings || null;
@@ -364,6 +392,101 @@ function analyze(fullText, options = {}) {
   });
   return { edits };
 }
+
+const JSX_FACTORY_NAMES = ['React', 'h', 'createElement', 'Fragment', 'jsx', 'jsxs', 'jsxDEV'];
+
+const hasModifier = (node, kind) => Array.isArray(node.modifiers) && node.modifiers.some((m) => m.kind === kind);
+
+/** Declarações nunca removidas como código morto (içadas, tipos, imports/exports, declare). */
+function isDeclarationStatement(s) {
+  return ts.isVariableStatement(s) || ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)
+    || ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || ts.isEnumDeclaration(s)
+    || ts.isModuleDeclaration(s) || ts.isImportEqualsDeclaration(s) || ts.isImportDeclaration(s)
+    || ts.isExportDeclaration(s) || ts.isExportAssignment(s)
+    || hasModifier(s, ts.SyntaxKind.DeclareKeyword);
+}
+
+const isBlockScopedList = (list) => (list.flags & ts.NodeFlags.BlockScoped) !== 0;
+
+/** Há `var` ou declaração de função alcançável sem entrar em outra função/classe? */
+function containsHoisted(node) {
+  let found = false;
+  const walk = (n) => {
+    if (found) return;
+    if (ts.isFunctionDeclaration(n)) { found = true; return; }
+    if (ts.isVariableDeclarationList(n) && !isBlockScopedList(n)) { found = true; return; }
+    if (ts.isFunctionLike(n) || ts.isClassLike(n)) return;
+    ts.forEachChild(n, walk);
+  };
+  walk(node);
+  return found;
+}
+
+/** O bloco declara let/const/class/função/tipo no próprio nível? */
+function hasBlockScopedDeclaration(block) {
+  return block.statements.some((s) => (ts.isVariableStatement(s) && isBlockScopedList(s.declarationList))
+    || ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isEnumDeclaration(s)
+    || ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || ts.isModuleDeclaration(s));
+}
+
+const PURE_UNARY = new Set([ts.SyntaxKind.ExclamationToken, ts.SyntaxKind.MinusToken,
+  ts.SyntaxKind.PlusToken, ts.SyntaxKind.TildeToken]);
+
+const isAssignmentOperator = (k) => k >= ts.SyntaxKind.FirstAssignment && k <= ts.SyntaxKind.LastAssignment;
+
+/**
+ * Expressão livre de efeito colateral (avaliá-la não chama nada nem muda estado):
+ * literais, identificadores, this, acesso a propriedade/elemento, template sem tag,
+ * unários/binários/condicionais, arrays/objetos e funções (definir não executa).
+ * Chamada, new, await, yield, atribuição, ++/--, delete, spread, classe → não.
+ */
+function isPure(e) {
+  if (!e) return true;
+  switch (e.kind) {
+    case ts.SyntaxKind.NumericLiteral:
+    case ts.SyntaxKind.BigIntLiteral:
+    case ts.SyntaxKind.StringLiteral:
+    case ts.SyntaxKind.NoSubstitutionTemplateLiteral:
+    case ts.SyntaxKind.RegularExpressionLiteral:
+    case ts.SyntaxKind.TrueKeyword:
+    case ts.SyntaxKind.FalseKeyword:
+    case ts.SyntaxKind.NullKeyword:
+    case ts.SyntaxKind.ThisKeyword:
+    case ts.SyntaxKind.SuperKeyword:
+    case ts.SyntaxKind.Identifier:
+    case ts.SyntaxKind.MetaProperty:
+    case ts.SyntaxKind.ArrowFunction:
+    case ts.SyntaxKind.FunctionExpression:
+      return true;
+    default:
+      break;
+  }
+  if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isNonNullExpression(e)
+    || ts.isTypeAssertionExpression(e) || (ts.isSatisfiesExpression && ts.isSatisfiesExpression(e))) {
+    return isPure(e.expression);
+  }
+  if (ts.isPropertyAccessExpression(e)) return isPure(e.expression);
+  if (ts.isElementAccessExpression(e)) return isPure(e.expression) && isPure(e.argumentExpression);
+  if (ts.isTemplateExpression(e)) return e.templateSpans.every((sp) => isPure(sp.expression));
+  if (ts.isPrefixUnaryExpression(e)) return PURE_UNARY.has(e.operator) && isPure(e.operand);
+  if (ts.isTypeOfExpression(e) || ts.isVoidExpression(e)) return isPure(e.expression);
+  if (ts.isBinaryExpression(e)) {
+    return !isAssignmentOperator(e.operatorToken.kind) && isPure(e.left) && isPure(e.right);
+  }
+  if (ts.isConditionalExpression(e)) return isPure(e.condition) && isPure(e.whenTrue) && isPure(e.whenFalse);
+  if (ts.isArrayLiteralExpression(e)) return e.elements.every((x) => ts.isOmittedExpression(x) || isPure(x));
+  if (ts.isObjectLiteralExpression(e)) {
+    return e.properties.every((p) => {
+      if (ts.isShorthandPropertyAssignment(p)) return !p.objectAssignmentInitializer;
+      if (ts.isPropertyAssignment(p)) return pureName(p.name) && isPure(p.initializer);
+      if (ts.isMethodDeclaration(p) || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p)) return pureName(p.name);
+      return false; // spread
+    });
+  }
+  return false;
+}
+
+const pureName = (name) => !ts.isComputedPropertyName(name) || isPure(name.expression);
 
 /** Intervalos disjuntos ordenados, com busca binária. */
 function createIntervalSet() {
