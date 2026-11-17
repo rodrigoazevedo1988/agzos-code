@@ -9,13 +9,16 @@ const { GitError } = require('../git/run');
 const { createAccountsService, normalizeRemote, parseGithubRemote } = require('../github/accounts');
 const { createGitHubApi, apiBase } = require('../github/api');
 const { wrap, identityFor } = require('./git');
+const { guardResolver } = require('../lib/window-guards');
 
-function register(ipcMain, { guard, settingsStore, store, app, fetchImpl = globalThis.fetch }) {
+function register(ipcMain, { guard, guardFor, settingsStore, store, app, fetchImpl = globalThis.fetch }) {
   const accounts = createAccountsService({ settingsStore, store, fetchImpl, apiBase });
 
-  function assertCwd(cwd) {
+  const guardOf = guardResolver({ guard, guardFor });
+
+  function assertCwd(cwd, sender) {
     if (typeof cwd !== 'string' || !cwd) throw new GitError('Pasta inválida', { kind: 'invalid' });
-    return guard.assertAllowed(cwd);
+    return guardOf(sender).assertAllowed(cwd);
   }
 
   function apiFor(account) {
@@ -42,8 +45,8 @@ function register(ipcMain, { guard, settingsStore, store, app, fetchImpl = globa
   ipcMain.handle('github:remove', wrap((_e, id) => accounts.remove(String(id))));
   ipcMain.handle('github:setDefault', wrap((_e, id) => accounts.setDefault(String(id))));
 
-  ipcMain.handle('github:accountForCwd', wrap(async (_e, cwd) => {
-    const ctx = await repoContext(assertCwd(cwd));
+  ipcMain.handle('github:accountForCwd', wrap(async (e, cwd) => {
+    const ctx = await repoContext(assertCwd(cwd, e?.sender));
     return {
       remoteKey: ctx.remoteKey,
       github: ctx.github ? { owner: ctx.github.owner, repo: ctx.github.repo } : null,
@@ -51,8 +54,8 @@ function register(ipcMain, { guard, settingsStore, store, app, fetchImpl = globa
     };
   }));
 
-  ipcMain.handle('github:assign', wrap(async (_e, cwd, accountId) => {
-    const ctx = await repoContext(assertCwd(cwd));
+  ipcMain.handle('github:assign', wrap(async (e, cwd, accountId) => {
+    const ctx = await repoContext(assertCwd(cwd, e?.sender));
     if (!ctx.remoteKey) throw new GitError('Este repositório não tem remote do GitHub.', { kind: 'no-remote' });
     return accounts.assign(ctx.remoteKey, accountId == null ? null : String(accountId));
   }));
@@ -67,8 +70,8 @@ function register(ipcMain, { guard, settingsStore, store, app, fetchImpl = globa
    * Publicar no GitHub: init (se preciso) → commit inicial (se não houver) →
    * cria o repositório na API → remote origin → push -u.
    */
-  ipcMain.handle('github:publish', wrap(async (_e, cwd, options = {}) => {
-    const dir = assertCwd(cwd);
+  ipcMain.handle('github:publish', wrap(async (e, cwd, options = {}) => {
+    const dir = assertCwd(cwd, e?.sender);
     const name = String(options?.name || '').trim();
     if (!/^[\w.-]{1,100}$/.test(name)) throw new GitError('Nome de repositório inválido (use letras, números, ".", "-" e "_").', { kind: 'invalid' });
     const account = accounts.get(String(options?.accountId || '')) || accounts.pickDefault();
@@ -106,8 +109,8 @@ function register(ipcMain, { guard, settingsStore, store, app, fetchImpl = globa
   }));
 
   /** Valores iniciais do formulário de PR. */
-  ipcMain.handle('github:prDefaults', wrap(async (_e, cwd) => {
-    const dir = assertCwd(cwd);
+  ipcMain.handle('github:prDefaults', wrap(async (e, cwd) => {
+    const dir = assertCwd(cwd, e?.sender);
     const ctx = await repoContext(dir);
     if (!ctx.github) throw new GitError('O remote deste repositório não é do GitHub.', { kind: 'no-remote' });
     const st = await getStatus(dir);
@@ -133,8 +136,8 @@ function register(ipcMain, { guard, settingsStore, store, app, fetchImpl = globa
   }));
 
   /** Cria o PR da branch atual (faz push antes se a branch não estiver no remoto). */
-  ipcMain.handle('github:createPr', wrap(async (_e, cwd, options = {}) => {
-    const dir = assertCwd(cwd);
+  ipcMain.handle('github:createPr', wrap(async (e, cwd, options = {}) => {
+    const dir = assertCwd(cwd, e?.sender);
     const ctx = await repoContext(dir);
     if (!ctx.github) throw new GitError('O remote deste repositório não é do GitHub.', { kind: 'no-remote' });
     const api = apiFor(ctx.account);

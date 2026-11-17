@@ -7,7 +7,14 @@
 
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+// Token desta janela para o protocolo agzos-file (host da URL). O main só serve
+// caminhos liberados no guard da janela dona do token (lib/window-guards.js).
+let fileHost = 'local';
+try { fileHost = ipcRenderer.sendSync('window:fileToken') || 'local'; } catch { /* sem main */ }
+
 contextBridge.exposeInMainWorld('agzos', {
+  fileHost,
+
   // App info
   app: {
     info: () => ipcRenderer.invoke('app:info'),
@@ -214,7 +221,7 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
-  // Workspace (libera a pasta no guard de arquivos; pasta por janela)
+  // Workspace (libera a pasta no guard desta janela; trocar/fechar revoga a anterior)
   workspace: {
     open: (p) => ipcRenderer.invoke('workspace:open', p),
     close: () => ipcRenderer.invoke('workspace:close'),
@@ -235,6 +242,15 @@ contextBridge.exposeInMainWorld('agzos', {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (s) => ipcRenderer.invoke('settings:save', s),
     importVSCode: (editor) => ipcRenderer.invoke('settings:import-vscode', editor),
+    // Outra janela salvou: cb(settings) atualiza a cópia local; depois confirma ao main
+    // (o merge do settings:save deixa de considerar a cópia anterior).
+    onChanged: (cb) => {
+      const handler = (_e, s, seq) => {
+        try { cb(s); } finally { ipcRenderer.send('settings:ack', seq); }
+      };
+      ipcRenderer.on('settings:changed', handler);
+      return () => ipcRenderer.removeListener('settings:changed', handler);
+    },
   },
 
   // Menu events (main → renderer)

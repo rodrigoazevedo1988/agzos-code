@@ -10,7 +10,9 @@
  * Arquivos alterados avisam o editor pelo mesmo evento do agente
  * ('agent:event' { type: 'file_changed', path }), que recarrega a aba ou mostra o conflito.
  *
- * Todo caminho passa pelo path-guard. deps: { guard, settingsStore, userDataDir, workerHost }
+ * Todo caminho passa pelo path-guard da janela que pediu (guardFor(sender)); raiz padrão =
+ * pasta daquela janela (getWindowRoot(sender)). deps: { guard | guardFor, getWindowRoot?,
+ * settingsStore, userDataDir, workerHost }
  */
 
 const fs = require('fs');
@@ -19,6 +21,7 @@ const { createCheckpointStore } = require('../agent/checkpoints');
 const {
   createBroomEngine, optionsFromSettings, summarize, setDefaultEngine,
 } = require('../modules/broom/engine');
+const { guardResolver } = require('../lib/window-guards');
 
 const CHANNELS = ['analyzeFile', 'cleanFile', 'scanWorkspace', 'cleanWorkspace', 'cancel', 'undo'];
 
@@ -27,12 +30,13 @@ function isDirectory(p) {
 }
 
 function register(ipcMain, {
-  guard, settingsStore, userDataDir, workerHost,
+  guard, guardFor, getWindowRoot, settingsStore, userDataDir, workerHost,
   engine = createBroomEngine({ workerHost }),
   checkpoints = createCheckpointStore({ dir: userDataDir ? path.join(userDataDir, 'broom-checkpoints') : null, maxCount: 20 }),
 } = {}) {
   setDefaultEngine(engine, () => settingsStore.load());
   const running = new Map();
+  const guardOf = guardResolver({ guard, guardFor });
 
   function options() {
     const o = optionsFromSettings(settingsStore.load());
@@ -40,18 +44,24 @@ function register(ipcMain, {
     return o;
   }
 
-  function resolve(p) {
+  function resolve(sender, p) {
     if (typeof p !== 'string' || !p || p.includes('\0')) throw new Error('Caminho inválido');
-    return guard.assertAllowed(p);
+    return guardOf(sender).assertAllowed(p);
   }
 
-  function getRoot(explicit) {
+  function getRoot(sender, explicit) {
     const candidates = [];
     if (typeof explicit === 'string' && explicit) candidates.push(explicit);
-    const recent = settingsStore.load().recentFolders;
-    if (Array.isArray(recent) && typeof recent[0] === 'string') candidates.push(recent[0]);
+    if (typeof getWindowRoot === 'function') {
+      const own = sender ? getWindowRoot(sender) : null;
+      if (typeof own === 'string' && own) candidates.push(own);
+    } else {
+      const recent = settingsStore.load().recentFolders;
+      if (Array.isArray(recent) && typeof recent[0] === 'string') candidates.push(recent[0]);
+    }
+    const g = guardOf(sender);
     for (const c of candidates) {
-      if (path.isAbsolute(c) && guard.isAllowed(c) && isDirectory(c)) return guard.assertAllowed(c);
+      if (path.isAbsolute(c) && g.isAllowed(c) && isDirectory(c)) return g.assertAllowed(c);
     }
     throw new Error('Abra uma pasta de projeto para usar a Vassoura.');
   }
@@ -71,14 +81,14 @@ function register(ipcMain, {
     return { signal: ac.signal, done: () => { if (running.get(id) === ac) running.delete(id); } };
   }
 
-  ipcMain.handle('broom:analyzeFile', async (_event, filePath) => {
-    const abs = resolve(filePath);
+  ipcMain.handle('broom:analyzeFile', async (event, filePath) => {
+    const abs = resolve(event?.sender, filePath);
     const { result } = await engine.analyzeFile(abs, options());
     return summarize(result);
   });
 
   ipcMain.handle('broom:cleanFile', async (event, filePath, opts = {}) => {
-    const abs = resolve(filePath);
+    const abs = resolve(event?.sender, filePath);
     const editIds = Array.isArray(opts?.editIds) ? opts.editIds : undefined;
     const p = await engine.plan(abs, options(), { editIds });
     if (!p.edits.length) return { checkpointId: null, removed: 0, ...(p.error ? { error: p.error } : {}) };
@@ -93,7 +103,7 @@ function register(ipcMain, {
   ipcMain.handle('broom:scanWorkspace', async (event, requestId, root) => {
     const { signal, done } = track(requestId);
     try {
-      const dir = getRoot(root);
+      const dir = getRoot(event?.sender, root);
       const r = await engine.scan(dir, options(), {
         signal,
         onProgress: (p) => emit(event.sender, requestId, { type: 'progress', ...p }),
@@ -108,10 +118,10 @@ function register(ipcMain, {
 
   ipcMain.handle('broom:cleanWorkspace', async (event, requestId, paths) => {
     if (!Array.isArray(paths)) throw new Error('Lista de arquivos inválida');
-    const abs = paths.map(resolve); // valida tudo antes de alterar qualquer arquivo
+    const abs = paths.map((p) => resolve(event?.sender, p)); // valida tudo antes de alterar qualquer arquivo
     const opts = options();
     const { signal, done } = track(requestId);
-    const cp = checkpoints.create({ root: getRootOrNull() });
+    const cp = checkpoints.create({ root: getRootOrNull(event?.sender) });
     let files = 0;
     let removed = 0;
     try {
@@ -136,8 +146,8 @@ function register(ipcMain, {
     return result;
   });
 
-  function getRootOrNull() {
-    try { return getRoot(); } catch { return null; }
+  function getRootOrNull(sender) {
+    try { return getRoot(sender); } catch { return null; }
   }
 
   ipcMain.handle('broom:cancel', (_event, requestId) => {

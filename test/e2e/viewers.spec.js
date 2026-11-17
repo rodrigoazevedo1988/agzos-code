@@ -75,7 +75,7 @@ test('svg abre como <img> (nunca inline) e tem "Abrir como texto"', async () => 
   const viewer = page.locator('#viewer-host .viewer-image');
   await expect(viewer).toBeVisible();
   await expect.poll(() => viewer.locator('img').evaluate((el) => el.naturalWidth)).toBe(40);
-  expect(await viewer.locator('img').getAttribute('src')).toMatch(/^agzos-file:\/\/local\//);
+  expect(await viewer.locator('img').getAttribute('src')).toMatch(/^agzos-file:\/\/[0-9a-f]{32}\//); // host = token da janela
   expect(await page.locator('#viewer-host svg rect').count()).toBe(0);
   await viewer.locator('[data-action="open-text"]').click();
   await expect(page.locator('#viewer-host')).toBeHidden();
@@ -135,7 +135,7 @@ test('markdown: pré-visualização ao lado atualiza ao digitar', async () => {
   await expect(side.locator('table td').first()).toHaveText('1');
   await expect(side.locator('input[type="checkbox"]')).toHaveCount(2);
   await expect.poll(() => side.locator('img').evaluate((el) => el.naturalWidth)).toBe(32);
-  expect(await side.locator('img').getAttribute('src')).toMatch(/^agzos-file:\/\/local\/.*tiny\.png/);
+  expect(await side.locator('img').getAttribute('src')).toMatch(/^agzos-file:\/\/[0-9a-f]{32}\/.*tiny\.png/);
 
   await page.locator('#editor-host .monaco-editor textarea').focus();
   await page.keyboard.press('Control+End');
@@ -189,12 +189,17 @@ test('formato sem pré-visualização (heic) mostra fallback com ações', async
 });
 
 test('protocolo agzos-file: 200 dentro do workspace, 403 fora', async () => {
-  const { app, ws, outside } = ctx;
-  const url = (p) => 'agzos-file://local' + p.split('/').map(encodeURIComponent).join('/');
+  const { app, page, ws, outside } = ctx;
+  const host = await page.evaluate(() => window.agzos.fileHost);
+  expect(host).toMatch(/^[0-9a-f]{32}$/);
+  const url = (p, h = host) => `agzos-file://${h}` + p.split('/').map(encodeURIComponent).join('/');
   const status = (u) => app.evaluate(async ({ net }, target) => (await net.fetch(target)).status, u);
   expect(await status(url(path.join(ws, 'tiny.png')))).toBe(200);
   expect(await status(url(path.join(outside, 'segredo.png')))).toBe(403);
-  expect(await status(`agzos-file://local${ws}/../${path.basename(outside)}/segredo.png`)).toBe(403);
+  expect(await status(`agzos-file://${host}${ws}/../${path.basename(outside)}/segredo.png`)).toBe(403);
+  // Sem o token da janela (host antigo "local" ou token inventado): 403
+  expect(await status(url(path.join(ws, 'tiny.png'), 'local'))).toBe(403);
+  expect(await status(url(path.join(ws, 'tiny.png'), '0'.repeat(32)))).toBe(403);
 });
 
 test('sem erros de página', async () => {

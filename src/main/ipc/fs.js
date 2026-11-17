@@ -1,11 +1,13 @@
 /**
- * IPC: sistema de arquivos (fs:*). Operações restritas às raízes liberadas pelo guard.
+ * IPC: sistema de arquivos (fs:*). Operações restritas às raízes liberadas no guard
+ * da janela que pediu (event.sender).
  * exists/stat/homeDir não passam pelo guard (só checam metadados).
  */
 
 const path = require('path');
 const fsp = require('fs').promises;
 const os = require('os');
+const { guardResolver } = require('../lib/window-guards');
 
 // Heurística de binário (como git/VS Code): byte NUL nos primeiros 8 KB.
 async function looksBinary(filePath) {
@@ -19,10 +21,12 @@ async function looksBinary(filePath) {
   }
 }
 
-function register(ipcMain, { guard, shell }) {
-  ipcMain.handle('fs:readDir', async (_evt, dirPath) => {
+function register(ipcMain, { guard, guardFor, shell }) {
+  // Guard da janela que pediu (várias janelas: lib/window-guards.js).
+  const guardOf = guardResolver({ guard, guardFor });
+  ipcMain.handle('fs:readDir', async (evt, dirPath) => {
     if (!dirPath) throw new Error('dirPath required');
-    guard.assertAllowed(dirPath);
+    guardOf(evt?.sender).assertAllowed(dirPath);
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
     return entries
       .filter((e) => !e.name.startsWith('.') || e.name === '.gitignore')
@@ -35,9 +39,9 @@ function register(ipcMain, { guard, shell }) {
   });
 
   // opts.detectBinary: devolve { binary: true, size } em vez de despejar bytes como texto.
-  ipcMain.handle('fs:readFile', async (_evt, filePath, opts) => {
+  ipcMain.handle('fs:readFile', async (evt, filePath, opts) => {
     if (!filePath) throw new Error('filePath required');
-    guard.assertAllowed(filePath);
+    guardOf(evt?.sender).assertAllowed(filePath);
     const stat = await fsp.stat(filePath);
     const detect = !!(opts && opts.detectBinary);
     if (detect && stat.isFile() && await looksBinary(filePath)) {
@@ -53,41 +57,41 @@ function register(ipcMain, { guard, shell }) {
   });
 
   // Visualizadores: abrir no app padrão do SO / revelar na pasta (só dentro do guard).
-  ipcMain.handle('fs:openPath', async (_evt, p) => {
+  ipcMain.handle('fs:openPath', async (evt, p) => {
     if (typeof p !== 'string' || !p) throw new Error('path required');
-    const real = guard.assertAllowed(p);
+    const real = guardOf(evt?.sender).assertAllowed(p);
     const err = await shell.openPath(real);
     if (err) throw new Error(err);
     return true;
   });
 
-  ipcMain.handle('fs:reveal', async (_evt, p) => {
+  ipcMain.handle('fs:reveal', async (evt, p) => {
     if (typeof p !== 'string' || !p) throw new Error('path required');
-    shell.showItemInFolder(guard.assertAllowed(p));
+    shell.showItemInFolder(guardOf(evt?.sender).assertAllowed(p));
     return true;
   });
 
   // Arquivo solto do SO na janela. O preload obtém o caminho com
   // webUtils.getPathForFile(File), então o renderer não consegue forjar um caminho
   // arbitrário por aqui (só via File real de um drop). Só arquivos, nunca pastas.
-  ipcMain.handle('fs:allowDropped', async (_evt, p) => {
+  ipcMain.handle('fs:allowDropped', async (evt, p) => {
     if (typeof p !== 'string' || !p || !path.isAbsolute(p)) return null;
     let st;
     try { st = await fsp.stat(p); } catch { return null; }
     if (!st.isFile()) return null;
-    guard.allow(p);
+    guardOf(evt?.sender).allow(p);
     return { path: p, isFile: true };
   });
 
-  ipcMain.handle('fs:writeFile', async (_evt, filePath, content) => {
+  ipcMain.handle('fs:writeFile', async (evt, filePath, content) => {
     if (!filePath) throw new Error('filePath required');
-    guard.assertAllowed(filePath);
+    guardOf(evt?.sender).assertAllowed(filePath);
     await fsp.writeFile(filePath, content, 'utf-8');
     return true;
   });
 
-  ipcMain.handle('fs:mkdir', async (_evt, dirPath) => {
-    guard.assertAllowed(dirPath);
+  ipcMain.handle('fs:mkdir', async (evt, dirPath) => {
+    guardOf(evt?.sender).assertAllowed(dirPath);
     await fsp.mkdir(dirPath, { recursive: true });
     return true;
   });
@@ -105,23 +109,23 @@ function register(ipcMain, { guard, shell }) {
     }
   });
 
-  ipcMain.handle('fs:delete', async (_evt, p) => {
-    guard.assertAllowed(p);
+  ipcMain.handle('fs:delete', async (evt, p) => {
+    guardOf(evt?.sender).assertAllowed(p);
     await fsp.rm(p, { recursive: true, force: true });
     return true;
   });
 
-  ipcMain.handle('fs:rename', async (_evt, oldP, newP) => {
-    guard.assertAllowed(oldP);
-    guard.assertAllowed(newP);
+  ipcMain.handle('fs:rename', async (evt, oldP, newP) => {
+    guardOf(evt?.sender).assertAllowed(oldP);
+    guardOf(evt?.sender).assertAllowed(newP);
     await fsp.rename(oldP, newP);
     return true;
   });
 
-  ipcMain.handle('fs:findFiles', async (_evt, dirPath, maxResultsArg = 1000) => {
+  ipcMain.handle('fs:findFiles', async (evt, dirPath, maxResultsArg = 1000) => {
     if (!dirPath) return [];
     // Varre o caminho real validado pelo guard (não o dirPath cru do renderer).
-    const rootDir = guard.assertAllowed(dirPath);
+    const rootDir = guardOf(evt?.sender).assertAllowed(dirPath);
     const maxResults = Math.min(Math.max(Number(maxResultsArg) || 1000, 1), 5000);
 
     const results = [];

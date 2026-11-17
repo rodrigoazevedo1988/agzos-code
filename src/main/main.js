@@ -61,7 +61,7 @@ function sendToTarget(channel, ...args) {
 }
 
 // Visualizadores (imagem/vídeo/áudio/PDF): agzos-file:// serve só caminhos liberados
-// no path-guard. Precisa ser registrado antes do app ficar pronto.
+// no path-guard da janela dona do token (host da URL). Registrado antes do app ficar pronto.
 const fileProtocol = require('./lib/file-protocol');
 protocol.registerSchemesAsPrivileged([{
   scheme: fileProtocol.SCHEME,
@@ -123,6 +123,8 @@ function createMainWindow() {
     Object.assign(winOpts, { x: x + 30, y: y + 30 });
   }
   const mainWindow = new BrowserWindow(winOpts);
+  // Permissões de arquivo desta janela (descartadas quando ela fecha).
+  windowGuards.register(mainWindow.webContents);
 
   // macOS: menu nativo na barra do sistema (a barra in-app fica escondida).
   // Windows/Linux: a barra de menus é a do renderer (menubar.js); sem menu
@@ -256,16 +258,24 @@ const deps = {
   APP_NAME,
   getWindowFor: (evt) => (evt?.sender ? BrowserWindow.fromWebContents(evt.sender) : targetWindow()),
 };
-const { createPathGuard } = require('./lib/path-guard');
-const guard = createPathGuard();
-require('./ipc/fs').register(ipcMain, { guard, shell });
-require('./ipc/dialog').register(ipcMain, { ...deps, guard });
+// Path-guard por janela (como no VS Code): cada janela só acessa a pasta aberta nela,
+// arquivos que ela abriu por diálogo/arrastar e caminhos liberados para ela.
+const { createWindowGuards } = require('./lib/window-guards');
+const windowGuards = createWindowGuards();
+const { guardFor } = windowGuards;
+ipcMain.on('window:fileToken', (evt) => { evt.returnValue = windowGuards.tokenFor(evt.sender); });
+require('./ipc/fs').register(ipcMain, { guardFor, shell });
+require('./ipc/dialog').register(ipcMain, { ...deps, guardFor });
 require('./ipc/term').register(ipcMain);
-require('./ipc/ssh').register(ipcMain, { guard });
+require('./ipc/ssh').register(ipcMain, { guardFor });
 require('./ipc/ports').register(ipcMain);
-const settingsStore = require('./ipc/settings').register(ipcMain, deps);
+const settingsStore = require('./ipc/settings').register(ipcMain, {
+  ...deps,
+  // settings:changed vai às outras janelas quando uma salva.
+  listWebContents: () => BrowserWindow.getAllWindows().filter((w) => w !== splashWindow && !w.isDestroyed()).map((w) => w.webContents),
+});
 const workspaces = require('./ipc/workspace').register(ipcMain, {
-  guard,
+  guardFor,
   getRecentFolders: () => settingsStore.load().recentFolders || [],
   addRecentFolder: (folderPath) => {
     const s = settingsStore.load();
@@ -280,8 +290,13 @@ require('./ipc/window').register(ipcMain, {
   quit: () => app.quit(),
 });
 // Só em testes E2E: libera uma pasta temporária sem passar pelo diálogo nativo.
+// Sem id: em todas as janelas abertas (compatível com os testes de 1 janela);
+// com webContents.id: só naquela janela.
 if (process.env.AGZOS_TEST === '1') {
-  global.__agzosAllowRoot = (p) => guard.allow(p);
+  global.__agzosAllowRoot = (p, webContentsId) => {
+    if (webContentsId === undefined) windowGuards.allowAll(p);
+    else guardFor(webContentsId).allow(p);
+  };
 }
 const { createSecretStore } = require('./lib/secrets');
 const { migrateLegacySecrets } = require('./lib/settings');
@@ -300,18 +315,21 @@ const secretStore = createSecretStore({
 });
 require('./ipc/secrets').register(ipcMain, { store: secretStore });
 // Git + GitHub: contas (tokens só no main) e operações git do sistema.
-const githubAccounts = require('./ipc/github').register(ipcMain, { guard, settingsStore, store: secretStore, app });
-require('./ipc/git').register(ipcMain, { guard, accounts: githubAccounts });
+const githubAccounts = require('./ipc/github').register(ipcMain, { guardFor, settingsStore, store: secretStore, app });
+require('./ipc/git').register(ipcMain, { guardFor, accounts: githubAccounts });
 const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
-// Agente (tools no workspace): chave da IA só no main; raiz via guard.
+// Agente (tools no workspace): chave da IA só no main; raiz e guard da janela que pediu.
 const agentSessions = require('./ipc/agent').register(ipcMain, {
-  settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData'),
+  settingsStore, store: secretStore, guardFor, userDataDir: app.getPath('userData'),
   getWindowRoot: (sender) => workspaces.rootFor(sender.id),
 });
 // Módulos nativos: um processo utilitário compartilhado, criado sob demanda.
 const { createWorkerHost } = require('./modules/worker-host');
 const modulesWorker = createWorkerHost({ script: path.join(__dirname, 'modules/worker.js') });
-const modulesDeps = { guard, settingsStore, userDataDir: app.getPath('userData'), workerHost: modulesWorker };
+const modulesDeps = {
+  guardFor,
+  getWindowRoot: (sender) => workspaces.rootFor(sender.id),
+  settingsStore, userDataDir: app.getPath('userData'), workerHost: modulesWorker };
 require('./ipc/broom').register(ipcMain, modulesDeps);
 require('./ipc/envvault').register(ipcMain, modulesDeps);
 require('./ipc/chat-history').register(ipcMain, deps);
@@ -328,7 +346,7 @@ ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
-  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({ guard }));
+  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({ guardForHost: windowGuards.guardForToken }));
 
   // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
   const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);

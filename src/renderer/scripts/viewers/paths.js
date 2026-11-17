@@ -5,11 +5,18 @@
 
 const isWinPath = (p) => /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith('\\\\');
 
+// Host = token desta janela (preload: window.agzos.fileHost). O main só serve
+// caminhos liberados no guard da janela dona do token (ver lib/window-guards.js).
+function currentHost() {
+  const h = globalThis.window?.agzos?.fileHost;
+  return typeof h === 'string' && /^[0-9a-f]+$/.test(h) ? h : 'local';
+}
+
 /** URL agzos-file:// para um caminho absoluto. `version` (mtime) fura o cache. */
-export function toFileUrl(absPath, version) {
+export function toFileUrl(absPath, version, host = currentHost()) {
   const p = String(absPath || '');
   const segments = isWinPath(p) ? p.split(/[\\/]/) : p.split('/').slice(1);
-  const url = 'agzos-file://local/' + segments.map(encodeURIComponent).join('/');
+  const url = `agzos-file://${host}/` + segments.map(encodeURIComponent).join('/');
   return version != null ? `${url}?v=${encodeURIComponent(version)}` : url;
 }
 

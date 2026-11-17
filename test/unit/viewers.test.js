@@ -90,6 +90,12 @@ test('toFileUrl gera URL agzos-file codificada (POSIX e Windows)', async () => {
   assert.equal(toFileUrl('/a/x.png', 123), 'agzos-file://local/a/x.png?v=123');
 });
 
+test('toFileUrl usa o host (token da janela) informado', async () => {
+  const { toFileUrl } = await load('paths');
+  assert.equal(toFileUrl('/a/x.png', null, 'ab12'), 'agzos-file://ab12/a/x.png');
+  assert.equal(toFileUrl('/a/x.png', 7, 'ab12'), 'agzos-file://ab12/a/x.png?v=7');
+});
+
 test('resolveMarkdownPath resolve caminhos relativos de imagens', async () => {
   const { resolveMarkdownPath } = await load('paths');
   assert.equal(resolveMarkdownPath('/ws/docs/README.md', 'img/a.png'), '/ws/docs/img/a.png');

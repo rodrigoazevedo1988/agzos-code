@@ -2,7 +2,7 @@
  * IPC do agente (window.agzos.agent): agent:run / approve / cancel / undo / setMode.
  * Eventos main → renderer no canal 'agent:event' (requestId, evt).
  *
- * Raiz do agente: payload.root (se liberada no guard) ou a pasta da janela que
+ * Raiz do agente: payload.root (se liberada no guard da janela que pediu) ou a pasta da janela que
  * pediu (getWindowRoot(sender), várias janelas). Sem getWindowRoot, cai na pasta
  * aberta por último (recentFolders[0], gravada pelo workspace:open). Sempre liberada.
  * A chave da API vem do cofre (como ipc/ai.js) e nunca vai ao renderer nem ao modelo.
@@ -14,13 +14,15 @@ const { createAgentSessions, isDirectory } = require('../agent/session');
 const { createCheckpointStore } = require('../agent/checkpoints');
 const { MODES } = require('../agent/loop');
 const { getModuleTools } = require('../modules/agent-tools');
+const { guardResolver } = require('../lib/window-guards');
 
 function register(ipcMain, {
-  settingsStore, store, guard, userDataDir, fetchImpl = fetch, getWindowRoot,
+  settingsStore, store, guard, guardFor, userDataDir, fetchImpl = fetch, getWindowRoot,
   checkpoints = createCheckpointStore({ dir: userDataDir ? path.join(userDataDir, 'agent-checkpoints') : null }),
   sessionOptions = {},
 }) {
   const sessions = new Map();
+  const guardOf = guardResolver({ guard, guardFor });
 
   function findProfile(id) {
     const settings = settingsStore.load();
@@ -37,8 +39,9 @@ function register(ipcMain, {
       const recent = settingsStore.load().recentFolders;
       if (Array.isArray(recent) && typeof recent[0] === 'string') candidates.push(recent[0]);
     }
+    const g = guardOf(sender);
     for (const candidate of candidates) {
-      if (path.isAbsolute(candidate) && guard.isAllowed(candidate) && isDirectory(candidate)) return path.resolve(candidate);
+      if (path.isAbsolute(candidate) && g.isAllowed(candidate) && isDirectory(candidate)) return path.resolve(candidate);
     }
     return null;
   }

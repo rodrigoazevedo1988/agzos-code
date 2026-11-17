@@ -46,6 +46,11 @@ function createPathGuard({
       roots.add(resolveReal(p));
     },
 
+    // Tira uma raiz liberada antes (ex.: pasta antiga ao trocar de pasta na janela).
+    revoke(p) {
+      roots.delete(resolveReal(p));
+    },
+
     isAllowed,
 
     // Retorna o caminho resolvido para o chamador usar no lugar do original.
