@@ -178,6 +178,14 @@ function formatSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
+/** Ferramentas de módulos podem declarar `input_schema` (estilo Anthropic); os providers leem `parameters`. */
+function normalizeDefinition(def) {
+  const schema = def.parameters || def.input_schema || { type: 'object', properties: {} };
+  const out = { ...def, parameters: schema };
+  delete out.input_schema;
+  return out;
+}
+
 function createToolbox({
   root, checkpoint, platform = process.platform, runCommand = defaultRunCommand,
   shell, env, secrets = [], extraTools = [],
@@ -582,7 +590,7 @@ function createToolbox({
     if (Object.hasOwn(PREPARE, name) || EXTRA.has(name)) continue;
     EXTRA.set(name, tool);
   }
-  const definitions = EXTRA.size ? [...DEFINITIONS, ...[...EXTRA.values()].map((t) => t.definition)] : DEFINITIONS;
+  const definitions = EXTRA.size ? [...DEFINITIONS, ...[...EXTRA.values()].map((t) => normalizeDefinition(t.definition))] : DEFINITIONS;
 
   function adaptExtra(tool, input, prepared) {
     if (!prepared || typeof prepared.run !== 'function') throw new ToolError(`Ferramenta ${tool.definition.name} inválida`);

@@ -293,3 +293,16 @@ test('extra: gancho commandRisk marca run_command como risco (síncrono ou assí
   const brokenBox = createToolbox({ root, checkpoint: cp, extraTools: [mk(() => { throw new Error('x'); })] });
   assert.equal(brokenBox.prepare('run_command', { command: 'echo 1' }).risky, false);
 });
+
+test('extraTools com input_schema chegam aos providers como parameters', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-schema-')));
+  const schema = { type: 'object', properties: { x: { type: 'string' } } };
+  const box = createToolbox({
+    root,
+    checkpoint: { record() {} },
+    extraTools: [{ definition: { name: 'x_tool', description: 'd', input_schema: schema }, kind: 'read', prepare: () => ({ title: 't', run: async () => ({ summary: 'ok' }) }) }],
+  });
+  const def = box.definitions.find((d) => d.name === 'x_tool');
+  assert.deepEqual(def.parameters, schema);
+  assert.equal(def.input_schema, undefined);
+});
