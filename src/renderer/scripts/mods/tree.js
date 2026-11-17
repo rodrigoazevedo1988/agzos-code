@@ -59,7 +59,12 @@ export function openTreeDialog(dir = State.workspaceRoot) {
 
   let current = '';
   let seq = 0;
-  async function refresh() {
+  let pending = null;
+  function refresh() {
+    pending = generate();
+    return pending;
+  }
+  async function generate() {
     const my = ++seq;
     const d = Number.parseInt(depth.value, 10);
     try {
@@ -81,7 +86,12 @@ export function openTreeDialog(dir = State.workspaceRoot) {
     }
   }
   let timer = null;
-  const schedule = () => { clearTimeout(timer); timer = setTimeout(refresh, 120); };
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { timer = null; refresh(); }, 120); };
+  /** Ações usam a árvore das opções atuais: espera a prévia pendente (ou agendada) terminar. */
+  async function ensureFresh() {
+    if (timer) { clearTimeout(timer); timer = null; await refresh(); return; }
+    if (pending) await pending;
+  }
   for (const el of [depth, gitignore, dirsOnly, hidden]) {
     el.addEventListener(el === depth ? 'input' : 'change', schedule);
   }
@@ -89,13 +99,15 @@ export function openTreeDialog(dir = State.workspaceRoot) {
 
   const copy = button('Copiar', {
     onClick: async () => {
+      await ensureFresh();
       if (!current) return;
       await copyText(current);
       toast('Árvore copiada.', 'success', 1500);
     },
   });
   const insert = button('Inserir no cursor', {
-    onClick: () => {
+    onClick: async () => {
+      await ensureFresh();
       const editor = getActiveEditor();
       if (!current || !editor || !State.activePath) { toast('Abra um arquivo para inserir a árvore.', 'info'); return; }
       ui.close();
@@ -107,6 +119,7 @@ export function openTreeDialog(dir = State.workspaceRoot) {
   const create = button('Criar ARVORE.md', {
     primary: true,
     onClick: async () => {
+      await ensureFresh();
       if (!current) return;
       const file = joinPath(dir, 'ARVORE.md');
       try {
