@@ -307,7 +307,7 @@ const { createAttachmentStore } = require('./ai/attachments');
 const chatAttachments = createAttachmentStore({ dir: path.join(app.getPath('userData'), 'chat-attachments') });
 const aiSessions = require('./ipc/ai').register(ipcMain, {
   settingsStore, store: secretStore, attachments: chatAttachments, guard, dialog,
-  getMainWindow: () => mainWindow, userDataDir: app.getPath('userData'),
+  getMainWindow: () => BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null, userDataDir: app.getPath('userData'),
 });
 // Agente (tools no workspace): chave da IA só no main; raiz via guard.
 const agentSessions = require('./ipc/agent').register(ipcMain, {
