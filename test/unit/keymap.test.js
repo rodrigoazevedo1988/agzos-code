@@ -115,3 +115,31 @@ test('matchShortcut: Ctrl+Shift+X abre o hub Módulos Agzos', async () => {
   assert.equal(matchShortcut(ev({ key: 'X', code: 'KeyX', ctrlKey: true, shiftKey: true })), 'view.modules');
   assert.equal(matchShortcut(ev({ key: 'x', code: 'KeyX', metaKey: true, shiftKey: true }), { isMac: true }), 'view.modules');
 });
+
+test('matchShortcut: atalhos de janela/arquivo da barra de menus (antes só no menu nativo)', async () => {
+  const { matchShortcut, shouldHandleInTarget } = await load('keymap.js');
+  assert.equal(matchShortcut(ev({ key: 'N', code: 'KeyN', ctrlKey: true, shiftKey: true })), 'window.new');
+  assert.equal(matchShortcut(ev({ key: 'n', code: 'KeyN', ctrlKey: true })), 'file.newUntitled');
+  assert.equal(matchShortcut(ev({ key: 'o', code: 'KeyO', ctrlKey: true })), 'file.openFolder');
+  assert.equal(matchShortcut(ev({ key: 'S', code: 'KeyS', ctrlKey: true, shiftKey: true })), 'file.saveAs');
+  assert.equal(matchShortcut(ev({ key: 'B', code: 'KeyB', ctrlKey: true, shiftKey: true })), 'task.build');
+  assert.equal(matchShortcut(ev({ key: 'I', code: 'KeyI', ctrlKey: true, shiftKey: true })), 'window.devtools');
+  assert.equal(matchShortcut(ev({ key: 'q', code: 'KeyQ', ctrlKey: true })), 'app.quit');
+  assert.equal(matchShortcut(ev({ key: 'F11', code: 'F11' })), 'window.fullscreen');
+  assert.equal(matchShortcut(ev({ key: 'F11', code: 'F11', shiftKey: true })), null);
+  // Nova Janela vale com foco no terminal; Ctrl+N/Ctrl+Q não (o shell usa)
+  assert.equal(shouldHandleInTarget('window.new', true), true);
+  assert.equal(shouldHandleInTarget('file.newUntitled', true), false);
+  assert.equal(shouldHandleInTarget('app.quit', true), false);
+});
+
+test('isMenuMnemonicKey: Alt+letra só sem Ctrl/Shift/Meta e fora dos atalhos Alt existentes', async () => {
+  const { isMenuMnemonicKey } = await load('keymap.js');
+  assert.equal(isMenuMnemonicKey(ev({ key: 'a', code: 'KeyA', altKey: true })), 'a');
+  assert.equal(isMenuMnemonicKey(ev({ key: 'å', code: 'KeyA', altKey: true })), 'a');
+  assert.equal(isMenuMnemonicKey(ev({ key: 'z', code: 'KeyZ', altKey: true })), null);
+  assert.equal(isMenuMnemonicKey(ev({ key: 'F', code: 'KeyF', altKey: true, shiftKey: true })), null);
+  assert.equal(isMenuMnemonicKey(ev({ key: 'a', code: 'KeyA', altKey: true, ctrlKey: true })), null);
+  assert.equal(isMenuMnemonicKey(ev({ key: 'a', code: 'KeyA' })), null);
+  assert.equal(isMenuMnemonicKey(ev({ key: 'ArrowUp', code: 'ArrowUp', altKey: true })), null);
+});

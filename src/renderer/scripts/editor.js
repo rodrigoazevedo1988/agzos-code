@@ -127,6 +127,8 @@ export async function setupEditor() {
     insertSpaces: edCfg.insertSpaces !== false,
     wordWrap: edCfg.wordWrap || 'off',
     wordWrapColumn: Number(edCfg.wordWrapColumn) || 80,
+    columnSelection: !!edCfg.columnSelection,
+    multiCursorModifier: edCfg.multiCursorModifier === 'ctrlCmd' ? 'ctrlCmd' : 'alt',
   });
 
   const aiActions = [
@@ -172,13 +174,13 @@ export async function setupEditor() {
       clearTimeout(autoSaveTimers.get(path));
       autoSaveTimers.set(path, setTimeout(() => {
         autoSaveTimers.delete(path);
-        if (State.files.get(path)?.dirty) saveFile(path);
+        if (State.files.get(path)?.dirty && !isUntitled(path)) saveFile(path);
       }, Number(State.settings.editor?.autoSaveDelay) || 1000));
     }
   });
 
   activeEditor.onDidBlurEditorWidget(() => {
-    if (State.settings.editor?.autoSave === 'onFocusChange' && State.files.get(State.activePath)?.dirty) {
+    if (State.settings.editor?.autoSave === 'onFocusChange' && State.files.get(State.activePath)?.dirty && !isUntitled(State.activePath)) {
       saveActive();
     }
   });
@@ -209,7 +211,7 @@ export async function openFile(filePath, contentOverride) {
   let file = State.files.get(filePath);
   if (!file) {
     try {
-      const { content, size, mtime } = contentOverride
+      const { content, size, mtime } = typeof contentOverride === 'string'
         ? { content: contentOverride, size: 0, mtime: 0 }
         : await window.agzos.fs.readFile(filePath);
       file = { path: filePath, content, size, mtime, dirty: false };
@@ -240,7 +242,51 @@ function setModel(file) {
 
 export async function saveActive() {
   if (!State.activePath) return;
+  // Sem título: ainda não tem caminho no disco → Salvar Como
+  if (isUntitled(State.activePath)) {
+    const { saveFileAs } = await import('./command-palette.js');
+    await saveFileAs();
+    return;
+  }
   await saveFile(State.activePath);
+}
+
+/* --------------------------------------------------------------------------
+   Arquivos sem título (Arquivo › Novo Arquivo de Texto)
+   -------------------------------------------------------------------------- */
+const UNTITLED_PREFIX = 'untitled:';
+
+export function isUntitled(p) {
+  return typeof p === 'string' && p.startsWith(UNTITLED_PREFIX);
+}
+
+/** Abre uma aba "Sem título-N" vazia (salvar pede o caminho). */
+export async function newUntitledFile() {
+  let n = 1;
+  while (State.files.has(`${UNTITLED_PREFIX}Sem título-${n}`)) n++;
+  const p = `${UNTITLED_PREFIX}Sem título-${n}`;
+  await openFile(p, '');
+  activeEditor?.focus();
+  return p;
+}
+
+/** Tira o arquivo das abas sem perguntar (ex.: sem título já salvo em outro caminho). */
+export function discardFile(filePath) {
+  if (!State.files.has(filePath)) return;
+  State.files.delete(filePath);
+  if (conflicts.delete(filePath)) syncConflictBar();
+  if (State.activePath === filePath) State.activePath = null;
+  renderTabs();
+}
+
+/** Recarrega do disco descartando as alterações (pede confirmação se sujo). */
+export async function revertFile(filePath = State.activePath) {
+  if (!filePath || isUntitled(filePath) || !State.files.has(filePath)) return false;
+  const file = State.files.get(filePath);
+  if (file.dirty && !confirm(`Descartar as alterações de ${basename(filePath)} e recarregar do disco?`)) return false;
+  const res = await handleExternalChange(filePath, { force: true });
+  if (res === 'missing') toast('O arquivo não existe mais no disco.', 'error');
+  return res !== 'missing';
 }
 
 /**
@@ -352,6 +398,8 @@ export function applyEditorSettings(customSettings) {
     cursorBlinking: ed.cursorBlinking || 'smooth',
     cursorSmoothCaretAnimation: ed.cursorSmoothCaretAnimation || 'on',
     smoothScrolling: ed.smoothScrolling !== false,
+    columnSelection: !!ed.columnSelection,
+    multiCursorModifier: ed.multiCursorModifier === 'ctrlCmd' ? 'ctrlCmd' : 'alt',
   });
 }
 
@@ -492,5 +540,6 @@ function themeIdToMonaco(name) {
 
 function basename(p) {
   if (!p) return '';
+  if (isUntitled(p)) return p.slice(UNTITLED_PREFIX.length);
   return p.split(/[\\/]/).filter(Boolean).pop() || p;
 }

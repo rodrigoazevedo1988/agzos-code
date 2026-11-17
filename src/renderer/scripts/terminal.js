@@ -454,6 +454,30 @@ export async function createTerminal({ profileId = null, split = false, focus = 
   return session;
 }
 
+/**
+ * Envia um comando ao terminal (Executar Tarefa, Executar Arquivo Ativo,
+ * Executar Texto Selecionado). Usa o terminal ativo ou cria um (newTerminal
+ * sempre cria). Mostra o painel na aba TERMINAL. Devolve true se enviou.
+ */
+export async function runInTerminal(text, { newTerminal = false } = {}) {
+  let session = newTerminal ? null : store.active();
+  if (session && (session.exited || !session.termId)) session = null;
+  if (session) {
+    if (getActiveBottomTab() !== 'terminal') selectBottomTab('terminal', { focus: false });
+    setBottomPanelVisible(true);
+    activateTerminal(session.id, { focus: true });
+  } else {
+    session = await createTerminal({ focus: true });
+  }
+  if (!session?.termId) {
+    toast('Não foi possível abrir um terminal para executar o comando.', 'error');
+    return false;
+  }
+  const payload = String(text).replace(/\r?\n$/, '');
+  await window.agzos.term.write(session.termId, `${payload}\r`);
+  return true;
+}
+
 /** Divide o terminal ativo (cria uma sessão ao lado, mesmo perfil). */
 export function splitTerminal({ profileId } = {}) {
   const active = store.active();

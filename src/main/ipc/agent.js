@@ -2,8 +2,9 @@
  * IPC do agente (window.agzos.agent): agent:run / approve / cancel / undo / setMode.
  * Eventos main → renderer no canal 'agent:event' (requestId, evt).
  *
- * Raiz do agente: payload.root (se liberada no guard) ou a pasta aberta por
- * último (recentFolders[0], gravada pelo workspace:open), desde que liberada.
+ * Raiz do agente: payload.root (se liberada no guard) ou a pasta da janela que
+ * pediu (getWindowRoot(sender), várias janelas). Sem getWindowRoot, cai na pasta
+ * aberta por último (recentFolders[0], gravada pelo workspace:open). Sempre liberada.
  * A chave da API vem do cofre (como ipc/ai.js) e nunca vai ao renderer nem ao modelo.
  */
 
@@ -15,7 +16,7 @@ const { MODES } = require('../agent/loop');
 const { getModuleTools } = require('../modules/agent-tools');
 
 function register(ipcMain, {
-  settingsStore, store, guard, userDataDir, fetchImpl = fetch,
+  settingsStore, store, guard, userDataDir, fetchImpl = fetch, getWindowRoot,
   checkpoints = createCheckpointStore({ dir: userDataDir ? path.join(userDataDir, 'agent-checkpoints') : null }),
   sessionOptions = {},
 }) {
@@ -26,11 +27,16 @@ function register(ipcMain, {
     return id ? settings.ai?.profiles?.find((profile) => profile.id === id) : getActiveProfile(settings);
   }
 
-  function getRoot(payload) {
+  function getRoot(payload, sender) {
     const candidates = [];
     if (typeof payload?.root === 'string' && payload.root) candidates.push(payload.root);
-    const recent = settingsStore.load().recentFolders;
-    if (Array.isArray(recent) && typeof recent[0] === 'string') candidates.push(recent[0]);
+    if (typeof getWindowRoot === 'function') {
+      const own = sender ? getWindowRoot(sender) : null;
+      if (typeof own === 'string' && own) candidates.push(own);
+    } else {
+      const recent = settingsStore.load().recentFolders;
+      if (Array.isArray(recent) && typeof recent[0] === 'string') candidates.push(recent[0]);
+    }
     for (const candidate of candidates) {
       if (path.isAbsolute(candidate) && guard.isAllowed(candidate) && isDirectory(candidate)) return path.resolve(candidate);
     }
@@ -57,7 +63,7 @@ function register(ipcMain, {
   function forSender(sender) {
     if (!sessions.has(sender)) {
       const agent = createAgentSessions({
-        getRoot,
+        getRoot: (payload) => getRoot(payload, sender),
         getProvider,
         getMode: () => settingsStore.load().aiAgent?.mode,
         getExtraTools: () => getModuleTools(settingsStore.load()),
@@ -88,6 +94,7 @@ function register(ipcMain, {
   return {
     cancelAll: () => { for (const agent of sessions.values()) agent.cancelAll(); },
     _forSender: forSender,
+    _rootsFor: (sender, payload) => getRoot(payload, sender),
   };
 }
 

@@ -42,8 +42,23 @@ const DATA_DIR = 'agzos-code';
 app.setName(APP_NAME);
 app.setPath('userData', process.env.AGZOS_USER_DATA || path.join(app.getPath('appData'), DATA_DIR));
 
-let mainWindow = null;
 let splashWindow = null;
+const isMac = process.platform === 'darwin';
+
+/**
+ * Várias janelas: cada BrowserWindow é independente (pasta, terminais, agente).
+ * Eventos de menu/updater vão para a janela focada (ou a primeira aberta).
+ */
+function targetWindow() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed() && focused !== splashWindow) return focused;
+  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w !== splashWindow) || null;
+}
+
+function sendToTarget(channel, ...args) {
+  const win = targetWindow();
+  if (win) win.webContents.send(channel, ...args);
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Janela splash (carregamento inicial)                                       */
@@ -91,15 +106,23 @@ function createMainWindow() {
   if (APP_ICON) {
     winOpts.icon = APP_ICON;
   }
-  mainWindow = new BrowserWindow(winOpts);
+  // Janelas novas abrem levemente deslocadas da focada (como no VS Code).
+  const from = BrowserWindow.getFocusedWindow();
+  if (from && from !== splashWindow && !from.isDestroyed()) {
+    const [x, y] = from.getPosition();
+    Object.assign(winOpts, { x: x + 30, y: y + 30 });
+  }
+  const mainWindow = new BrowserWindow(winOpts);
 
-  // Menu nativo — escondemos a barra mas mantemos atalhos
-  Menu.setApplicationMenu(buildAppMenu());
+  // macOS: menu nativo na barra do sistema (a barra in-app fica escondida).
+  // Windows/Linux: a barra de menus é a do renderer (menubar.js); sem menu
+  // nativo na janela (não reaparece com Alt). Atalhos: keymap.js.
+  if (!isMac) mainWindow.removeMenu();
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    if (splashWindow) {
+    if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
       splashWindow = null;
     }
@@ -113,16 +136,13 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  return mainWindow;
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Menu nativo (atalhos)                                                      */
 /* -------------------------------------------------------------------------- */
 function buildAppMenu() {
-  const isMac = process.platform === 'darwin';
   return Menu.buildFromTemplate([
     ...(isMac ? [{ role: 'appMenu' }] : []),
     {
@@ -136,19 +156,19 @@ function buildAppMenu() {
         {
           label: 'Abrir Pasta…',
           accelerator: 'CmdOrCtrl+O',
-          click: () => mainWindow?.webContents.send('menu:open-folder'),
+          click: () => sendToTarget('menu:open-folder'),
         },
         { type: 'separator' },
         {
           label: 'Salvar',
           accelerator: 'CmdOrCtrl+S',
-          click: () => mainWindow?.webContents.send('menu:save'),
+          click: () => sendToTarget('menu:save'),
         },
         { type: 'separator' },
         {
           label: 'Configurações…',
           accelerator: 'CmdOrCtrl+,',
-          click: () => mainWindow?.webContents.send('menu:open-settings'),
+          click: () => sendToTarget('menu:open-settings'),
         },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
@@ -167,17 +187,17 @@ function buildAppMenu() {
         {
           label: 'Command Palette',
           accelerator: 'CmdOrCtrl+Shift+P',
-          click: () => mainWindow?.webContents.send('menu:command-palette'),
+          click: () => sendToTarget('menu:command-palette'),
         },
         {
           label: 'Alternar Terminal',
           accelerator: 'CmdOrCtrl+`',
-          click: () => mainWindow?.webContents.send('menu:toggle-terminal'),
+          click: () => sendToTarget('menu:toggle-terminal'),
         },
         {
           label: 'Alternar Sidebar',
           accelerator: 'CmdOrCtrl+B',
-          click: () => mainWindow?.webContents.send('menu:toggle-sidebar'),
+          click: () => sendToTarget('menu:toggle-sidebar'),
         },
         { type: 'separator' },
         { role: 'reload' },
@@ -195,13 +215,13 @@ function buildAppMenu() {
       submenu: [
         {
           label: 'Verificar atualizações…',
-          click: () => mainWindow?.webContents.send('menu:check-updates'),
+          click: () => sendToTarget('menu:check-updates'),
         },
         { type: 'separator' },
         {
           label: 'Sobre o Agzos Code',
           click: () => {
-            dialog.showMessageBox(mainWindow, {
+            dialog.showMessageBox(targetWindow(), {
               type: 'info',
               title: 'Sobre',
               message: `${APP_NAME}`,
@@ -224,7 +244,7 @@ const deps = {
   dialog,
   isDev,
   APP_NAME,
-  getMainWindow: () => mainWindow,
+  getWindowFor: (evt) => (evt?.sender ? BrowserWindow.fromWebContents(evt.sender) : targetWindow()),
 };
 const { createPathGuard } = require('./lib/path-guard');
 const guard = createPathGuard();
@@ -233,7 +253,7 @@ require('./ipc/dialog').register(ipcMain, { ...deps, guard });
 require('./ipc/term').register(ipcMain);
 require('./ipc/ports').register(ipcMain);
 const settingsStore = require('./ipc/settings').register(ipcMain, deps);
-require('./ipc/workspace').register(ipcMain, {
+const workspaces = require('./ipc/workspace').register(ipcMain, {
   guard,
   getRecentFolders: () => settingsStore.load().recentFolders || [],
   addRecentFolder: (folderPath) => {
@@ -241,6 +261,12 @@ require('./ipc/workspace').register(ipcMain, {
     const recent = [folderPath, ...(s.recentFolders || []).filter((p) => p !== folderPath)];
     settingsStore.save({ ...s, recentFolders: recent.slice(0, 10) });
   },
+  clearRecentFolders: () => settingsStore.save({ ...settingsStore.load(), recentFolders: [] }),
+});
+require('./ipc/window').register(ipcMain, {
+  createWindow: () => createMainWindow(),
+  fromWebContents: (wc) => BrowserWindow.fromWebContents(wc),
+  quit: () => app.quit(),
 });
 // Só em testes E2E: libera uma pasta temporária sem passar pelo diálogo nativo.
 if (process.env.AGZOS_TEST === '1') {
@@ -267,7 +293,10 @@ const githubAccounts = require('./ipc/github').register(ipcMain, { guard, settin
 require('./ipc/git').register(ipcMain, { guard, accounts: githubAccounts });
 const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
 // Agente (tools no workspace): chave da IA só no main; raiz via guard.
-const agentSessions = require('./ipc/agent').register(ipcMain, { settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData') });
+const agentSessions = require('./ipc/agent').register(ipcMain, {
+  settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData'),
+  getWindowRoot: (sender) => workspaces.rootFor(sender.id),
+});
 // Módulos nativos: um processo utilitário compartilhado, criado sob demanda.
 const { createWorkerHost } = require('./modules/worker-host');
 const modulesWorker = createWorkerHost({ script: path.join(__dirname, 'modules/worker.js') });
@@ -278,9 +307,8 @@ require('./ipc/chat-history').register(ipcMain, deps);
 require('./ipc/app-info').register(ipcMain, deps);
 const updater = require('./updater').createUpdater({
   app,
-  notify: (notice) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:notice', notice);
-  },
+  // Um aviso só, na janela focada (evita um confirm por janela).
+  notify: (notice) => sendToTarget('update:notice', notice),
 });
 ipcMain.handle('update:check', () => updater.checkForUpdates({ manual: true }));
 ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
@@ -312,6 +340,8 @@ app.whenReady().then(() => {
     try { app.setBadgeCount?.(0); } catch { /* ignora */ }
   }
 
+  // Windows/Linux: null tira também o menu padrão do Electron (que reapareceria com Alt).
+  Menu.setApplicationMenu(isMac ? buildAppMenu() : null);
   createSplash();
   // Atrasa um pouquinho pra splash renderizar com calma
   setTimeout(() => createMainWindow(), 350);
