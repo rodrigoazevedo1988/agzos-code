@@ -1,6 +1,9 @@
 const { parseSSE } = require('../sse');
 const { friendlyError, request } = require('../errors');
 const { markToolsUnsupported, parseToolInput } = require('../tool-calls');
+const { toOpenAIContent, hasImages, markVisionUnsupported } = require('../content');
+
+const anyImages = (messages) => Array.isArray(messages) && messages.some((m) => hasImages(m?.content));
 
 /** Mensagens no formato neutro do agente → formato OpenAI. */
 function toOpenAIMessages(messages) {
@@ -18,7 +21,7 @@ function toOpenAIMessages(messages) {
         })),
       };
     }
-    return { role: message.role, content: message.content };
+    return { role: message.role, content: toOpenAIContent(message.content) };
   });
 }
 
@@ -83,14 +86,14 @@ function createOpenAICompatibleProvider({ baseUrl, apiKey, fetchImpl = fetch, ex
   async function* chat({ model, messages, signal }) {
     try {
       const response = await request(fetchImpl, `${root}/chat/completions`, {
-        method: 'POST', headers, body: JSON.stringify({ model, messages, stream: true })
+        method: 'POST', headers, body: JSON.stringify({ model, messages: toOpenAIMessages(messages), stream: true })
       }, { baseUrl, apiKey, signal });
       for await (const item of parseSSE(response.body)) {
         if (item.data === '[DONE]') break;
         const content = JSON.parse(item.data).choices?.[0]?.delta?.content;
         if (content) yield content;
       }
-    } catch (err) { throw friendlyError(err, baseUrl, apiKey); }
+    } catch (err) { throw markVisionUnsupported(friendlyError(err, baseUrl, apiKey), { hadImages: anyImages(messages) }); }
   }
   // Tool calling (agente). O chat de texto acima continua igual.
   async function* chatTools({ model, messages, tools, signal }) {
@@ -100,7 +103,9 @@ function createOpenAICompatibleProvider({ baseUrl, apiKey, fetchImpl = fetch, ex
         method: 'POST', headers, body: JSON.stringify(body),
       }, { baseUrl, apiKey, signal });
       yield* parseOpenAIToolStream(response.body);
-    } catch (err) { throw markToolsUnsupported(friendlyError(err, baseUrl, apiKey)); }
+    } catch (err) {
+      throw markVisionUnsupported(markToolsUnsupported(friendlyError(err, baseUrl, apiKey)), { hadImages: anyImages(messages) });
+    }
   }
   async function testConnection() {
     try { return { ok: true, models: (await listModels()).length }; }
