@@ -103,3 +103,23 @@ XLSX/XLS/ODS e CSV/TSV em grade virtual, pré-visualização de Markdown e telas
 - **Renomear/apagar várias conversas de uma vez e exportar todas** no histórico global.
 - **Exportar com diffs completos.** O transcript traz o resumo das ações (+/− linhas, exit
   code); os diffs inteiros não são guardados no histórico.
+
+## Módulos Agzos — próximos (nativos, nomes próprios)
+
+Utilidades que hoje exigem extensão no VS Code, para nascerem como módulos nativos no hub Módulos Agzos. Cada uma vira um card no hub, tem opções em Configurações → Módulos Agzos e, quando fizer sentido, uma ferramenta para o agente. Tamanho: P (dias), M (1–2 semanas), G (mais de 2 semanas).
+
+| Módulo Agzos | O que faz | Como (nativo) | Tam. |
+|---|---|---|---|
+| **Agzos Marca-texto** | Comentários coloridos por tipo (`// !` alerta, `// ?` dúvida, `// TODO`, `// *` destaque, `// ~~` riscado) | Decorações do Monaco a partir dos comentários do modelo (sem AST); tags e cores configuráveis | P |
+| **Agzos Snap** | Gera imagem bonita de um trecho de código (moldura, tema, fundo, marca d'água Agzos) para compartilhar | `monaco.editor.colorize` + HTML num canvas/`capturePage`; salvar PNG ou copiar | P |
+| **Agzos Árvore** | Gera a árvore de pastas do projeto em texto (`├──`) para README/documentação, com filtros (ignorar `node_modules`, `.gitignore`, profundidade) | Leitura da árvore no main + inserir no cursor ou copiar; comando no menu de contexto da pasta | P |
+| **Agzos Depurador** | Depurador completo para C, C++ e Rust (e depois Node/Python) | Cliente DAP (Debug Adapter Protocol) no main + `lldb-dap`/`codelldb` do sistema; breakpoints, pilha, variáveis, console de depuração (itens "Em breve" do menu Executar) | G |
+| **Agzos Console Web** | Logs do navegador (console, erros, rede) direto no app para projetos JavaScript | Navegador de preview do app com CDP (`webContents.debugger`), ou script injetado pelo Agzos Ao Vivo; logs ligados à linha do código | M |
+| **Agzos Erros Claros** | Mensagens de erro do TypeScript formatadas e legíveis (tipos destacados, quebra por partes) | Hover/painel Problemas reformatando os `markers` do Monaco | P |
+| **Agzos Diagrama** | Diagrama da arquitetura gerado do próprio código (imports entre arquivos, classes/componentes) | Grafo de imports via AST (mesmo worker da Vassoura) + render em SVG (Mermaid ou layout próprio); clique abre o arquivo | M |
+| **Agzos Espiar CSS** | Navegar de `class`/`className` no HTML/React para a definição no CSS (ir para definição, espiar, hover) | Índice de seletores dos `.css/.scss` do projeto + providers de definição/hover do Monaco para HTML/JSX | M |
+| **Agzos Ao Vivo** | Servidor local que recarrega o navegador ao salvar (frontend estático) | Servidor HTTP no main com injeção de script de reload via WebSocket; link na aba PORTAS | P |
+| **Agzos Juntos** | Edição e depuração em tempo real com outras pessoas | CRDT (Yjs) sobre um relay WebSocket (VPS da Agzos ou P2P); presença, cursores e terminal compartilhado | G |
+| **Agzos Formatador** | Formatação padrão de mercado (estilo Prettier) ao salvar, respeitando a config do projeto | `prettier` do projeto quando existir, senão o embutido, num worker; "Formatar ao salvar" por linguagem | P |
+| **Agzos Erros na Linha** | Erros e avisos exibidos no fim da própria linha, com cor por severidade | Decorações `after` do Monaco a partir dos markers; liga/desliga por severidade | P |
+| **Agzos Rascunho Vivo** | Prototipagem rápida: valores das expressões aparecem ao lado do código enquanto você digita (JS/TS) | Execução isolada num worker/`vm` com instrumentação por linha + decorações inline; arquivo de rascunho por projeto | M |
