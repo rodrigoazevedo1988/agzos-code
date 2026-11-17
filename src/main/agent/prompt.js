@@ -49,6 +49,7 @@ function buildSystemPrompt({ root, platform = process.platform, shell, mode, tre
     '- Comandos rodam sem entrada interativa: use flags não interativas (ex.: --yes) e evite servidores que não terminam.',
     '- Quando o projeto tiver testes/lint, rode-os depois de mudar código e corrija o que quebrar.',
     '- Nunca exponha segredos (tokens, chaves, senhas), nem leia arquivos de credenciais sem necessidade.',
+    '- Arquivos .env aparecem com os valores mascarados (CHAVE=****) e segredos nas saídas viram [redigido]; para conferir chaves use env_check, se disponível.',
     '- Ao terminar, responda com um resumo curto do que foi feito (arquivos alterados, comandos rodados e resultado) e próximos passos, em português.',
     '',
     'Estrutura do projeto (2 níveis):',
