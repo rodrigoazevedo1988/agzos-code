@@ -166,7 +166,7 @@ function attachmentIds(data, into = new Set()) {
 }
 
 function register(ipcMain, {
-  app, dialog, getMainWindow, BrowserWindow, attachments = null, getRecentFolders = () => [],
+  app, dialog, getMainWindow, getWindowFor, BrowserWindow, attachments = null, getRecentFolders = () => [],
   printToPdf = null,
 }) {
   const directory = path.join(app.getPath('userData'), 'chats');
@@ -269,12 +269,12 @@ function register(ipcMain, {
   });
 
   /** Exporta uma conversa: format 'md' | 'pdf'. Salva via diálogo nativo. → caminho ou null. */
-  ipcMain.handle('chat:export', async (_event, key, id, format) => {
+  ipcMain.handle('chat:export', async (event, key, id, format) => {
     const { history, root } = await loadByKey(key);
     const conversation = history.conversations.find((c) => c.id === id);
     if (!conversation) throw new Error('Conversa não encontrada');
     const kind = format === 'pdf' ? 'pdf' : 'md';
-    const target = await chooseTarget(exportFileName(conversation, kind), kind);
+    const target = await chooseTarget(exportFileName(conversation, kind), kind, event);
     if (!target) return null;
     const markdown = transcriptMarkdown(conversation, { root });
     if (kind === 'md') {
@@ -286,7 +286,7 @@ function register(ipcMain, {
     return target;
   });
 
-  async function chooseTarget(defaultName, kind) {
+  async function chooseTarget(defaultName, kind, event) {
     // Só em testes E2E: caminho pré-definido no lugar do diálogo nativo.
     if (process.env.AGZOS_TEST === '1' && typeof global.__agzosNextSavePath === 'string') {
       const forced = global.__agzosNextSavePath;
@@ -294,7 +294,8 @@ function register(ipcMain, {
       return forced;
     }
     if (!dialog?.showSaveDialog) return null;
-    const win = getMainWindow?.();
+    // Diálogo modal na janela que pediu (várias janelas).
+    const win = typeof getWindowFor === 'function' ? getWindowFor(event) : getMainWindow?.();
     const options = {
       title: kind === 'pdf' ? 'Exportar conversa como PDF' : 'Exportar conversa como Markdown',
       defaultPath: path.join(app.getPath('documents'), defaultName),

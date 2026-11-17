@@ -183,3 +183,47 @@ test('git:* e github:* usam o guard da janela que pediu', async () => {
   const clone = await handlers['git:clone']({ sender: b }, 'https://github.com/x/y.git', dirA);
   assert.match(clone.error.message, /Acesso negado/);
 });
+
+test('ai:attach:read com caminhos do Explorer: só os liberados na janela que pediu; diálogo na janela dela', async () => {
+  const reg = createWindowGuards();
+  const { handlers, ipcMain } = fakeIpc();
+  const dirA = tmp('agzos-ai-a-', { 'n.txt': 'nota' });
+  const a = wc(1);
+  const b = wc(2);
+  reg.guardFor(a).allow(dirA);
+  const parents = [];
+  const winB = { id: 'janela-b' };
+  require('../../src/main/ipc/ai').register(ipcMain, {
+    settingsStore: { load: () => ({}), save: () => {} },
+    store: { get: () => null },
+    guardFor: reg.guardFor,
+    getWindowFor: (evt) => (evt?.sender?.id === 2 ? winB : null),
+    dialog: { showOpenDialog: async (win) => { parents.push(win); return { canceled: true, filePaths: [] }; } },
+  });
+  const okA = await handlers['ai:attach:read']({ sender: a }, [path.join(dirA, 'n.txt')]);
+  assert.equal(okA[0].error, undefined);
+  const deniedB = await handlers['ai:attach:read']({ sender: b }, [path.join(dirA, 'n.txt')]);
+  assert.match(deniedB[0].error, /Fora das pastas liberadas/);
+  await handlers['ai:attach:read']({ sender: b });
+  assert.deepEqual(parents, [winB]);
+});
+
+test('agent:skills libera a pasta de skills só na janela que pediu', async () => {
+  const reg = createWindowGuards();
+  const { handlers, ipcMain } = fakeIpc();
+  const userData = tmp('agzos-skills-ud-');
+  fs.mkdirSync(path.join(userData, 'skills'));
+  const a = wc(1);
+  const b = wc(2);
+  require('../../src/main/ipc/agent').register(ipcMain, {
+    settingsStore: { load: () => ({}), save: () => {} },
+    store: { get: () => null },
+    guardFor: reg.guardFor,
+    userDataDir: userData,
+    getWindowRoot: () => null,
+  });
+  await handlers['agent:skills']({ sender: a }, {});
+  const skillsDir = path.join(userData, 'skills');
+  assert.equal(reg.guardFor(a).isAllowed(skillsDir), true);
+  assert.equal(reg.guardFor(b).isAllowed(skillsDir), false);
+});
