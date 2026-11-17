@@ -100,7 +100,7 @@ test('window.agzos.broom e window.agzos.envVault existem', async () => {
     expect(api.broom).toEqual(['analyzeFile', 'cancel', 'cleanFile', 'cleanWorkspace', 'onEvent', 'scanWorkspace', 'undo'].sort());
     expect(api.envVault).toEqual([
       'addKey', 'addToGitignore', 'copy', 'generateExample', 'gitignoreStatus', 'hookStatus', 'installHook',
-      'list', 'removeHook', 'removeKey', 'reveal', 'scanStaged', 'setValue',
+      'list', 'removeHook', 'removeKey', 'reveal', 'scanStaged', 'setValue', 'undo',
     ].sort());
     // stubs registrados no main: os canais respondem (não lançam "No handler registered")
     const res = await page.evaluate(async () => {
