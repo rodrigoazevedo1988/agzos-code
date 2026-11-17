@@ -5,8 +5,8 @@ const { test, expect } = require('@playwright/test');
 const { launchApp } = require('./helpers');
 
 const base = { welcomeSeen: true, onboardingCompleted: true };
-// 5 da 1.1.0 + módulos de editor da 1.2.0 (Erros na Linha, Erros Claros, Marca-texto).
-const CARDS = 5 + 3;
+// 5 da 1.1.0 + módulos de editor da 1.2.0 (Erros na Linha, Erros Claros, Marca-texto, Formatador).
+const CARDS = 5 + 4;
 
 test('hub lista os cards, 3 "Em breve"', async () => {
   const { app, page, errors } = await launchApp({ settings: base });

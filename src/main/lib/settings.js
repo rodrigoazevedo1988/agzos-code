@@ -87,6 +87,12 @@ const DEFAULT_SETTINGS = {
     inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
     prettyErrors: { enabled: true },
     highlighter: { enabled: true, tags: ['!=#FF5252', '?=#4FC3F7', 'TODO=#FF9800', 'FIXME=#FF9800', '*=#98C379', '//=#7A7A7A'] },
+    formatter: {
+      enabled: true,
+      formatOnSave: {
+        javascript: false, typescript: false, json: false, css: false, scss: false, less: false, html: false, markdown: false, yaml: false,
+      },
+    },
   },
 };
 
@@ -212,6 +218,10 @@ function normalizeEditorMods(v) {
 
   const ie = obj(v.inlineErrors);
   const hl = obj(v.highlighter);
+  const fm = obj(v.formatter);
+  const fosIn = obj(fm.formatOnSave);
+  const formatOnSave = {};
+  for (const [lang, val] of Object.entries(def.formatter.formatOnSave)) formatOnSave[lang] = bool(fosIn[lang], val);
   const severities = Array.isArray(ie.severities)
     ? INLINE_SEVERITIES.filter((s) => ie.severities.includes(s))
     : [...def.inlineErrors.severities];
@@ -229,6 +239,7 @@ function normalizeEditorMods(v) {
       enabled: bool(hl.enabled, def.highlighter.enabled),
       tags: Array.isArray(hl.tags) ? hl.tags.map(normalizeHighlightTag).filter(Boolean) : [...def.highlighter.tags],
     },
+    formatter: { ...fm, enabled: bool(fm.enabled, def.formatter.enabled), formatOnSave },
   };
 }
 

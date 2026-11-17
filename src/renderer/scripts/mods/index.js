@@ -7,6 +7,7 @@ import { setupInlineErrors } from './inline-errors.js';
 import { setupPrettyErrors } from './pretty-errors.js';
 import { setupProblemsPanel } from './problems-panel.js';
 import { setupHighlighter } from './highlighter.js';
+import { setupFormatter } from './formatter.js';
 
 export function setupEditorMods() {
   for (const [name, setup] of [
@@ -14,6 +15,7 @@ export function setupEditorMods() {
     ['Erros Claros', setupPrettyErrors],
     ['Painel Problemas', setupProblemsPanel],
     ['Marca-texto', setupHighlighter],
+    ['Formatador', setupFormatter],
   ]) {
     try {
       setup();

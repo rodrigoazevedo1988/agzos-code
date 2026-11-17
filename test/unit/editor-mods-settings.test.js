@@ -36,3 +36,14 @@ test('highlighter: padrão com os 6 marcadores; itens inválidos descartados', (
   assert.deepEqual(normalizeModules({ highlighter: { tags: 'TODO' } }).highlighter.tags, DEFAULT_SETTINGS.modules.highlighter.tags);
   assert.deepEqual(normalizeModules({ highlighter: { tags: [] } }).highlighter.tags, []);
 });
+
+test('formatter: padrão ligado, formatar ao salvar desligado em todas as linguagens', () => {
+  const langs = ['javascript', 'typescript', 'json', 'css', 'scss', 'less', 'html', 'markdown', 'yaml'];
+  assert.deepEqual(DEFAULT_SETTINGS.modules.formatter, { enabled: true, formatOnSave: Object.fromEntries(langs.map((l) => [l, false])) });
+  const out = normalizeModules({ formatter: { enabled: 0, formatOnSave: { javascript: true, css: 'sim', python: true } } });
+  assert.equal(out.formatter.enabled, true);
+  assert.equal(out.formatter.formatOnSave.javascript, true);
+  assert.equal(out.formatter.formatOnSave.css, false);
+  assert.equal('python' in out.formatter.formatOnSave, false);
+  assert.deepEqual(normalizeModules({ formatter: { formatOnSave: 'x' } }).formatter.formatOnSave, DEFAULT_SETTINGS.modules.formatter.formatOnSave);
+});

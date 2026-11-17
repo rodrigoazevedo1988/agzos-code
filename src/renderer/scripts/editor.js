@@ -20,6 +20,7 @@ let saveHandler = null;
 const autoSaveTimers = new Map(); // path -> timeout (afterDelay)
 let applyingExternal = false; // recarga vinda do disco: não marca a aba como suja
 const conflicts = new Set(); // arquivos sujos alterados por fora (agente)
+let formatOnSaveCheck = () => false; // Agzos Formatador: formatar ao salvar por linguagem
 
 // Workers: o loader AMD do Monaco resolve vs/base/worker/workerMain.js sozinho.
 // Apontar direto para tsWorker.js/jsonWorker.js quebra (são módulos AMD: "define is not defined").
@@ -387,7 +388,7 @@ export async function saveFile(filePath) {
   // Abas de visualização não têm texto: nunca escrever nada no arquivo.
   if (!file || file.viewer) return;
   const isActive = filePath === State.activePath && !!activeEditor && !!currentModel;
-  if (isActive && State.settings.editor?.formatOnSave) {
+  if (isActive && (State.settings.editor?.formatOnSave || formatOnSaveCheck(currentModel))) {
     try {
       await activeEditor.getAction('editor.action.formatDocument')?.run();
     } catch { }
@@ -458,6 +459,11 @@ function syncEditorWelcome() {
 }
 
 export function getActiveEditor() { return activeEditor; }
+
+/** Módulos (Agzos Formatador) decidem se o modelo ativo é formatado ao salvar. fn(model) → boolean */
+export function setFormatOnSaveCheck(fn) {
+  formatOnSaveCheck = typeof fn === 'function' ? fn : () => false;
+}
 export function getMonaco() { return monaco; }
 
 export function applyTheme(themeName) {

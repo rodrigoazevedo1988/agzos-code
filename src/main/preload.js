@@ -171,6 +171,11 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Agzos Formatador (ipc/formatter.js): prettier embutido no processo utilitário.
+  formatter: {
+    format: (req) => ipcRenderer.invoke('formatter:format', req),
+  },
+
   // Módulos nativos — Cofre .env (ipc/envvault.js). Valores só chegam por reveal.
   envVault: {
     list: (...args) => ipcRenderer.invoke('envvault:list', ...args),

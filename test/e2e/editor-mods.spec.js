@@ -140,3 +140,76 @@ test.describe('Agzos Marca-texto', () => {
     } finally { await env.close(); }
   });
 });
+
+test.describe('Agzos Formatador', () => {
+  const value = (page) => page.evaluate(() => window.monaco.editor.getEditors()[0].getValue());
+  const formatDoc = (page) => page.evaluate(() => import('./scripts/command-palette.js').then((m) => m.runCommand('editor.format')));
+
+  test('"Formatar Documento" usa o prettier com a config do projeto (JS e Markdown)', async () => {
+    const env = await setup({ files: { '.prettierrc': '{ "semi": false, "singleQuote": true }', 'a.js': 'const a = {b:1,c:"x"}\n', 'b.md': '# T\n* um\n* dois\n', 'c.css': 'a{color:red}' } });
+    const { page } = env;
+    try {
+      await env.open('a.js');
+      await formatDoc(page);
+      await expect.poll(() => value(page)).toBe("const a = { b: 1, c: 'x' }\n");
+      await env.open('b.md');
+      await formatDoc(page);
+      await expect.poll(() => value(page)).toBe('# T\n\n- um\n- dois\n');
+      // CSS: o Prettier (com ";" e quebra final) vence o formatador embutido do Monaco.
+      await env.open('c.css');
+      await formatDoc(page);
+      await expect.poll(() => value(page)).toBe('a {\n  color: red;\n}\n');
+      expect(env.errors).toEqual([]);
+    } finally { await env.close(); }
+  });
+
+  test('formatar ao salvar só na linguagem ligada', async () => {
+    const env = await setup({
+      files: { 'a.ts': 'let x=1\n', 'b.css': 'a{color:red}\n' },
+      settings: { modules: { formatter: { enabled: true, formatOnSave: { typescript: true } } } },
+    });
+    const { page } = env;
+    try {
+      await env.open('a.ts');
+      await page.evaluate(() => window.AgzosEditor.saveActive());
+      await expect.poll(() => fs.readFileSync(env.file('a.ts'), 'utf8')).toBe('let x = 1;\n');
+      await env.open('b.css');
+      await page.evaluate(() => window.AgzosEditor.saveActive());
+      await page.waitForTimeout(500);
+      expect(fs.readFileSync(env.file('b.css'), 'utf8')).toBe('a{color:red}\n');
+    } finally { await env.close(); }
+  });
+
+  test('projeto com prettier.config.js: ignorado com aviso e nada do projeto executa', async () => {
+    const marker = path.join(os.tmpdir(), `agzos-e2e-prettier-pwned-${process.pid}`);
+    const env = await setup({
+      files: {
+        'prettier.config.js': `require('fs').writeFileSync(${JSON.stringify(marker)}, 'x'); module.exports = { semi: false };`,
+        'a.js': 'let a=1\n',
+      },
+    });
+    const { page } = env;
+    try {
+      await env.open('a.js');
+      await formatDoc(page);
+      await expect.poll(() => value(page)).toBe('let a = 1;\n');
+      await expect(page.locator('.toast', { hasText: 'prettier.config.js' })).toBeVisible();
+      expect(fs.existsSync(marker)).toBe(false);
+    } finally { await env.close(); }
+  });
+
+  test('desligado: volta ao formatador do Monaco', async () => {
+    const env = await setup({ files: { 'a.md': '# T\n* um\n', 'c.css': 'a{color:red}' }, settings: { modules: { formatter: { enabled: false } } } });
+    const { page } = env;
+    try {
+      await env.open('a.md');
+      await formatDoc(page);
+      await page.waitForTimeout(500);
+      expect(await value(page)).toBe('# T\n* um\n');
+      // CSS: formatador embutido do Monaco (sem o ";" que o Prettier acrescenta).
+      await env.open('c.css');
+      await formatDoc(page);
+      await expect.poll(() => value(page)).toBe('a {\n  color: red\n}');
+    } finally { await env.close(); }
+  });
+});
