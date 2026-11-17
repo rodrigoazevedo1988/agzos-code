@@ -378,6 +378,26 @@ export async function openWorkspace(folderPath) {
   render();
 }
 
+/**
+ * Fecha a pasta desta janela (Arquivo › Fechar Pasta). Fecha as abas antes
+ * (arquivos sujos pedem confirmação); se alguma ficar aberta, cancela.
+ */
+export async function closeWorkspace() {
+  if (!State.workspaceRoot) return true;
+  const { closeAllTabs } = await import('./editor.js');
+  await closeAllTabs();
+  if (State.files.size > 0) return false;
+  State.workspaceRoot = null;
+  treeRoot = null;
+  invalidateQuickOpenCache();
+  try { await window.agzos.workspace.close(); } catch {}
+  window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
+  const topbar = document.getElementById('topbar-workspace');
+  if (topbar) topbar.textContent = '— Sem pasta aberta';
+  render();
+  return true;
+}
+
 export function refreshTree(keepState = false) {
   if (!keepState) {
     treeRoot = null;

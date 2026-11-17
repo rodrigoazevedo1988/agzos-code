@@ -131,6 +131,30 @@ export function registerCommands(cmds) {
   }
 }
 
+/** Comando registrado com esse id? (barra de menus, testes) */
+export function hasCommand(id) {
+  return COMMANDS.some((c) => c.id === id);
+}
+
+/**
+ * Executa um comando da paleta pelo id (barra de menus e atalhos usam a mesma
+ * função que a paleta). Devolve false se o id não existe.
+ */
+export function runCommand(id, ...args) {
+  const cmd = COMMANDS.find((c) => c.id === id);
+  if (!cmd) {
+    console.warn(`[paleta] comando desconhecido: ${id}`);
+    return false;
+  }
+  try {
+    const out = cmd.run(...args);
+    if (out && typeof out.catch === 'function') out.catch((e) => toast(`Erro: ${e.message}`, 'error'));
+  } catch (e) {
+    toast(`Erro: ${e.message}`, 'error');
+  }
+  return true;
+}
+
 export async function showQuickOpen() {
   const overlay = document.getElementById('cmd-overlay');
   const input = document.getElementById('cmd-input');
@@ -472,15 +496,21 @@ async function openFileDialog() {
   }
 }
 
-async function saveFileAs() {
-  const defaultPath = State.activePath || 'sem-titulo.txt';
+export async function saveFileAs() {
+  const editorMod = await import('./editor.js');
+  const source = State.activePath;
+  const untitled = editorMod.isUntitled(source);
+  const defaultPath = !source || untitled
+    ? (State.workspaceRoot ? `${State.workspaceRoot}/sem-titulo.txt` : 'sem-titulo.txt')
+    : source;
   const targetPath = await window.agzos.dialog.saveFile(defaultPath);
   if (targetPath) {
-    const editorMod = await import('./editor.js');
     const editor = editorMod.getActiveEditor();
     if (editor) {
       await window.agzos.fs.writeFile(targetPath, editor.getValue());
       invalidateQuickOpenCache();
+      // Arquivo sem título salvo: a aba "Sem título" dá lugar ao arquivo novo
+      if (untitled) editorMod.discardFile(source);
       await editorMod.openFile(targetPath);
       toast('Arquivo salvo com sucesso.', 'success', 1500);
     }
@@ -604,7 +634,11 @@ export function showShortcutsModal() {
     { key: 'Ctrl + G', desc: 'Editor: Ir para Linha/Coluna' },
     { key: 'Shift + Alt + F', desc: 'Editor: Formatar documento' },
     { key: 'Alt + Z', desc: 'Editor: Alternar quebra de linha (Word Wrap)' },
+    { key: 'Ctrl + N', desc: 'Arquivo: Novo arquivo de texto (sem título)' },
+    { key: 'Ctrl + Shift + N', desc: 'Arquivo: Nova janela' },
+    { key: 'Ctrl + O', desc: 'Arquivo: Abrir pasta' },
     { key: 'Ctrl + S', desc: 'Arquivo: Salvar alterações' },
+    { key: 'Ctrl + Shift + S', desc: 'Arquivo: Salvar como' },
     { key: 'Ctrl + W', desc: 'Arquivo: Fechar editor/aba ativa' },
     { key: 'Ctrl + K  Ctrl + W', desc: 'Arquivo: Fechar todos os editores' },
     { key: 'Ctrl + K  Ctrl + S', desc: 'Preferências: Atalhos de Teclado' },
@@ -619,6 +653,11 @@ export function showShortcutsModal() {
     { key: 'Ctrl + Shift + X', desc: 'Exibir: Abrir Módulos Agzos' },
     { key: 'Ctrl + Shift + A', desc: 'Agzos IA: Abrir e focar no Chat de IA' },
     { key: 'Ctrl + = / -', desc: 'Zoom: Aumentar / diminuir tamanho da fonte' },
+    { key: 'Ctrl + Shift + B', desc: 'Terminal: Executar tarefa de build (npm run build)' },
+    { key: 'F11', desc: 'Exibir: Tela cheia' },
+    { key: 'Alt', desc: 'Barra de menus: focar (Alt + letra sublinhada abre o menu)' },
+    { key: 'Ctrl + Shift + I', desc: 'Ajuda: Ferramentas de desenvolvedor' },
+    { key: 'Ctrl + Q', desc: 'Arquivo: Sair' },
   ];
 
   let modalEl = document.getElementById('shortcuts-modal-overlay');

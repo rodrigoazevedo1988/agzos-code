@@ -6,7 +6,9 @@
 
 import { toast } from './toast.js';
 import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings } from './editor.js';
-import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette, showShortcutsModal, invalidateQuickOpenCache } from './command-palette.js';
+import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette, showShortcutsModal, invalidateQuickOpenCache, runCommand } from './command-palette.js';
+import { setupMenuActions, applyStatusBarVisibility } from './menu-actions.js';
+import { setupMenubar } from './menubar.js';
 import { setupAI, sendToChat } from './ai-chat.js';
 import { captureAITarget, setAITarget } from './ai-apply.js';
 import { setupSearch } from './search.js';
@@ -66,8 +68,15 @@ async function boot() {
   // 6) Aplica settings à UI
   applySettingsToUI();
 
-  // 7) Setup command palette
+  // 7) Setup command palette + comandos da barra de menus
   setupCommandPalette();
+  setupMenuActions();
+  // Barra de menus in-app: Windows/Linux. macOS usa o menu nativo do sistema.
+  try {
+    setupMenubar({ visible: info.platform !== 'darwin' });
+  } catch (e) {
+    console.error('[Menu] setupMenubar falhou:', e);
+  }
 
   // 8) Setup panels — o dock posiciona o #ai-panel antes de o chat renderizar nele
   aiDock = setupAiDock({ switchSidebarView, selectBottomTab, setBottomPanelVisible, getActiveBottomTab });
@@ -282,6 +291,7 @@ function applySettingsToUI() {
   if (fsEl) fsEl.value = s.fontSize;
   const statusPerf = document.getElementById('status-perf');
   if (statusPerf) statusPerf.textContent = perfLabel(s.performanceMode);
+  applyStatusBarVisibility();
 }
 
 function bindSettingsInputs() {
@@ -304,6 +314,10 @@ function updateStatusAI() {
 /* --------------------------------------------------------------------------
    Atalhos
    -------------------------------------------------------------------------- */
+// Ação do keymap → id do comando (quando diferem)
+const MENU_SHORTCUT_COMMANDS = { 'window.fullscreen': 'window.toggleFullScreen' };
+const NATIVE_MENU_ON_MAC = new Set(['window.new', 'file.openFolder', 'app.quit']);
+
 const isMacPlatform = () => /mac/i.test(navigator.platform || '') || State.platform === 'darwin';
 const shortcutChord = createChord();
 
@@ -474,8 +488,7 @@ function bindShortcuts() {
         break;
       case 'view.search':
         e.preventDefault();
-        switchSidebarView('search');
-        setTimeout(() => document.getElementById('search-text')?.focus(), 50);
+        runCommand('search.findInFiles');
         break;
       case 'view.git':
         e.preventDefault();
@@ -484,6 +497,20 @@ function bindShortcuts() {
       case 'view.modules':
         e.preventDefault();
         switchSidebarView('modules');
+        break;
+      // Atalhos da barra de menus (antes só no menu nativo): mesmo comando do menu/paleta
+      case 'window.new':
+      case 'file.newUntitled':
+      case 'file.openFolder':
+      case 'file.saveAs':
+      case 'task.build':
+      case 'window.devtools':
+      case 'app.quit':
+      case 'window.fullscreen':
+        // macOS: o menu nativo já tem esses aceleradores (não abrir 2 janelas)
+        if (isMacPlatform() && NATIVE_MENU_ON_MAC.has(action)) break;
+        e.preventDefault(); e.stopPropagation();
+        runCommand(MENU_SHORTCUT_COMMANDS[action] || action);
         break;
       // 'settings.open' é tratado em settings-modal.js (abre de forma idempotente)
       default:
