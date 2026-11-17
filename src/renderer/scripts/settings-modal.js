@@ -92,6 +92,7 @@ const DEFAULTS = {
       allowlist: [],
       revealTimeoutSec: 10,
     },
+    inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
   },
 };
 
@@ -553,6 +554,35 @@ const SETTINGS_DEF = [
     type: 'number',
     min: 3,
     max: 120,
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Erros na Linha
+  {
+    key: 'modules.inlineErrors.enabled',
+    title: 'Erros na Linha: Habilitado',
+    desc: 'Mostra a mensagem de erros e avisos no fim da linha do editor.',
+    categories: ['modules'],
+    section: 'Agzos Erros na Linha',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.inlineErrors.severities',
+    title: 'Erros na Linha: Severidades',
+    desc: 'Quais severidades aparecem na linha, separadas por vírgula: error (erro), warning (aviso), info.',
+    categories: ['modules'],
+    section: 'Agzos Erros na Linha',
+    type: 'list',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.inlineErrors.onlyCursorLine',
+    title: 'Erros na Linha: Só na linha do cursor',
+    desc: 'Mostra a mensagem apenas na linha onde o cursor está.',
+    categories: ['modules'],
+    section: 'Agzos Erros na Linha',
+    type: 'boolean',
     apply: notifyModules,
   },
 

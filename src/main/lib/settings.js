@@ -83,6 +83,8 @@ const DEFAULT_SETTINGS = {
       allowlist: [], // valores/hashes de valores que nunca bloqueiam
       revealTimeoutSec: 10, // 3–120
     },
+    // Módulos de editor (1.2.0). Normalização em normalizeEditorMods.
+    inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
   },
 };
 
@@ -186,6 +188,29 @@ function isValidRegex(src) {
   }
 }
 
+const INLINE_SEVERITIES = ['error', 'warning', 'info'];
+
+/** Módulos de editor da 1.2.0 (Erros na Linha, Erros Claros, Marca-texto, Formatador). */
+function normalizeEditorMods(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
+  const obj = (val) => (isPlainObject(val) ? val : {});
+
+  const ie = obj(v.inlineErrors);
+  const severities = Array.isArray(ie.severities)
+    ? INLINE_SEVERITIES.filter((s) => ie.severities.includes(s))
+    : [...def.inlineErrors.severities];
+
+  return {
+    inlineErrors: {
+      ...ie,
+      enabled: bool(ie.enabled, def.inlineErrors.enabled),
+      severities,
+      onlyCursorLine: bool(ie.onlyCursorLine, def.inlineErrors.onlyCursorLine),
+    },
+  };
+}
+
 /** Valores inválidos de `modules` voltam ao padrão (campo a campo; listas item a item). */
 function normalizeModules(value) {
   const def = DEFAULT_SETTINGS.modules;
@@ -233,6 +258,7 @@ function normalizeModules(value) {
       allowlist,
       revealTimeoutSec,
     },
+    ...normalizeEditorMods(v),
   };
 }
 

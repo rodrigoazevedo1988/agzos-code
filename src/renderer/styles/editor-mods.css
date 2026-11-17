@@ -1,0 +1,21 @@
+/* Módulos Agzos de editor (scripts/mods/): Erros na Linha, Erros Claros, Marca-texto, Formatador */
+
+/* View dos cards no hub (mods/common.js) */
+.mod-view-desc { margin: 0 0 10px; color: var(--fg-dim); font-size: 12px; line-height: 1.45; }
+.mod-view-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 12.5px; cursor: pointer; }
+.mod-view-details { margin: 0 0 12px; padding-left: 18px; color: var(--fg-mute); font-size: 11.5px; line-height: 1.45; }
+.mod-view-settings {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 4px;
+  background: transparent; color: var(--fg-dim); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.mod-view-settings:hover { background: var(--hover); color: var(--fg); }
+
+/* Agzos Erros na Linha */
+.monaco-editor .agzos-inline-error { font-style: italic; opacity: 0.85; }
+.monaco-editor .agzos-inline-error-error { color: #f14c4c !important; }
+.monaco-editor .agzos-inline-error-warning { color: #cca700 !important; }
+.monaco-editor .agzos-inline-error-info { color: #3794ff !important; }
+body.theme-agzos-light .monaco-editor .agzos-inline-error-error { color: #c4161c !important; }
+body.theme-agzos-light .monaco-editor .agzos-inline-error-warning { color: #8a6d00 !important; }
+body.theme-agzos-light .monaco-editor .agzos-inline-error-info { color: #1a5fb4 !important; }

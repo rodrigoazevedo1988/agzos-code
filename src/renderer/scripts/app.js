@@ -25,6 +25,7 @@ import { setupModulesHub } from './modules-hub.js';
 import { setupBroom } from './broom.js';
 import { setupEnvVault } from './envvault.js';
 import { setupSsh } from './ssh.js';
+import { setupEditorMods } from './mods/index.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -113,7 +114,7 @@ async function boot() {
   } catch (e) {
     console.error('[Módulos] setupModulesHub falhou:', e);
   }
-  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh]]) {
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh], ['Módulos de editor', setupEditorMods]]) {
     try {
       setup();
     } catch (e) {
