@@ -3,13 +3,16 @@
  *
  * Canais (todos `history:*`):
  *   list(path) → [{ versionId: 'local:<id>', id, ts, size, origin }] (mais nova primeiro)
- *   read(path, versionId) → { content }            (texto UTF-8)
+ *   timeline(path) → { items, git, truncated }     (commits + local, mais antiga primeiro;
+ *                                                   ver modules/history/timeline.js)
+ *   read(path, versionId) → { content }            (texto UTF-8; versionId local ou git)
  *   recordSave(path) → entry | null                (renderer chama após salvar)
  *   restore(path, versionId) → { checkpointId }    (escreve a versão; checkpoint + histórico)
  *   clear(path?) → { ok: true }
  *
  * Todo caminho passa pelo guard da janela que pediu (guardOf(event.sender)).
- * Leitura/escrita do arquivo via ./modules/history/io.js (troca local ↔ remoto na integração).
+ * Leitura/escrita do arquivo e git via ./modules/history/io.js (troca local ↔ remoto na integração).
+ * Conteúdo de commits: cache LRU de 50 MB por janela (descartado quando a janela fecha).
  * deps: { guard | guardFor, settingsStore, userDataDir, io? }
  */
 
@@ -18,15 +21,11 @@ const { createCheckpointStore } = require('../agent/checkpoints');
 const { guardResolver } = require('../lib/window-guards');
 const history = require('../modules/history');
 const defaultIo = require('../modules/history/io');
+const { buildTimeline, readVersion, createLru } = require('../modules/history/timeline');
+const { normalizeModules } = require('../lib/settings');
 
-const CHANNELS = ['list', 'read', 'recordSave', 'restore', 'clear'];
-const LOCAL_RE = /^local:(\d{10,16}(?:-\d{1,4})?)$/;
-
-function parseVersionId(versionId) {
-  const m = typeof versionId === 'string' ? LOCAL_RE.exec(versionId) : null;
-  if (!m) throw new Error('Versão inválida');
-  return { kind: 'local', id: m[1] };
-}
+const CHANNELS = ['list', 'timeline', 'read', 'recordSave', 'restore', 'clear'];
+const CACHE_BYTES = 50 * 1024 * 1024;
 
 function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = defaultIo } = {}) {
   const guardOf = guardResolver({ guard, guardFor });
@@ -34,6 +33,21 @@ function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = d
   history.configureHistory({ userDataDir, getSettings: loadSettings });
   const cpDir = userDataDir ? path.join(userDataDir, 'history-checkpoints') : undefined;
   const checkpoints = createCheckpointStore({ dir: cpDir, maxCount: 20 });
+
+  const sliderOptions = () => normalizeModules(loadSettings().modules).gitSlider;
+
+  // Por janela: cache LRU de conteúdos de commit + versionIds conhecidos por arquivo.
+  const perWindow = new Map(); // webContents.id | null → { cache, known }
+  function windowState(sender) {
+    const id = sender && sender.id !== undefined ? sender.id : null;
+    let st = perWindow.get(id);
+    if (!st) {
+      st = { cache: createLru({ maxBytes: CACHE_BYTES }), known: new Map() };
+      perWindow.set(id, st);
+      if (sender && typeof sender.once === 'function') sender.once('destroyed', () => perWindow.delete(id));
+    }
+    return st;
+  }
 
   const store = () => {
     const s = history.getHistoryStore();
@@ -46,18 +60,33 @@ function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = d
     return guardOf(sender).assertAllowed(p);
   }
 
-  async function versionContent(abs, versionId) {
-    const v = parseVersionId(versionId);
-    return store().read(abs, v.id);
+  function versionContent(sender, abs, versionId) {
+    const { cache, known } = windowState(sender);
+    return readVersion(abs, versionId, {
+      store: history.getHistoryStore(), runGitFor: io.runGitFor, cache, known,
+      maxCommits: sliderOptions().maxCommits,
+    });
   }
 
   const handlers = {
     list: (sender, p) => store().list(filePath(sender, p))
       .map(({ id, ts, size, origin }) => ({ versionId: `local:${id}`, id, ts, size, origin })),
 
+    timeline: async (sender, p) => {
+      const abs = filePath(sender, p);
+      const opts = sliderOptions();
+      const tl = await buildTimeline(abs, {
+        store: history.getHistoryStore(),
+        runGitFor: opts.enabled ? io.runGitFor : null,
+        maxCommits: opts.maxCommits,
+      });
+      windowState(sender).known.set(abs, new Set(tl.items.map((i) => i.versionId)));
+      return tl;
+    },
+
     read: async (sender, p, versionId) => {
       const abs = filePath(sender, p);
-      return { content: (await versionContent(abs, versionId)).toString('utf8') };
+      return { content: (await versionContent(sender, abs, versionId)).toString('utf8') };
     },
 
     recordSave: async (sender, p) => {
@@ -69,7 +98,7 @@ function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = d
 
     restore: async (sender, p, versionId) => {
       const abs = filePath(sender, p);
-      const buf = await versionContent(abs, versionId);
+      const buf = await versionContent(sender, abs, versionId);
       history.recordBefore(abs, 'externo');
       const cp = checkpoints.create({ root: path.dirname(abs) });
       cp.record(abs);
@@ -91,4 +120,4 @@ function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = d
   return { handlers };
 }
 
-module.exports = { register, CHANNELS, parseVersionId };
+module.exports = { register, CHANNELS };

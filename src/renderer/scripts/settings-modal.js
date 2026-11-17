@@ -560,6 +560,26 @@ const SETTINGS_DEF = [
 
   // Módulos Agzos — Histórico local e Git Slider
   {
+    key: 'modules.gitSlider.enabled',
+    title: 'Git Slider: Habilitado',
+    desc: 'Linha do tempo do arquivo (Ctrl+Alt+H): commits do Git e versões locais, com diff e restauração.',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.gitSlider.maxCommits',
+    title: 'Git Slider: Commits na linha do tempo',
+    desc: 'Quantos commits recentes do arquivo mostrar (10 a 2000).',
+    categories: ['modules'],
+    section: 'Git Slider',
+    type: 'number',
+    min: 10,
+    max: 2000,
+    apply: notifyModules,
+  },
+  {
     key: 'modules.localHistory.enabled',
     title: 'Histórico local: Habilitado',
     desc: 'Guarda uma cópia do arquivo a cada salvamento e antes de alterações do agente, da Vassoura e do Cofre.',

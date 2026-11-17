@@ -192,6 +192,7 @@ contextBridge.exposeInMainWorld('agzos', {
   // Histórico local e Git Slider (ipc/history.js).
   history: {
     list: (...args) => ipcRenderer.invoke('history:list', ...args),
+    timeline: (...args) => ipcRenderer.invoke('history:timeline', ...args),
     read: (...args) => ipcRenderer.invoke('history:read', ...args),
     recordSave: (...args) => ipcRenderer.invoke('history:recordSave', ...args),
     restore: (...args) => ipcRenderer.invoke('history:restore', ...args),

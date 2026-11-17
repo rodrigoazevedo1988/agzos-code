@@ -456,6 +456,10 @@ function bindShortcuts() {
       case 'editor.format':
         runEditorAction(e, 'editor.action.formatDocument', { focus: false });
         break;
+      case 'history.timeline':
+        e.preventDefault(); e.stopPropagation();
+        runCommand('history.timeline');
+        break;
       case 'editor.toggleWordWrap': {
         e.preventDefault();
         const curr = State.settings?.editor?.wordWrap || 'off';

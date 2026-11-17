@@ -104,3 +104,32 @@ test('clear(path) apaga o histórico do arquivo', async () => {
   await call('clear', p('a.txt'));
   assert.deepEqual(await call('list', p('a.txt')), []);
 });
+
+test('timeline: commits do git + versões locais; read/restore de commit', async () => {
+  const { execFileSync } = require('node:child_process');
+  const ENV = { ...process.env, GIT_AUTHOR_NAME: 'Ana', GIT_AUTHOR_EMAIL: 'a@a', GIT_COMMITTER_NAME: 'Ana', GIT_COMMITTER_EMAIL: 'a@a' };
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', env: ENV });
+  git('init', '-q');
+  fs.writeFileSync(p('a.txt'), 'commit 1\n');
+  git('add', '.'); git('commit', '-qm', 'primeiro commit');
+  fs.writeFileSync(p('a.txt'), 'salvo\n');
+  await call('recordSave', p('a.txt'));
+  const tl = await call('timeline', p('a.txt'));
+  assert.equal(tl.git, true);
+  assert.deepEqual(tl.items.map((i) => i.kind), ['commit', 'local']);
+  assert.equal(tl.items[0].author, 'Ana');
+  assert.equal(tl.items[0].message, 'primeiro commit');
+  const r = await call('read', p('a.txt'), tl.items[0].versionId);
+  assert.equal(r.content, 'commit 1\n');
+  await call('restore', p('a.txt'), tl.items[0].versionId);
+  assert.equal(fs.readFileSync(p('a.txt'), 'utf8'), 'commit 1\n');
+});
+
+test('timeline: módulo Git Slider desabilitado → sem commits', async () => {
+  settings.modules.gitSlider = { enabled: false };
+  fs.writeFileSync(p('a.txt'), 'x');
+  await call('recordSave', p('a.txt'));
+  const tl = await call('timeline', p('a.txt'));
+  assert.equal(tl.git, false);
+  assert.equal(tl.items.length, 1);
+});
