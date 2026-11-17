@@ -24,6 +24,7 @@ import { setupGitPanel } from './git-panel.js';
 import { setupModulesHub } from './modules-hub.js';
 import { setupBroom } from './broom.js';
 import { setupEnvVault } from './envvault.js';
+import { setupSnippets } from './snippets.js';
 import { setupSsh } from './ssh.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
@@ -113,7 +114,7 @@ async function boot() {
   } catch (e) {
     console.error('[Módulos] setupModulesHub falhou:', e);
   }
-  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh]]) {
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['Snippets', setupSnippets], ['SSH', setupSsh]]) {
     try {
       setup();
     } catch (e) {

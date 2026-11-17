@@ -175,6 +175,22 @@ function copyOfficeViewers() {
   console.log(`✓ jszip, docx-preview e SheetJS copiados (${formatSize(total)})`);
 }
 
+// Tailwind no navegador (@tailwindcss/browser): só para as miniaturas dos Snippets, que o
+// main lê e embute no srcdoc de um iframe sandbox (ipc/snippets.js → snippets:tailwind).
+function copyTailwind() {
+  const src = path.join(ROOT, 'node_modules', '@tailwindcss', 'browser', 'dist', 'index.global.js');
+  if (!fs.existsSync(src)) {
+    console.error('✗ @tailwindcss/browser não encontrado em node_modules. Rode `npm install` primeiro.');
+    process.exit(1);
+  }
+  const dst = path.join(VENDOR, 'tailwind');
+  fs.mkdirSync(dst, { recursive: true });
+  fs.copyFileSync(src, path.join(dst, 'tailwind.global.js'));
+  const license = path.join(ROOT, 'node_modules', '@tailwindcss', 'browser', 'LICENSE');
+  if (fs.existsSync(license)) fs.copyFileSync(license, path.join(dst, 'LICENSE'));
+  console.log(`✓ Tailwind (browser) copiado (${formatSize(fs.statSync(src).size)})`);
+}
+
 function dirSize(p) {
   let total = 0;
   function walk(d) {
@@ -200,6 +216,7 @@ function main() {
   copyLucide();
   copyMarkdown();
   copyOfficeViewers();
+  copyTailwind();
   console.log('\nVendor pronto. Rode `npm start` para abrir o Agzos Code.');
 }
 

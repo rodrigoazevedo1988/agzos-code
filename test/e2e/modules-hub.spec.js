@@ -6,7 +6,7 @@ const { launchApp } = require('./helpers');
 
 const base = { welcomeSeen: true, onboardingCompleted: true };
 
-test('hub lista 5 cards, 3 "Em breve"', async () => {
+test('hub lista 5 cards, 2 "Em breve"', async () => {
   const { app, page, errors } = await launchApp({ settings: base });
   try {
     const btn = page.locator('.activity-btn[data-view="modules"]');
@@ -23,10 +23,11 @@ test('hub lista 5 cards, 3 "Em breve"', async () => {
 
     const cards = panel.locator('.module-card');
     await expect(cards).toHaveCount(5);
-    await expect(panel.locator('.module-card.coming-soon')).toHaveCount(3);
+    await expect(panel.locator('.module-card.coming-soon')).toHaveCount(2);
     await expect(panel.locator('.module-card[data-module="broom"]')).toContainText('Vassoura de Produção');
     await expect(panel.locator('.module-card[data-module="envVault"]')).toContainText('Cofre .env');
-    for (const id of ['snippets', 'sandbox', 'gitSlider']) {
+    await expect(panel.locator('.module-card[data-module="snippets"]')).toContainText('Habilitado');
+    for (const id of ['sandbox', 'gitSlider']) {
       const card = panel.locator(`.module-card[data-module="${id}"]`);
       await expect(card).toContainText('Em breve');
       await expect(card).toHaveAttribute('aria-disabled', 'true');
