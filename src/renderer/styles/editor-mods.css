@@ -19,3 +19,32 @@
 body.theme-agzos-light .monaco-editor .agzos-inline-error-error { color: #c4161c !important; }
 body.theme-agzos-light .monaco-editor .agzos-inline-error-warning { color: #8a6d00 !important; }
 body.theme-agzos-light .monaco-editor .agzos-inline-error-info { color: #1a5fb4 !important; }
+
+/* Painel PROBLEMAS (mods/problems-panel.js) e Agzos Erros Claros */
+#pane-problems { overflow: auto; }
+.problems-list { display: flex; flex-direction: column; padding: 4px 0; font-size: 12px; }
+.problem-item {
+  display: grid; grid-template-columns: 44px 1fr; gap: 8px;
+  padding: 5px 12px; cursor: pointer; border-left: 2px solid transparent;
+}
+.problem-item:hover, .problem-item:focus-visible { background: var(--hover); outline: none; }
+.problem-item.problem-error { border-left-color: #f14c4c; }
+.problem-item.problem-warning { border-left-color: #cca700; }
+.problem-item.problem-info, .problem-item.problem-hint { border-left-color: #3794ff; }
+.problem-sev { font-size: 10.5px; font-weight: 600; text-transform: uppercase; padding-top: 1px; }
+.problem-sev-error { color: #f14c4c; }
+.problem-sev-warning { color: #cca700; }
+.problem-sev-info, .problem-sev-hint { color: #3794ff; }
+.problem-body { min-width: 0; }
+.problem-msg { color: var(--fg); white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+.problem-msg-pretty { white-space: normal; }
+.problem-line { margin: 1px 0; }
+.problem-chain { color: var(--fg-mute); }
+.problem-type {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px;
+  background: var(--bg-soft); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
+}
+pre.problem-type { display: block; margin: 4px 0; padding: 6px 8px; white-space: pre; overflow-x: auto; }
+.problem-meta { margin-top: 2px; color: var(--fg-mute); font-size: 11px; }
+.problem-code { color: var(--accent-2, #d10a11); text-decoration: none; margin-left: 4px; }
+.problem-code:hover { text-decoration: underline; }

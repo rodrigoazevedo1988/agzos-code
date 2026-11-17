@@ -85,6 +85,7 @@ const DEFAULT_SETTINGS = {
     },
     // Módulos de editor (1.2.0). Normalização em normalizeEditorMods.
     inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
+    prettyErrors: { enabled: true },
   },
 };
 
@@ -208,6 +209,7 @@ function normalizeEditorMods(v) {
       severities,
       onlyCursorLine: bool(ie.onlyCursorLine, def.inlineErrors.onlyCursorLine),
     },
+    prettyErrors: { ...obj(v.prettyErrors), enabled: bool(obj(v.prettyErrors).enabled, def.prettyErrors.enabled) },
   };
 }
 

@@ -93,6 +93,7 @@ const DEFAULTS = {
       revealTimeoutSec: 10,
     },
     inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
+    prettyErrors: { enabled: true },
   },
 };
 
@@ -582,6 +583,17 @@ const SETTINGS_DEF = [
     desc: 'Mostra a mensagem apenas na linha onde o cursor está.',
     categories: ['modules'],
     section: 'Agzos Erros na Linha',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Erros Claros
+  {
+    key: 'modules.prettyErrors.enabled',
+    title: 'Erros Claros: Habilitado',
+    desc: 'Reformata as mensagens do TypeScript/JavaScript no hover e no painel Problemas (tipos quebrados e realçados, link para a documentação do erro).',
+    categories: ['modules'],
+    section: 'Agzos Erros Claros',
     type: 'boolean',
     apply: notifyModules,
   },

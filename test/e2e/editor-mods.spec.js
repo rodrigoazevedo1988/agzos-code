@@ -71,3 +71,47 @@ test.describe('Agzos Erros na Linha', () => {
     } finally { await env.close(); }
   });
 });
+
+test.describe('Agzos Erros Claros', () => {
+  const LONG = "interface User { name: string }\nconst u: User = { name: 'a', age: 3, extra: { a: 1, b: 2, c: 3 } };\nexport { u };\n";
+
+  test('hover mostra a mensagem formatada com link do código do erro', async () => {
+    const env = await setup({ files: { 'erro.ts': TS_ERROR } });
+    const { page } = env;
+    try {
+      await env.open('erro.ts');
+      await expect(page.locator('.monaco-editor .agzos-inline-error-error')).toBeVisible({ timeout: 15000 });
+      await page.evaluate(() => {
+        const ed = window.monaco.editor.getEditors()[0];
+        ed.setPosition({ lineNumber: 1, column: 8 });
+        ed.focus();
+        ed.trigger('e2e', 'editor.action.showHover', {});
+      });
+      const hover = page.locator('.monaco-hover .agzos-pretty-error, .monaco-hover a[data-href*="typescript.tv/errors/#ts2322"]').first();
+      await expect(hover).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.monaco-hover')).toContainText('TS2322');
+      expect(env.errors).toEqual([]);
+    } finally { await env.close(); }
+  });
+
+  test('painel Problemas lista os erros do arquivo, formatados e com link', async () => {
+    const env = await setup({ files: { 'longo.ts': LONG } });
+    const { page } = env;
+    try {
+      await env.open('longo.ts');
+      await page.evaluate(() => import('./scripts/terminal.js').then((m) => { m.setBottomPanelVisible(true); m.selectBottomTab('problems'); }));
+      const item = page.locator('#pane-problems .problem-item').first();
+      await expect(item).toBeVisible({ timeout: 15000 });
+      await expect(item).toContainText('longo.ts');
+      await expect(item.locator('a.problem-code')).toHaveAttribute('href', /typescript\.tv\/errors\/#ts2353/);
+      // Trecho de tipo realçado pelo monaco.editor.colorize.
+      await expect(item.locator('.problem-type').first()).toBeVisible();
+      await expect(item.locator('.problem-type span[class*="mtk"]').first()).toBeAttached();
+
+      // Desligado: mensagem crua, sem link.
+      await page.evaluate(() => import('./scripts/mods/common.js').then((m) => m.setModSetting('prettyErrors', 'enabled', false)));
+      await expect(page.locator('#pane-problems a.problem-code')).toHaveCount(0);
+      await expect(page.locator('#pane-problems .problem-item').first()).toContainText("Object literal may only specify known properties");
+    } finally { await env.close(); }
+  });
+});

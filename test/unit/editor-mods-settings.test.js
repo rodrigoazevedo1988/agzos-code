@@ -17,3 +17,10 @@ test('inlineErrors: valores inválidos voltam ao padrão campo a campo', () => {
   assert.deepEqual(normalizeModules({ inlineErrors: { severities: [] } }).inlineErrors.severities, []);
   assert.equal(normalizeModules({ inlineErrors: { enabled: false } }).inlineErrors.enabled, false);
 });
+
+test('prettyErrors: padrão ligado; enabled inválido volta ao padrão', () => {
+  assert.deepEqual(DEFAULT_SETTINGS.modules.prettyErrors, { enabled: true });
+  assert.deepEqual(normalizeModules({ prettyErrors: { enabled: 1 } }).prettyErrors, { enabled: true });
+  assert.deepEqual(normalizeModules({ prettyErrors: 'x' }).prettyErrors, { enabled: true });
+  assert.equal(normalizeModules({ prettyErrors: { enabled: false } }).prettyErrors.enabled, false);
+});
