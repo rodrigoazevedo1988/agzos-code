@@ -324,6 +324,8 @@ test('pasta remota (integração): Git Slider/histórico, Agzos Árvore e Agzos 
       }, n);
       await page.evaluate(() => window.AgzosEditor.saveActive());
       await expect.poll(() => fs.readFileSync(path.join(proj, 'src', 'app.js'), 'utf8')).toBe(`const alvo = ${n};\n`);
+      // recordSave lê o arquivo depois do salvamento: espera a versão antes de salvar de novo.
+      await expect.poll(async () => (await page.evaluate((p) => window.agzos.history.list(p), fileUri)).length, { timeout: 15000 }).toBe(n - 1);
     }
     await expect.poll(async () => (await page.evaluate((p) => window.agzos.history.timeline(p), fileUri)).items.filter((i) => i.kind === 'local').length, { timeout: 15000 }).toBe(2);
     const tl = await page.evaluate((p) => window.agzos.history.timeline(p), fileUri);
