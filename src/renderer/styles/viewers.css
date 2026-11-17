@@ -239,3 +239,37 @@
 .md-doc th { font-weight: 600; background: var(--bg-soft); }
 .md-doc tr:nth-child(even) td { background: var(--bg-soft); }
 #md-preview-side .md-doc { padding: 16px 24px 48px; }
+
+/* Grade virtual (planilhas/CSV) */
+.viewer-sheet-stage { display: flex; flex-direction: column; overflow: hidden; }
+.viewer-grid { flex: 1; min-height: 0; overflow: auto; outline: none; }
+.viewer-grid .viewer-table td, .viewer-grid .viewer-table th { height: 24px; box-sizing: border-box; line-height: 17px; white-space: nowrap; }
+.viewer-grid tr.grid-spacer td { padding: 0; border: 0; }
+.viewer-sheet thead th:not(.rownum) { text-align: center; }
+.viewer-sheet .viewer-warning { position: static; flex: 0 0 auto; }
+.sheet-tabs {
+  display: flex; gap: 2px;
+  padding: 0 8px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-soft);
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+.sheet-tabs[hidden] { display: none; }
+.sheet-tab {
+  padding: 5px 14px;
+  border: 0; border-top: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit; font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sheet-tab:hover { background: var(--hover); color: var(--fg); }
+.sheet-tab[aria-selected="true"] { color: var(--fg); background: var(--bg); border-top-color: var(--accent); }
+
+/* DOCX (docx-preview) */
+.viewer-docx-stage { background: var(--bg-soft2); }
+.docx-host { min-height: 100%; }
+.docx-host .docx-wrapper { background: transparent; padding: 24px; }
+.docx-host .docx-wrapper > section.docx { box-shadow: var(--shadow); margin-bottom: 24px; }
