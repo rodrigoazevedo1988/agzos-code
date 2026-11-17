@@ -10,7 +10,7 @@
 import { registerModule, openModule } from './modules-hub.js';
 import { registerCommands } from './command-palette.js';
 import { lucideIcon } from './lucide.js';
-import { toast } from './toast.js';
+import { toast, toastAction } from './toast.js';
 import { confirmGit } from './git-dialog.js';
 import * as editorApi from './editor.js';
 
@@ -161,8 +161,21 @@ function onKeyDown(e) {
 /*  Ações                                                                      */
 /* -------------------------------------------------------------------------- */
 
-async function afterEdit(file, message) {
-  toast(message, 'success', 2500);
+async function afterEdit(file, message, checkpointId) {
+  if (checkpointId) {
+    toastAction(message, {
+      label: 'Desfazer',
+      onClick: async () => {
+        const r = await guarded(() => api().undo(checkpointId));
+        if (r?.errors?.length) toast(`Desfazer: ${r.errors[0].message || r.errors[0]}`, 'error', 5000);
+        else toast('Alteração desfeita.', 'success', 2500);
+        await reloadInEditor(file);
+        await refresh();
+      },
+    });
+  } else {
+    toast(message, 'success', 2500);
+  }
   await reloadInEditor(file);
   await refresh();
 }
@@ -186,7 +199,7 @@ function startEdit(row, file, key) {
     if (save) {
       const r = await guarded(() => api().setValue(file, key, input.value));
       input.value = '';
-      if (r) { await afterEdit(file, `${key} atualizada.`); return; }
+      if (r) { await afterEdit(file, `${key} atualizada.`, r.checkpointId); return; }
     }
     row.classList.remove('editing');
     cell.textContent = row.dataset.masked || MASK;
@@ -207,7 +220,7 @@ async function removeKey(file, key) {
   });
   if (!ok) return;
   const r = await guarded(() => api().removeKey(file, key));
-  if (r) await afterEdit(file, `${key} removida.`);
+  if (r) await afterEdit(file, `${key} removida.`, r.checkpointId);
 }
 
 function addKeyForm(card, file, presetKey = '') {
@@ -235,7 +248,7 @@ function addKeyForm(card, file, presetKey = '') {
     if (!key) { keyIn.focus(); return; }
     const r = await guarded(() => api().addKey(file, key, valIn.value));
     valIn.value = '';
-    if (r) await afterEdit(file, `${key} adicionada.`);
+    if (r) await afterEdit(file, `${key} adicionada.`, r.checkpointId);
   });
   form.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); form.remove(); } });
   card.querySelector('.ev-rows').before(form);

@@ -156,6 +156,7 @@ contextBridge.exposeInMainWorld('agzos', {
     hookStatus: (...args) => ipcRenderer.invoke('envvault:hookStatus', ...args),
     gitignoreStatus: (...args) => ipcRenderer.invoke('envvault:gitignoreStatus', ...args),
     addToGitignore: (...args) => ipcRenderer.invoke('envvault:addToGitignore', ...args),
+    undo: (...args) => ipcRenderer.invoke('envvault:undo', ...args),
   },
 
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.

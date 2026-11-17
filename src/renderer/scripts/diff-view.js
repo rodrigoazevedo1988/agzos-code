@@ -16,9 +16,11 @@ export function showDiff({ title, original, modified, language, readOnly = false
     const actions = document.createElement('div');
     actions.className = 'diff-actions';
     const cancel = document.createElement('button');
+    cancel.className = 'secondary-btn';
     cancel.textContent = readOnly ? 'Fechar' : 'Descartar';
     actions.append(cancel);
     const apply = document.createElement('button');
+    apply.className = 'primary-btn';
     if (!readOnly) { apply.textContent = applyLabel; actions.append(apply); }
     dialog.append(heading, host, actions);
     overlay.append(dialog);
