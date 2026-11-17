@@ -53,8 +53,10 @@ Itens que aparecem na barra de menus (v1.1.0) desabilitados, com o selo "Em brev
 
 ## Barra de menus — limitações conhecidas
 
-- **Guard único entre janelas:** o path guard do main libera a união das pastas abertas em todas as janelas; uma janela poderia ler a pasta aberta em outra (ambas foram escolhidas pelo usuário). Separar o guard por `webContents.id` exige passar o remetente para todos os handlers `fs:*`/`git:*`/módulos. **M**
-- **Configurações compartilhadas:** `settings.json` é um só; mudar tema/fonte numa janela grava para todas, mas as outras só aplicam ao reiniciar (não há broadcast de settings), e uma janela com cópia velha pode sobrescrever ao salvar. Resolver com um evento `settings:changed` do main para todas as janelas. **P**
+- ~~**Guard único entre janelas**~~ e ~~**Configurações compartilhadas**~~: resolvidos na 1.1.0 (guard por janela, `settings:changed` + merge por campo) — ver [relatório](relatorios/v1.1.0-janelas.md).
+- **Recentes compartilhados:** `recentFolders` é um só; qualquer janela reabre uma pasta recente (inclusive a aberta em outra janela) pelo fluxo de abrir, como no VS Code. **—**
+- **Sair pelo Dock (macOS) / encerramento do SO** não passam pela confirmação de sair (só Cmd+Q, menu e Ctrl+Q). Interceptar `before-quit` sem travar o fechamento da última janela e o `quitAndInstall` do updater. **P**
+- **Sair com arquivos não salvos** só avisa e descarta ("Sair sem salvar"); não há "Salvar tudo e sair". **P**
 - **macOS:** a barra in-app fica escondida e vale o menu nativo do sistema, que ainda é o enxuto de antes (Nova Janela, Abrir Pasta, Salvar, Configurações, Paleta, Terminal, Sidebar, Ajuda). Gerar o menu nativo a partir de `menu-model.js` (IPC renderer → main com o template). **M**
 - **Avisos do updater** vão só para a janela focada (de propósito, para não repetir o diálogo de reinício em cada janela).
 
