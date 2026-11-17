@@ -105,6 +105,8 @@ function register(ipcMain, {
 
   return {
     rootFor: (id) => roots.get(id) || null,
+    /** fs:readDir leu `dir` nesta janela: observa (se dentro da raiz e fora de node_modules/.git/…). */
+    watchDir: (sender, dir) => (sender && sender.id !== undefined ? watcher.watchDir(sender.id, dir) : false),
   };
 }
 

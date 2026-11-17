@@ -18,6 +18,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { compileGlob, LIMITS: GLOB_LIMITS } = require('../../lib/glob-match');
 
 const LIMITS = { depthDefault: 3, depthMax: 20, maxEntries: 5000 };
 
@@ -70,45 +71,11 @@ function sourceFor(p, sender) {
   return providerSource(providerFor(p, sender));
 }
 
-function escapeRegex(ch) {
-  return /[.+^${}()|\\]/.test(ch) ? `\\${ch}` : ch;
-}
-
-/** Glob do .gitignore → corpo de regex (sem âncoras). */
-function globToRegex(glob) {
-  let out = '';
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i];
-    if (ch === '*') {
-      if (glob[i + 1] === '*') {
-        const slashAfter = glob[i + 2] === '/';
-        const slashBefore = i === 0 || glob[i - 1] === '/';
-        if (slashBefore && slashAfter) { out += '(?:.*/)?'; i += 2; continue; }
-        out += '.*';
-        i += 1;
-        continue;
-      }
-      out += '[^/]*';
-    } else if (ch === '?') {
-      out += '[^/]';
-    } else if (ch === '[') {
-      const end = glob.indexOf(']', i + 1);
-      if (end === -1) { out += '\\['; continue; }
-      let cls = glob.slice(i + 1, end).replace(/\\/g, '\\\\');
-      if (cls.startsWith('!')) cls = `^${cls.slice(1)}`;
-      out += `[${cls}]`;
-      i = end;
-    } else if (ch === '\\' && i + 1 < glob.length) {
-      out += escapeRegex(glob[i + 1]);
-      i += 1;
-    } else {
-      out += escapeRegex(ch);
-    }
-  }
-  return out;
-}
-
-function parseRule(line) {
+/**
+ * Linha do .gitignore → { negate, dirOnly, match } | null. Padrão inválido (ex.: `[z-a]`) ou longo
+ * demais é ignorado com aviso — nunca lança. Casamento via lib/glob-match (sem RegExp, sem ReDoS).
+ */
+function parseRule(line, onWarn) {
   let s = line.replace(/\r$/, '');
   if (!s.trim() || s.startsWith('#')) return null;
   // Espaços no fim são ignorados (salvo escapados).
@@ -121,18 +88,32 @@ function parseRule(line) {
   if (!s) return null;
   const anchored = s.includes('/');
   if (s.startsWith('/')) s = s.slice(1);
-  const body = globToRegex(s);
-  const re = new RegExp(anchored ? `^${body}$` : `^(?:.*/)?${body}$`);
-  return { negate, dirOnly, re };
+  // Sem `/`: casa o nome em qualquer nível (equivale a `**/padrão`).
+  const match = compileGlob(anchored ? s : `**/${s}`, { onWarn });
+  return match ? { negate, dirOnly, match } : null;
 }
 
-function createIgnoreMatcher(text) {
-  const rules = String(text || '').split('\n').map(parseRule).filter(Boolean);
+/**
+ * createIgnoreMatcher(text, { log }) — no máximo GLOB_LIMITS.rulesMax regras; o resto é ignorado
+ * com aviso em log.warn.
+ */
+function createIgnoreMatcher(text, { log = console } = {}) {
+  const onWarn = (msg) => log?.warn?.('[árvore] .gitignore:', msg);
+  const rules = [];
+  for (const line of String(text || '').split('\n')) {
+    const r = parseRule(line, onWarn);
+    if (!r) continue;
+    if (rules.length >= GLOB_LIMITS.rulesMax) {
+      onWarn(`mais de ${GLOB_LIMITS.rulesMax} regras; as demais foram ignoradas`);
+      break;
+    }
+    rules.push(r);
+  }
   return (rel, isDir) => {
     let result;
     for (const r of rules) {
       if (r.dirOnly && !isDir) continue;
-      if (r.re.test(rel)) result = !r.negate;
+      if (r.match(rel)) result = !r.negate;
     }
     return result;
   };

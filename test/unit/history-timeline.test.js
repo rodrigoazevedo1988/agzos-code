@@ -117,7 +117,7 @@ test('buildTimeline + readVersion: commits (com rename) e versões locais', asyn
   assert.ok(first.equals(Buffer.from(BODY)));
   const second = await readVersion(file, tl.items[1].versionId, { store, runGitFor, cache });
   assert.equal(second.toString(), `${BODY}fim\r\n`);
-  assert.ok(cache.get(tl.items[1].versionId));
+  assert.ok(cache.get(`${file}\0${tl.items[1].versionId}`));
   const local = await readVersion(file, tl.items[2].versionId, { store, runGitFor, cache });
   assert.equal(local.toString(), 'local\n');
 });
@@ -158,4 +158,43 @@ test('readVersion: versão git de OUTRO arquivo do repositório é recusada', as
   );
   const ok = await readVersion(path.join(repo, 'a.txt'), `git:${sha}:a.txt`, { runGitFor, known: new Map() });
   assert.equal(ok.toString(), 'a');
+});
+
+test('readVersion: cache não vaza versão de A para B (chave inclui o caminho; known antes do cache)', async () => {
+  git('init', '-q');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'conteudo A');
+  fs.writeFileSync(path.join(repo, 'b.txt'), 'conteudo B');
+  git('add', '.'); git('commit', '-qm', 'c');
+  const sha = git('rev-parse', 'HEAD').trim();
+  const cache = createLru({ maxBytes: 1024 });
+  const known = new Map();
+  const a = path.join(repo, 'a.txt');
+  const b = path.join(repo, 'b.txt');
+  const idA = `git:${sha}:a.txt`;
+  assert.equal((await readVersion(a, idA, { runGitFor, cache, known })).toString(), 'conteudo A');
+  await assert.rejects(readVersion(b, idA, { runGitFor, cache, known }), /não encontrada/i);
+  assert.equal(cache.get(idA), undefined);
+});
+
+test('buildTimeline/readVersion: nome com pathspec magic (:(top)…) é literal, não alcança outro arquivo', async () => {
+  git('init', '-q');
+  fs.writeFileSync(path.join(repo, 'segredo.txt'), 'segredo da raiz');
+  fs.mkdirSync(path.join(repo, 'sub'));
+  fs.writeFileSync(path.join(repo, 'sub', 'ok.txt'), 'ok');
+  git('add', '.'); git('commit', '-qm', 'c');
+  const sha = git('rev-parse', 'HEAD').trim();
+  for (const name of [':(top)segredo.txt', ':(top,glob)*.txt', ':!ok.txt']) {
+    const file = path.join(repo, 'sub', name);
+    fs.writeFileSync(file, 'x');
+    const tl = await buildTimeline(file, { store: null, runGitFor, maxCommits: 200 });
+    assert.deepEqual(tl.items, [], name);
+    await assert.rejects(
+      readVersion(file, `git:${sha}:segredo.txt`, { runGitFor, known: new Map() }),
+      /não encontrada/i,
+    );
+  }
+});
+
+test('gitLogArgs: pathspecs literais', () => {
+  assert.ok(gitLogArgs('x', 10).includes('--literal-pathspecs'));
 });

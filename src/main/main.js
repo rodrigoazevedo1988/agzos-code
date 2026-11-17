@@ -275,7 +275,13 @@ const { createWindowGuards } = require('./lib/window-guards');
 const windowGuards = createWindowGuards();
 const { guardFor } = windowGuards;
 ipcMain.on('window:fileToken', (evt) => { evt.returnValue = windowGuards.tokenFor(evt.sender); });
-require('./ipc/fs').register(ipcMain, { guardFor, shell, getFilesExclude: () => settingsStore?.load?.().files?.exclude });
+// onDirRead: a pasta lida entra no observador da janela (workspaces é definido logo abaixo;
+// fs:readDir só chega depois da inicialização). getFilesExclude: nomes ocultos no Explorer.
+require('./ipc/fs').register(ipcMain, {
+  guardFor, shell,
+  onDirRead: (sender, dir) => workspaces.watchDir(sender, dir),
+  getFilesExclude: () => settingsStore?.load?.().files?.exclude,
+});
 require('./ipc/dialog').register(ipcMain, { ...deps, guardFor });
 require('./ipc/term').register(ipcMain, { guardFor });
 require('./ipc/ssh').register(ipcMain, { guardFor });

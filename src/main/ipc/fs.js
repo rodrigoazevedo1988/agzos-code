@@ -62,7 +62,12 @@ const LOCAL_ONLY = 'Indisponível em pasta remota.';
 // Pastas pesadas fora do Quick Open (o Explorer continua mostrando).
 const QUICK_OPEN_IGNORED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', '.cache', 'coverage', '.idea']);
 
-function register(ipcMain, { guard, guardFor, shell, getFilesExclude = () => DEFAULT_FILES_EXCLUDE }) {
+/**
+ * onDirRead(sender, dir): chamado após ler uma pasta local — o observador da janela passa a
+ * vigiá-la (Linux observa só pastas já lidas; ver lib/workspace-watcher.js). Nunca quebra a leitura.
+ * getFilesExclude(): nomes ocultos no Explorer/Quick Open (settings.files.exclude).
+ */
+function register(ipcMain, { guard, guardFor, shell, onDirRead, getFilesExclude = () => DEFAULT_FILES_EXCLUDE }) {
   const excluded = (name) => isExcludedName(name, normalizeFilesExclude(getFilesExclude()));
   // Guard da janela que pediu (várias janelas: lib/window-guards.js).
   const guardOf = guardResolver({ guard, guardFor });
@@ -74,6 +79,7 @@ function register(ipcMain, { guard, guardFor, shell, getFilesExclude = () => DEF
       return list.filter((e) => !excluded(e.name));
     }
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
+    try { onDirRead?.(evt?.sender, dirPath); } catch { /* observador é opcional */ }
     return Promise.all(entries
       .filter((e) => !excluded(e.name))
       .map((e) => describeEntry(dirPath, e)));

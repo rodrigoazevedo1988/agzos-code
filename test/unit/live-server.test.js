@@ -189,3 +189,22 @@ test('stop fecha o servidor e as conexões SSE', async () => {
     assert.equal(server.port, null);
   } finally { site.cleanup(); }
 });
+
+test('symlink local para arquivo oculto (a.txt -> .env, pasta -> .git) não serve o oculto', async () => {
+  await withServer(async ({ port, root }) => {
+    try {
+      fs.symlinkSync('.env', path.join(root, 'a.txt'));
+      fs.mkdirSync(path.join(root, '.git'));
+      fs.writeFileSync(path.join(root, '.git', 'config'), 'token');
+      fs.symlinkSync('.git', path.join(root, 'g'));
+      fs.mkdirSync(path.join(root, 'site'));
+      fs.symlinkSync(path.join('..', '.env'), path.join(root, 'site', 'index.html'));
+    } catch { return; /* sem symlink */ }
+    for (const p of ['/a.txt', '/g/config', '/g/', '/site/']) {
+      const r = await get(port, p);
+      assert.ok([403, 404].includes(r.status), `${p} → ${r.status}`);
+      assert.doesNotMatch(r.body, /SEGREDO|token/, p);
+    }
+    assert.equal((await get(port, '/app.js')).status, 200);
+  });
+});

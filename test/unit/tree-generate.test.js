@@ -154,3 +154,48 @@ test('createIgnoreMatcher: regras simples', () => {
   assert.equal(m('#hash', false), true);
   assert.equal(m('ok.js', false), undefined);
 });
+
+test('createIgnoreMatcher: casos comuns do .gitignore', () => {
+  const m = createIgnoreMatcher('*.log\n!keep.log\n/dist\nbuild/\n**/node_modules\n[abc].c\n');
+  assert.equal(m('x.log', false), true);
+  assert.equal(m('deep/x.log', false), true);
+  assert.equal(m('keep.log', false), false);
+  assert.equal(m('dist', true), true);
+  assert.equal(m('sub/dist', true), undefined);
+  assert.equal(m('build', true), true);
+  assert.equal(m('build', false), undefined);
+  assert.equal(m('a/b/node_modules', true), true);
+  assert.equal(m('b.c', false), true);
+  assert.equal(m('d.c', false), undefined);
+});
+
+test('createIgnoreMatcher: regra patológica não congela (ReDoS)', () => {
+  const m = createIgnoreMatcher('**a**a**a**a**a**a**a**b\n');
+  const t0 = process.hrtime.bigint();
+  assert.equal(m('a'.repeat(1000), false), undefined);
+  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 50);
+});
+
+test('createIgnoreMatcher: classe inválida é ignorada com aviso, sem derrubar', () => {
+  const warns = [];
+  const m = createIgnoreMatcher('[z-a]\n*.tmp\n', { log: { warn: (...a) => warns.push(a.join(' ')) } });
+  assert.equal(m('x.tmp', false), true);
+  assert.equal(m('z', false), undefined);
+  assert.equal(warns.length, 1);
+});
+
+test('createIgnoreMatcher: limite de regras', () => {
+  const warns = [];
+  const lines = Array.from({ length: 2100 }, (_, i) => `f${i}`).join('\n');
+  const m = createIgnoreMatcher(lines, { log: { warn: (...a) => warns.push(a.join(' ')) } });
+  assert.equal(m('f0', false), true);
+  assert.equal(m('f2050', false), undefined);
+  assert.ok(warns.some((w) => /2000/.test(w)));
+});
+
+test('generateTree: .gitignore com [z-a] não derruba a árvore', async () => {
+  const root = mkTree({ '.gitignore': '[z-a]\n*.tmp\n', 'a.txt': 'x', 'b.tmp': 'x' });
+  const r = await generateTree(root, {});
+  assert.match(r.text, /a\.txt/);
+  assert.doesNotMatch(r.text, /b\.tmp/);
+});

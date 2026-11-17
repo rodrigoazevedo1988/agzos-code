@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { compileGlob, LIMITS: GLOB_LIMITS } = require('../../lib/glob-match');
 
 const MAX_CONFIG_BYTES = 256 * 1024;
 
@@ -190,32 +191,21 @@ function readPrettierConfig(dir, { root, io = LOCAL_IO } = {}) {
   }
 }
 
-function globToRegExp(glob) {
-  let re = '';
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i];
-    if (ch === '*') {
-      if (glob[i + 1] === '*') {
-        i++;
-        if (glob[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*';
-      } else re += '[^/]*';
-    } else if (ch === '?') re += '[^/]';
-    else if (ch === '{') {
-      const end = glob.indexOf('}', i);
-      if (end === -1) { re += '\\{'; continue; }
-      re += `(?:${glob.slice(i + 1, end).split(',').map((s) => s.replace(/[.+^$()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*')).join('|')})`;
-      i = end;
-    } else re += ch.replace(/[.+^$()|[\]\\]/g, '\\$&');
-  }
-  return new RegExp(`^${re}$`);
-}
-
+/**
+ * `overrides[].files`/`excludeFiles` → casa `relPath`? Usa lib/glob-match (sem RegExp: um padrão
+ * malicioso no .prettierrc não congela o main). Padrão inválido é ignorado com aviso; no máximo
+ * GLOB_LIMITS.rulesMax padrões por lista.
+ */
 function matchesAny(patterns, relPath) {
-  const list = (Array.isArray(patterns) ? patterns : [patterns]).filter((p) => typeof p === 'string' && p);
+  const list = (Array.isArray(patterns) ? patterns : [patterns])
+    .filter((p) => typeof p === 'string' && p)
+    .slice(0, GLOB_LIMITS.rulesMax);
   const base = relPath.split('/').pop();
+  const onWarn = (msg) => console.warn('[formatador] overrides:', msg);
   return list.some((p) => {
-    const re = globToRegExp(p.replace(/^\.\//, ''));
-    return p.includes('/') ? re.test(relPath) : re.test(base) || re.test(relPath);
+    const match = compileGlob(p.replace(/^\.\//, ''), { braces: true, onWarn });
+    if (!match) return false;
+    return p.includes('/') ? match(relPath) : match(base) || match(relPath);
   });
 }
 
