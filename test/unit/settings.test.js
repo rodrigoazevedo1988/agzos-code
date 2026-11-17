@@ -113,3 +113,117 @@ test('settings:save mantém perfis de IA do disco (cópia do renderer pode estar
   assert.deepEqual(saved.ai.context, { file: false });
   assert.equal(saved.aiPanel.position, 'left');
 });
+
+test('modules: defaults de modules', () => {
+  const p = tmpFile();
+  const s = loadSettings(p);
+  assert.deepEqual(s.modules, {
+    broom: {
+      enabled: true,
+      rules: { console: true, comments: true, unusedImports: true, deadCode: true },
+      keepConsole: ['error', 'warn'],
+      keepComments: ['jsdoc', 'directives', 'license'],
+      statusBar: true,
+    },
+    envVault: {
+      enabled: true,
+      blockCommits: true,
+      extraPatterns: [],
+      allowlist: [],
+      revealTimeoutSec: 10,
+    },
+  });
+  const { normalizeModules } = require('../../src/main/lib/settings');
+  assert.deepEqual(normalizeModules(undefined), DEFAULT_SETTINGS.modules);
+  assert.deepEqual(normalizeModules('lixo'), DEFAULT_SETTINGS.modules);
+});
+
+test('modules: modules.broom.rules.console inválido volta a true', () => {
+  const { normalizeModules } = require('../../src/main/lib/settings');
+  const out = normalizeModules({ broom: { enabled: 'sim', rules: { console: 'x', comments: false }, statusBar: 1 } });
+  assert.equal(out.broom.rules.console, true);
+  assert.equal(out.broom.rules.comments, false);
+  assert.equal(out.broom.rules.unusedImports, true);
+  assert.equal(out.broom.enabled, true);
+  assert.equal(out.broom.statusBar, true);
+  assert.equal(normalizeModules({ broom: { rules: 'nada' } }).broom.rules.deadCode, true);
+});
+
+test('modules: keepConsole não-array volta a [error, warn]', () => {
+  const { normalizeModules } = require('../../src/main/lib/settings');
+  assert.deepEqual(normalizeModules({ broom: { keepConsole: 'error' } }).broom.keepConsole, ['error', 'warn']);
+  assert.deepEqual(normalizeModules({ broom: { keepConsole: ['info', 3, '', 'a b'] } }).broom.keepConsole, ['info']);
+  assert.deepEqual(normalizeModules({ broom: { keepConsole: [] } }).broom.keepConsole, []);
+  assert.deepEqual(normalizeModules({ broom: { keepComments: 'x' } }).broom.keepComments, ['jsdoc', 'directives', 'license']);
+  assert.deepEqual(normalizeModules({ broom: { keepComments: ['jsdoc', 'outro'] } }).broom.keepComments, ['jsdoc']);
+});
+
+test('modules: revealTimeoutSec fora de 3..120 volta a 10', () => {
+  const { normalizeModules } = require('../../src/main/lib/settings');
+  const t = (v) => normalizeModules({ envVault: { revealTimeoutSec: v } }).envVault.revealTimeoutSec;
+  assert.equal(t(2), 10);
+  assert.equal(t(121), 10);
+  assert.equal(t('30'), 10);
+  assert.equal(t(Number.NaN), 10);
+  assert.equal(t(3), 3);
+  assert.equal(t(120), 120);
+  assert.equal(t(30), 30);
+  const out = normalizeModules({ envVault: { enabled: false, blockCommits: 'nao', allowlist: ['abc', 5, ''] } });
+  assert.equal(out.envVault.enabled, false);
+  assert.equal(out.envVault.blockCommits, true);
+  assert.deepEqual(out.envVault.allowlist, ['abc']);
+  assert.deepEqual(normalizeModules({ envVault: { allowlist: 'x' } }).envVault.allowlist, []);
+});
+
+test('modules: extraPatterns com regex inválida é descartado item a item', () => {
+  const { normalizeModules } = require('../../src/main/lib/settings');
+  const out = normalizeModules({
+    envVault: {
+      extraPatterns: [
+        { name: 'interno', regex: 'INT_[A-Z0-9]{20}' },
+        { name: 'quebrado', regex: '([a-z' },
+        { name: '', regex: 'abc' },
+        { name: 'sem regex' },
+        'texto',
+        { name: 'outro', regex: 'tok_[0-9]+' },
+      ],
+    },
+  });
+  assert.deepEqual(out.envVault.extraPatterns, [
+    { name: 'interno', regex: 'INT_[A-Z0-9]{20}' },
+    { name: 'outro', regex: 'tok_[0-9]+' },
+  ]);
+  assert.deepEqual(normalizeModules({ envVault: { extraPatterns: {} } }).envVault.extraPatterns, []);
+});
+
+test('modules: loadSettings normaliza modules do disco', () => {
+  const p = tmpFile();
+  fs.writeFileSync(p, JSON.stringify({ modules: { broom: { enabled: false, keepConsole: 7 }, envVault: { revealTimeoutSec: 999 } } }));
+  const s = loadSettings(p);
+  assert.equal(s.modules.broom.enabled, false);
+  assert.deepEqual(s.modules.broom.keepConsole, ['error', 'warn']);
+  assert.equal(s.modules.envVault.revealTimeoutSec, 10);
+  assert.equal(s.modules.envVault.blockCommits, true);
+});
+
+test('modules: settings:save preserva modules ao salvar outra seção', () => {
+  const { register } = require('../../src/main/ipc/settings');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-settings-ipc-'));
+  const handlers = {};
+  register({ handle: (name, fn) => { handlers[name] = fn; } }, { app: { getPath: () => dir } });
+  const file = path.join(dir, 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ modules: { envVault: { blockCommits: false } }, custom: { x: 1 } }));
+  // cópia do renderer sem `modules` (ex.: salva só o tema)
+  handlers['settings:save'](null, { theme: 'monokai' });
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.theme, 'monokai');
+  assert.equal(saved.modules.envVault.blockCommits, false);
+  assert.equal(saved.modules.broom.enabled, true);
+  assert.deepEqual(saved.custom, { x: 1 });
+  // com `modules` no payload, vale o payload (normalizado)
+  handlers['settings:save'](null, { theme: 'monokai', modules: { envVault: { blockCommits: true, revealTimeoutSec: 1 } } });
+  const saved2 = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved2.modules.envVault.blockCommits, true);
+  assert.equal(saved2.modules.envVault.revealTimeoutSec, 10);
+  assert.equal(saved2.modules.broom.enabled, true);
+});

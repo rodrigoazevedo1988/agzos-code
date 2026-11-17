@@ -60,6 +60,23 @@ const DEFAULT_SETTINGS = {
     autoDownload: true,
     channel: 'stable', // stable | beta
   },
+  // Módulos nativos (1.1.0). Normalização em normalizeModules.
+  modules: {
+    broom: {
+      enabled: true,
+      rules: { console: true, comments: true, unusedImports: true, deadCode: true },
+      keepConsole: ['error', 'warn'],
+      keepComments: ['jsdoc', 'directives', 'license'],
+      statusBar: true,
+    },
+    envVault: {
+      enabled: true,
+      blockCommits: true,
+      extraPatterns: [], // [{ name, regex }]
+      allowlist: [], // valores/hashes de valores que nunca bloqueiam
+      revealTimeoutSec: 10, // 3–120
+    },
+  },
 };
 
 function defaults() {
@@ -120,6 +137,68 @@ function normalizeAiAgent(value) {
   return { ...v, mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode };
 }
 
+const BROOM_RULES = ['console', 'comments', 'unusedImports', 'deadCode'];
+const BROOM_KEEP_COMMENTS = ['jsdoc', 'directives', 'license'];
+
+function isValidRegex(src) {
+  try {
+    new RegExp(src);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Valores inválidos de `modules` voltam ao padrão (campo a campo; listas item a item). */
+function normalizeModules(value) {
+  const def = DEFAULT_SETTINGS.modules;
+  const v = isPlainObject(value) ? value : {};
+  const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
+
+  const b = isPlainObject(v.broom) ? v.broom : {};
+  const rulesIn = isPlainObject(b.rules) ? b.rules : {};
+  const rules = {};
+  for (const key of BROOM_RULES) rules[key] = bool(rulesIn[key], def.broom.rules[key]);
+  const keepConsole = Array.isArray(b.keepConsole)
+    ? b.keepConsole.filter((m) => typeof m === 'string' && /^[A-Za-z]+$/.test(m))
+    : [...def.broom.keepConsole];
+  const keepComments = Array.isArray(b.keepComments)
+    ? b.keepComments.filter((k) => BROOM_KEEP_COMMENTS.includes(k))
+    : [...def.broom.keepComments];
+
+  const e = isPlainObject(v.envVault) ? v.envVault : {};
+  const extraPatterns = Array.isArray(e.extraPatterns)
+    ? e.extraPatterns
+      .filter((p) => isPlainObject(p) && typeof p.name === 'string' && p.name.trim()
+        && typeof p.regex === 'string' && p.regex && isValidRegex(p.regex))
+      .map((p) => ({ name: p.name, regex: p.regex }))
+    : [];
+  const allowlist = Array.isArray(e.allowlist) ? e.allowlist.filter((a) => typeof a === 'string' && a) : [];
+  const t = e.revealTimeoutSec;
+  const revealTimeoutSec = typeof t === 'number' && Number.isInteger(t) && t >= 3 && t <= 120
+    ? t : def.envVault.revealTimeoutSec;
+
+  return {
+    ...v,
+    broom: {
+      ...b,
+      enabled: bool(b.enabled, def.broom.enabled),
+      rules,
+      keepConsole,
+      keepComments,
+      statusBar: bool(b.statusBar, def.broom.statusBar),
+    },
+    envVault: {
+      ...e,
+      enabled: bool(e.enabled, def.envVault.enabled),
+      blockCommits: bool(e.blockCommits, def.envVault.blockCommits),
+      extraPatterns,
+      allowlist,
+      revealTimeoutSec,
+    },
+  };
+}
+
 /**
  * Lê as settings. Arquivo ausente → defaults. JSON inválido → move o arquivo
  * para `settings.json.corrupt-<timestamp>` e retorna defaults.
@@ -151,6 +230,7 @@ function loadSettings(filePath) {
   // Contexto padrão herda a escolha antiga (ai.context) de quem já usava o chat.
   merged.aiPanel = normalizeAiPanel(parsed.aiPanel, parsed.ai?.context);
   merged.aiAgent = normalizeAiAgent(parsed.aiAgent);
+  merged.modules = normalizeModules(parsed.modules);
   return merged;
 }
 
@@ -208,4 +288,6 @@ function migrateLegacySecrets(settings, store) {
   return { settings: out, changed };
 }
 
-module.exports = { DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, loadSettings, saveSettings, migrateLegacySecrets };
+module.exports = {
+  DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, normalizeModules, loadSettings, saveSettings, migrateLegacySecrets,
+};

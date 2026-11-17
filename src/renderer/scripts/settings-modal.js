@@ -13,6 +13,7 @@
  *      * Git & GitHub
  *      * Atualizações (OTA)
  *      * Privacidade & Dados
+ *      * Módulos Agzos (subseções por módulo)
  *  - Indicador visual em configurações alteradas do padrão + botão individual de reset
  *  - Alternância para editor JSON direto ({ } settings.json)
  */
@@ -72,7 +73,29 @@ const DEFAULTS = {
     sendKey: 'enter',
     defaultContext: { file: true, selection: true, terminal: false },
   },
+  // Espelho de DEFAULT_SETTINGS.modules (src/main/lib/settings.js).
+  modules: {
+    broom: {
+      enabled: true,
+      rules: { console: true, comments: true, unusedImports: true, deadCode: true },
+      keepConsole: ['error', 'warn'],
+      keepComments: ['jsdoc', 'directives', 'license'],
+      statusBar: true,
+    },
+    envVault: {
+      enabled: true,
+      blockCommits: true,
+      extraPatterns: [],
+      allowlist: [],
+      revealTimeoutSec: 10,
+    },
+  },
 };
+
+/** Avisa os módulos nativos que `settings.modules` mudou. */
+function notifyModules() {
+  window.dispatchEvent(new CustomEvent('agzos:modules-settings', { detail: { modules: State.settings.modules } }));
+}
 
 /** Avisa o painel de chat para reaplicar fonte/densidade/avatares/atalho. */
 function notifyAiPanel() {
@@ -88,6 +111,7 @@ const CATEGORIES = [
   { id: 'git',          label: 'Git & GitHub',      icon: 'git-branch' },
   { id: 'update',       label: 'Atualizações (OTA)',icon: 'refresh-cw' },
   { id: 'privacy',      label: 'Privacidade & Dados',icon: 'shield' },
+  { id: 'modules',      label: 'Módulos Agzos',     icon: 'blocks' },
 ];
 
 let activeCategory = 'commonlyUsed';
@@ -426,6 +450,102 @@ const SETTINGS_DEF = [
     },
   },
 
+  // Módulos Agzos — Vassoura de Produção
+  {
+    key: 'modules.broom.enabled',
+    title: 'Vassoura: Habilitada',
+    desc: 'Ativa a Vassoura de Produção (limpeza de console, comentários, imports não usados e código morto).',
+    categories: ['modules'],
+    section: 'Vassoura de Produção',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.broom.rules.console',
+    title: 'Vassoura: Remover console.*',
+    desc: 'Remove chamadas de console usadas como instrução (exceto os métodos mantidos abaixo).',
+    categories: ['modules'],
+    section: 'Vassoura de Produção',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.broom.rules.comments',
+    title: 'Vassoura: Remover comentários',
+    desc: 'Remove comentários comuns. JSDoc, diretivas (@ts-…, eslint-…) e licenças são mantidos.',
+    categories: ['modules'],
+    section: 'Vassoura de Produção',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.broom.rules.unusedImports',
+    title: 'Vassoura: Remover imports não usados',
+    desc: 'Remove especificadores importados que não são usados no arquivo.',
+    categories: ['modules'],
+    section: 'Vassoura de Produção',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.broom.rules.deadCode',
+    title: 'Vassoura: Remover código morto',
+    desc: 'Remove instruções após return/throw/break/continue e blocos if (false).',
+    categories: ['modules'],
+    section: 'Vassoura de Produção',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.broom.keepConsole',
+    title: 'Vassoura: Métodos de console mantidos',
+    desc: 'Métodos de console que nunca são removidos, separados por vírgula (ex.: error, warn).',
+    categories: ['modules'],
+    section: 'Vassoura de Produção',
+    type: 'list',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.broom.statusBar',
+    title: 'Vassoura: Contador na barra de status',
+    desc: 'Mostra na barra de status quantos itens a Vassoura removeria do arquivo atual.',
+    categories: ['modules'],
+    section: 'Vassoura de Produção',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Cofre .env
+  {
+    key: 'modules.envVault.enabled',
+    title: 'Cofre .env: Habilitado',
+    desc: 'Ativa o Cofre .env (valores mascarados, comparação com .env.example e detecção de segredos).',
+    categories: ['modules'],
+    section: 'Cofre .env',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.envVault.blockCommits',
+    title: 'Cofre .env: Bloquear commits com segredos',
+    desc: 'Antes de commitar, verifica o que está no stage e bloqueia se encontrar possíveis segredos.',
+    categories: ['modules'],
+    section: 'Cofre .env',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.envVault.revealTimeoutSec',
+    title: 'Cofre .env: Tempo de revelação (segundos)',
+    desc: 'Por quanto tempo um valor revelado fica visível antes de ser mascarado de novo (3 a 120).',
+    categories: ['modules'],
+    section: 'Cofre .env',
+    type: 'number',
+    min: 3,
+    max: 120,
+    apply: notifyModules,
+  },
+
   // Atualizações (OTA)
   {
     key: 'update.autoDownload',
@@ -637,10 +757,28 @@ function renderContentHtml() {
       <h2 class="settings-category-title">${categoryHeading}</h2>
     </div>
     <div class="settings-items-list">
-      ${items.map(renderSettingItemHtml).join('')}
+      ${renderItemsWithSections(items, !query)}
       ${extraHtml}
     </div>
   `;
+}
+
+/** Itens agrupados por `section` (subseções da categoria); na busca, lista corrida. */
+function renderItemsWithSections(items, withSections) {
+  let current = null;
+  return items.map((item) => {
+    let head = '';
+    if (withSections && item.section && item.section !== current) {
+      current = item.section;
+      head = `<h3 class="settings-subsection-title">${escapeHtml(item.section)}</h3>`;
+    }
+    return head + renderSettingItemHtml(item);
+  }).join('');
+}
+
+/** "error, warn" → ['error', 'warn'] */
+function parseListInput(text) {
+  return String(text || '').split(',').map((t) => t.trim()).filter(Boolean);
 }
 
 function renderSettingItemHtml(item) {
@@ -659,6 +797,10 @@ function renderSettingItemHtml(item) {
   } else if (item.type === 'number') {
     controlHtml = `
       <input type="number" class="settings-control-input" data-key="${item.key}" min="${item.min ?? 0}" max="${item.max ?? 9999}" value="${escapeHtml(String(currentVal ?? ''))}" />
+    `;
+  } else if (item.type === 'list') {
+    controlHtml = `
+      <input type="text" class="settings-control-list" data-key="${item.key}" value="${escapeHtml((Array.isArray(currentVal) ? currentVal : []).join(', '))}" />
     `;
   } else if (item.type === 'text') {
     controlHtml = `
@@ -863,6 +1005,12 @@ function bindContentEvents() {
         }
       }
       await updateSetting(key, val);
+    });
+  });
+
+  document.querySelectorAll('.settings-control-list').forEach((inp) => {
+    inp.addEventListener('change', async (e) => {
+      await updateSetting(e.target.dataset.key, parseListInput(e.target.value));
     });
   });
 

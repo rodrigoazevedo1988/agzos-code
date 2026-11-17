@@ -14,7 +14,7 @@ test('settings-modal.js existe e exporta as funções necessárias', () => {
   assert.ok(content.includes('export function updateOTAProgress'), 'deve exportar updateOTAProgress');
 });
 
-test('settings-modal contempla as 8 categorias e filtro @modified', () => {
+test('settings-modal contempla as 9 categorias e filtro @modified', () => {
   const filePath = path.join(__dirname, '../../src/renderer/scripts/settings-modal.js');
   const content = fs.readFileSync(filePath, 'utf-8');
 
@@ -27,6 +27,7 @@ test('settings-modal contempla as 8 categorias e filtro @modified', () => {
     'git',
     'update',
     'privacy',
+    'modules',
   ];
 
   for (const cat of requiredCategories) {

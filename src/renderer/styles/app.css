@@ -1459,7 +1459,7 @@ body.perf-high .welcome-actions button { transition: all 0.1s; }
   font-size: 12px;
   color: var(--fg-dim);
 }
-.settings-control-select, .settings-control-input {
+.settings-control-select, .settings-control-input, .settings-control-list {
   width: 320px;
   max-width: 100%;
   background: var(--bg-soft2);
@@ -1470,7 +1470,7 @@ body.perf-high .welcome-actions button { transition: all 0.1s; }
   font-size: 12.5px;
   outline: none;
 }
-.settings-control-select:focus, .settings-control-input:focus {
+.settings-control-select:focus, .settings-control-input:focus, .settings-control-list:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
 }
@@ -1521,6 +1521,15 @@ body.perf-high .welcome-actions button { transition: all 0.1s; }
   padding: 16px 18px;
   margin-top: 14px;
 }
+.settings-subsection-title {
+  margin: 18px 0 4px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  text-transform: none;
+}
+.settings-subsection-title:first-child { margin-top: 4px; }
 .settings-section-title {
   margin: 0 0 6px;
   font-size: 14px;
