@@ -5,7 +5,9 @@
 
 import { registerCommands, runCommand, showCommandPalette, showQuickOpen, showPicker, invalidateQuickOpenCache } from './command-palette.js';
 import { toast } from './toast.js';
-import { runFileCommand, parseScripts, npmRunCommand, RUNNABLE_EXTENSIONS } from './task-utils.js';
+import {
+  runFileCommand, isRunnableFile, parseScripts, npmRunCommand, RUNNABLE_EXTENSIONS,
+} from './task-utils.js';
 
 const State = window.AgzosState;
 
@@ -148,13 +150,13 @@ async function runActiveFile() {
   const p = State.activePath;
   if (!p) { toast('Abra um arquivo para executar.', 'error'); return; }
   if (m.isUntitled(p)) { toast('Salve o arquivo antes de executar.', 'error'); return; }
-  const cmd = runFileCommand(p, State.platform);
-  if (!cmd) {
+  // Aspas conforme o shell da sessão (POSIX, PowerShell ou cmd) — ver task-utils.js.
+  if (!isRunnableFile(p, State.platform)) {
     toast(`Não sei executar este tipo de arquivo. Suportados: ${RUNNABLE_EXTENSIONS.join(', ')}.`, 'error', 5000);
     return;
   }
   if (State.files.get(p)?.dirty) await m.saveFile(p);
-  await (await terminalMod()).runInTerminal(cmd);
+  await (await terminalMod()).runInTerminal(({ shell }) => runFileCommand(p, State.platform, shell));
 }
 
 async function runSelection() {
@@ -193,7 +195,9 @@ async function readRootScripts() {
 }
 
 async function runScript(name) {
-  await (await terminalMod()).runInTerminal(npmRunCommand(name), { newTerminal: true });
+  let cmd;
+  try { cmd = npmRunCommand(name); } catch (err) { toast(err.message, 'error', 6000); return; }
+  await (await terminalMod()).runInTerminal(cmd, { newTerminal: true });
 }
 
 async function runTask() {
