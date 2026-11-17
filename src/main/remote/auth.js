@@ -7,7 +7,10 @@
  * Segredos pedidos ao usuário (askSecret, diálogo no renderer):
  *  - senha do host: com "Lembrar" vai ao cofre `ssh.<user>@<host>:<porta>` só
  *    depois que a conexão autentica (onReady). Senha salva recusada é apagada
- *    do cofre e pedida de novo.
+ *    do cofre e pedida de novo (só quando ela foi a única resposta da tentativa).
+ *  - keyboard-interactive: 1 prompt sem eco que parece senha recebe a senha; os
+ *    demais (OTP, 2FA, vários prompts) são perguntados um a um (kind
+ *    'keyboard-interactive', título = texto do prompt, sem "Lembrar").
  *  - passphrase de chave: conferida localmente (parseKey); com "Lembrar" vai ao
  *    cofre `ssh.key:<caminho da chave>`.
  */
@@ -92,7 +95,6 @@ function createAuthHandler({
   const pendingSaves = new Map();
   let idx = 0;
   let cancelled = false;
-  let lastPassword = null; // { source: 'vault'|'user' } da última tentativa de senha
   let passwordAsks = 0;
   const label = `${username}@${resolved.host}${resolved.port && resolved.port !== 22 ? `:${resolved.port}` : ''}`;
 
@@ -132,41 +134,105 @@ function createAuthHandler({
     return null;
   }
 
-  async function passwordAttempt(methodsLeft) {
-    const allows = (t) => !methodsLeft || methodsLeft.includes(t);
-    if (!allows('password') && !allows('keyboard-interactive')) return false;
-    let message = '';
-    if (lastPassword) {
-      if (lastPassword.source === 'vault') {
-        vaultDel(pwKey);
-        message = 'A senha salva no cofre foi recusada pelo servidor. Digite de novo.';
-      } else {
-        message = 'Senha incorreta. Tente de novo.';
-      }
-      pendingSaves.delete(pwKey);
-    } else {
-      const saved = vaultGet(pwKey);
-      if (saved != null) {
-        lastPassword = { source: 'vault' };
-        return makePassword(saved, methodsLeft);
-      }
+  // Senha em uso nesta autenticação: { value, source: 'vault'|'user' }.
+  // lastAttempt: o que foi enviado na tentativa anterior (se o handler é chamado de
+  // novo, ela falhou). Só uma falha em que a senha foi a única resposta a culpa:
+  // num fluxo com OTP (keyboard-interactive com outros prompts) a senha fica.
+  let current = null;
+  let vaultTried = false;
+  let lastAttempt = null; // { usedPassword, onlyPassword }
+  let kiTries = 0;
+
+  function blamePreviousFailure() {
+    const prev = lastAttempt;
+    lastAttempt = null;
+    if (!prev || !prev.usedPassword || !prev.onlyPassword || !current) return '';
+    pendingSaves.delete(pwKey);
+    const wasVault = current.source === 'vault';
+    current = null;
+    if (wasVault) {
+      vaultDel(pwKey);
+      return 'A senha salva no cofre foi recusada pelo servidor. Digite de novo.';
     }
-    if (passwordAsks >= MAX_ASKS) return false;
-    passwordAsks++;
-    const res = await ask({ kind: 'password', target: label, title: `Senha de ${label}`, message, canRemember: vaultOk() });
-    if (!res) return false;
-    lastPassword = { source: 'user' };
-    if (res.remember && vaultOk()) pendingSaves.set(pwKey, res.value);
-    return makePassword(res.value, methodsLeft);
+    return 'Senha incorreta. Tente de novo.';
   }
 
-  function makePassword(password, methodsLeft) {
-    if (!methodsLeft || methodsLeft.includes('password')) return { type: 'password', username, password };
+  /** Senha a enviar: a atual, a do cofre ou pedida ao usuário. → string | null */
+  async function getPassword(message) {
+    if (current) return current.value;
+    if (!vaultTried) {
+      vaultTried = true;
+      const saved = vaultGet(pwKey);
+      if (saved != null) { current = { value: saved, source: 'vault' }; return saved; }
+    }
+    if (passwordAsks >= MAX_ASKS) return null;
+    passwordAsks++;
+    const res = await ask({ kind: 'password', target: label, title: `Senha de ${label}`, message, canRemember: vaultOk() });
+    if (!res) return null;
+    current = { value: res.value, source: 'user' };
+    if (res.remember && vaultOk()) pendingSaves.set(pwKey, res.value);
+    return res.value;
+  }
+
+  async function passwordAttempt(methodsLeft) {
+    const allowsPw = !methodsLeft || methodsLeft.includes('password');
+    const allowsKi = !!methodsLeft && methodsLeft.includes('keyboard-interactive');
+    if (!allowsPw && !allowsKi) return false;
+    const message = blamePreviousFailure();
+    if (allowsPw) {
+      const pw = await getPassword(message);
+      if (pw == null) return false;
+      lastAttempt = { usedPassword: true, onlyPassword: true };
+      return { type: 'password', username, password: pw };
+    }
+    if (kiTries >= MAX_ASKS) return false;
+    kiTries++;
+    return keyboardInteractive(message);
+  }
+
+  // Parece pedido de senha (e não de código/OTP/token).
+  const looksLikePassword = (text) => /pass(word|phrase)?|senha|contrase|mot de passe/i.test(text || '')
+    && !/code|c[oó]digo|otp|token|verifica|one[- ]time|2fa|totp/i.test(text || '');
+
+  /**
+   * keyboard-interactive: preenche sozinho só 1 prompt sem eco que pareça senha;
+   * o resto (OTP, perguntas, vários prompts) vai ao usuário, um diálogo por prompt,
+   * sem "Lembrar" e sem guardar a resposta.
+   */
+  function keyboardInteractive(message) {
+    const attempt = { usedPassword: false, onlyPassword: true };
+    lastAttempt = attempt;
+    let firstMessage = message;
+    async function answer(name, instructions, prompts) {
+      const list = Array.isArray(prompts) ? prompts : [];
+      if (list.length === 1 && !list[0].echo && looksLikePassword(list[0].prompt)) {
+        const pw = await getPassword(firstMessage);
+        firstMessage = '';
+        if (pw == null) { cancelled = true; return []; }
+        attempt.usedPassword = true;
+        return [pw];
+      }
+      if (list.length) attempt.onlyPassword = false;
+      const out = [];
+      for (const p of list) {
+        const text = String(p?.prompt || '').trim().slice(0, 200) || 'Resposta';
+        const res = await ask({
+          kind: 'keyboard-interactive', target: label, title: String(p?.prompt || '').slice(0, 200) || 'Resposta',
+          message: [String(name || '').trim(), String(instructions || '').trim()].filter(Boolean).join(' — ').slice(0, 500)
+            || `${text} (${label})`,
+          echo: !!p?.echo, canRemember: false,
+        });
+        if (!res) return [];
+        out.push(res.value);
+      }
+      return out;
+    }
     return {
       type: 'keyboard-interactive',
       username,
-      password,
-      prompt: (_name, _instr, _lang, prompts, finish) => finish(prompts.map(() => password)),
+      prompt: (name, instructions, _lang, prompts, finish) => {
+        answer(name, instructions, prompts).then(finish, () => finish([]));
+      },
     };
   }
 

@@ -158,3 +158,82 @@ test('senha pulada quando o servidor não aceita password nem keyboard-interacti
   assert.equal(res, false);
   assert.equal(asked, 0);
 });
+
+// keyboard-interactive: o servidor manda rodadas de prompts; o handler responde por finish().
+function kiRound(attempt, prompts, { name = '', instructions = '' } = {}) {
+  return new Promise((resolve) => attempt.prompt(name, instructions, '', prompts, resolve));
+}
+function nextFrom(handler, methodsLeft) {
+  return new Promise((resolve) => handler(methodsLeft, false, resolve));
+}
+const KI_ONLY = ['keyboard-interactive'];
+
+test('keyboard-interactive: 1 prompt de senha (echo=false) usa a senha do cofre sem perguntar', async () => {
+  const vault = memoryVault({ 'ssh.deploy@h:22': 'salva' });
+  let asked = 0;
+  const handler = createAuthHandler({
+    resolved, order: [{ type: 'password' }], secretStore: vault,
+    askSecret: async () => { asked++; return null; },
+  });
+  const att = await nextFrom(handler, KI_ONLY);
+  assert.equal(att.type, 'keyboard-interactive');
+  assert.deepEqual(await kiRound(att, [{ prompt: 'Password: ', echo: false }]), ['salva']);
+  assert.equal(asked, 0);
+});
+
+test('keyboard-interactive com 2FA: cada prompt é perguntado ao usuário (sem "Lembrar"); a senha não vai como OTP', async () => {
+  const vault = memoryVault({ 'ssh.deploy@h:22': 'salva' });
+  const asked = [];
+  const answers = { 'Password: ': 'pw-digitada', 'Verification code: ': '123456' };
+  const handler = createAuthHandler({
+    resolved, order: [{ type: 'password' }], secretStore: vault,
+    askSecret: async (req) => { asked.push(req); return { value: answers[req.title], remember: true }; },
+  });
+  const att = await nextFrom(handler, KI_ONLY);
+  const res = await kiRound(att, [{ prompt: 'Password: ', echo: false }, { prompt: 'Verification code: ', echo: false }], { instructions: '2FA' });
+  assert.deepEqual(res, ['pw-digitada', '123456']);
+  assert.equal(asked.length, 2);
+  for (const r of asked) {
+    assert.equal(r.kind, 'keyboard-interactive');
+    assert.equal(r.canRemember, false);
+  }
+  assert.deepEqual(asked.map((r) => r.title), ['Password: ', 'Verification code: ']);
+  // Prompt único que não é senha (OTP na 2ª rodada) também é perguntado.
+  const otp = await kiRound(att, [{ prompt: 'Verification code: ', echo: false }]);
+  assert.deepEqual(otp, ['123456']);
+  assert.equal(asked.length, 3);
+  handler.onReady();
+  assert.equal(vault.get('ssh.deploy@h:22'), 'salva', '"Lembrar" não grava respostas de keyboard-interactive');
+});
+
+test('keyboard-interactive: falha num fluxo com OTP não apaga a senha do cofre; falha só com a senha apaga', async () => {
+  const vault = memoryVault({ 'ssh.deploy@h:22': 'salva' });
+  const asked = [];
+  const handler = createAuthHandler({
+    resolved, order: [{ type: 'password' }], secretStore: vault,
+    askSecret: async (req) => { asked.push(req); return { value: req.kind === 'password' ? 'nova' : '000000', remember: false }; },
+  });
+  // Rodada 1: senha (do cofre); rodada 2: OTP errado → servidor recusa.
+  let att = await nextFrom(handler, KI_ONLY);
+  assert.deepEqual(await kiRound(att, [{ prompt: 'Password:', echo: false }]), ['salva']);
+  assert.deepEqual(await kiRound(att, [{ prompt: 'Verification code:', echo: false }]), ['000000']);
+  att = await nextFrom(handler, KI_ONLY);
+  assert.equal(vault.get('ssh.deploy@h:22'), 'salva', 'senha do cofre mantida');
+  // Nova tentativa: a senha do cofre continua valendo; agora só a senha e o servidor recusa.
+  assert.deepEqual(await kiRound(att, [{ prompt: 'Password:', echo: false }]), ['salva']);
+  att = await nextFrom(handler, KI_ONLY);
+  assert.equal(vault.get('ssh.deploy@h:22'), null, 'senha recusada sozinha é apagada');
+  assert.deepEqual(await kiRound(att, [{ prompt: 'Password:', echo: false }]), ['nova']);
+  assert.equal(asked.filter((r) => r.kind === 'password').length, 1);
+});
+
+test('keyboard-interactive: cancelar um prompt encerra com cancelled', async () => {
+  const handler = createAuthHandler({
+    resolved, order: [{ type: 'password' }], secretStore: memoryVault(),
+    askSecret: async () => null,
+  });
+  const att = await nextFrom(handler, KI_ONLY);
+  assert.deepEqual(await kiRound(att, [{ prompt: 'Token:', echo: true }]), []);
+  assert.equal(handler.cancelled(), true);
+  assert.equal(await nextFrom(handler, KI_ONLY), false);
+});

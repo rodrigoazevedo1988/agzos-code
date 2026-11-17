@@ -9,7 +9,10 @@
  *   sem sucesso → 'failed' (a UI mostra "Reconectar" → reconnect()). Host key
  *   divergente na reconexão para na hora.
  * - Senha/passphrase digitadas ficam só na memória do main para a reconexão
- *   automática não pedir de novo (o cofre só recebe com "Lembrar").
+ *   automática não pedir de novo (o cofre só recebe com "Lembrar"). Respostas de
+ *   keyboard-interactive (OTP) nunca são guardadas.
+ * - connect/reconnect durante a reconexão automática esperam por ela (nunca dois
+ *   clients em paralelo); open() fecha o client anterior ao substituí-lo.
  * - onState(ownerId, { authority, label, state, attempt?, error? }).
  */
 
@@ -43,6 +46,8 @@ function createRemoteManager({
     return {
       askHostKey: (info) => (prompts?.askHostKey ? prompts.askHostKey(info) : Promise.resolve(false)),
       askSecret: async (req) => {
+        // keyboard-interactive (OTP, 2FA): resposta de uso único, nunca guardada.
+        if (req?.kind === 'keyboard-interactive') return prompts?.askSecret ? prompts.askSecret(req) : null;
         const k = `${req.kind}:${req.keyPath || ''}`;
         if (!used.has(k) && entry.memory.has(k)) {
           used.add(k);
@@ -60,9 +65,12 @@ function createRemoteManager({
       ...connectionOptions(),
       ...wrapPrompts(entry, entry.prompts),
     });
+    const previous = entry.client;
     entry.client = client;
     entry.sftpP = null;
     entry.home = null;
+    // Substituiu um client ainda vivo: fecha o antigo (o close dele é ignorado em onClosed).
+    if (previous && previous !== client) { try { previous.end(); } catch { /* já fechado */ } }
     client.on('error', () => {});
     client.once('close', () => onClosed(entry, client));
     emit(entry, 'connected');
@@ -110,6 +118,16 @@ function createRemoteManager({
       return publicInfo(entry);
     }
     if (entry && entry.connectP) return entry.connectP;
+    // Reconexão automática em curso: espera por ela em vez de abrir outro client.
+    if (entry && entry.reconnectP) {
+      await entry.reconnectP.catch(() => null);
+      if (entry.state === 'connected' && entry.client) {
+        entry.prompts = prompts;
+        return publicInfo(entry);
+      }
+      if (map.get(resolved.authority) !== entry) return connect(ownerId, resolved, prompts);
+      if (entry.connectP) return entry.connectP;
+    }
     if (!entry) {
       entry = { ownerId, authority: resolved.authority, label: resolved.label, resolved, client: null, sftpP: null, state: 'connecting', memory: new Map() };
       map.set(resolved.authority, entry);
@@ -168,6 +186,10 @@ function createRemoteManager({
     if (!entry) throw new RemoteError(`Sem conexão com ${authority}.`, 'NOT_CONNECTED');
     if (entry.client && entry.state === 'connected') return publicInfo(entry);
     if (prompts) entry.prompts = prompts;
+    if (entry.reconnectP) {
+      await entry.reconnectP.catch(() => null);
+      if (entry.client && entry.state === 'connected') return publicInfo(entry);
+    }
     entry.closedByUser = false;
     emit(entry, 'reconnecting', { attempt: 0 });
     try {
