@@ -205,3 +205,32 @@ test('reabrir a conversa mostra os passos e o resumo do agente', async () => {
     await expect(second.page.locator('.ai-agent-msg')).not.toContainText('agzos-agent');
   } finally { await second.app.close(); }
 });
+
+test('agente chama clean_code no modo edit sem pedir OK e o arquivo aberto recarrega', async () => {
+  const dirty = "import { a } from './x';\n// comentário\nconsole.log(a);\nexport const n = 1;\n";
+  const env = await setup({
+    mode: 'edit',
+    files: { 'app.ts': dirty },
+    script: [
+      { toolCalls: [{ name: 'clean_code', arguments: { path: 'app.ts' } }] },
+      { text: 'Código limpo.' },
+    ],
+  });
+  const { page, workspace } = env;
+  const file = path.join(workspace, 'app.ts');
+  const editorValue = () => page.evaluate(() => window.monaco.editor.getModels().find((m) => !m.isDisposed() && m.getValue().includes('export const n'))?.getValue());
+  try {
+    await page.evaluate((p) => window.AgzosEditor.openFile(p), file);
+    await expect.poll(editorValue).toBe(dirty);
+    await ask(page, 'Limpe o app.ts para produção');
+    await expect(step(page, 'clean_code')).toHaveAttribute('data-status', 'ok');
+    await expect(page.locator('.ag-approval')).toHaveCount(0);
+    await idle(page);
+    await expect(step(page, 'clean_code')).toContainText('app.ts');
+    expect(fs.readFileSync(file, 'utf8')).toBe('export const n = 1;\n');
+    await expect.poll(editorValue).toBe('export const n = 1;\n');
+    // O modelo recebeu a ferramenta com o schema (campo parameters dos providers).
+    const tool = env.fake.requests.at(-1).body.tools.find((t) => t.function.name === 'clean_code');
+    expect(tool.function.parameters.required).toEqual(['path']);
+  } finally { await env.close(); }
+});

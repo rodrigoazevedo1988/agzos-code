@@ -31,7 +31,7 @@ function register(ipcMain, {
   engine = createBroomEngine({ workerHost }),
   checkpoints = createCheckpointStore({ dir: userDataDir ? path.join(userDataDir, 'broom-checkpoints') : null, maxCount: 20 }),
 } = {}) {
-  setDefaultEngine(engine);
+  setDefaultEngine(engine, () => settingsStore.load());
   const running = new Map();
 
   function options() {

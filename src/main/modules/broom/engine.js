@@ -161,12 +161,18 @@ function createBroomEngine({ workerHost, cache = createAnalysisCache({ max: 200 
   return { analyzeFile, listFiles, scan, plan, write, cache, invalidate: (p) => cache.invalidate(p) };
 }
 
-// Instância usada pela ferramenta do agente (registrada por ipc/broom.js no main).
+// Instância usada pela ferramenta do agente (registrada por ipc/broom.js no main),
+// com o leitor das Configurações (regras e listas de "manter").
 let defaultEngine = null;
-const setDefaultEngine = (engine) => { defaultEngine = engine; };
+let defaultGetSettings = () => ({});
+const setDefaultEngine = (engine, getSettings) => {
+  defaultEngine = engine || null;
+  defaultGetSettings = typeof getSettings === 'function' ? getSettings : () => ({});
+};
 const getDefaultEngine = () => defaultEngine;
+const getDefaultSettings = () => defaultGetSettings();
 
 module.exports = {
   createBroomEngine, optionsFromSettings, summarize, countByRule, isSupported,
-  setDefaultEngine, getDefaultEngine, SUPPORTED_EXTENSIONS, IGNORED_DIRS, LIMITS,
+  setDefaultEngine, getDefaultEngine, getDefaultSettings, SUPPORTED_EXTENSIONS, IGNORED_DIRS, LIMITS,
 };
