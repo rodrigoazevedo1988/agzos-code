@@ -151,6 +151,30 @@ function copyMarkdown() {
   console.log('✓ Marked e DOMPurify copiados');
 }
 
+// Visualizadores de documentos: carregados sob demanda pelo renderer
+// (viewers/lazy-script.js), nunca no boot.
+function copyOfficeViewers() {
+  let total = 0;
+  for (const [pkg, source, target] of [
+    ['jszip', 'dist/jszip.min.js', 'jszip.min.js'],
+    ['docx-preview', 'dist/docx-preview.min.js', 'docx-preview.min.js'],
+    ['xlsx', 'dist/xlsx.full.min.js', 'xlsx.full.min.js'],
+  ]) {
+    const src = path.join(ROOT, 'node_modules', pkg, source);
+    if (!fs.existsSync(src)) {
+      console.error(`✗ ${pkg} não encontrado em node_modules. Rode \`npm install\` primeiro.`);
+      process.exit(1);
+    }
+    const dst = path.join(VENDOR, pkg);
+    fs.mkdirSync(dst, { recursive: true });
+    fs.copyFileSync(src, path.join(dst, target));
+    const license = ['LICENSE', 'LICENSE.markdown', 'LICENSE.md'].map((f) => path.join(ROOT, 'node_modules', pkg, f)).find((f) => fs.existsSync(f));
+    if (license) fs.copyFileSync(license, path.join(dst, 'LICENSE'));
+    total += fs.statSync(src).size;
+  }
+  console.log(`✓ jszip, docx-preview e SheetJS copiados (${formatSize(total)})`);
+}
+
 function dirSize(p) {
   let total = 0;
   function walk(d) {
@@ -175,6 +199,7 @@ function main() {
   copyXterm();
   copyLucide();
   copyMarkdown();
+  copyOfficeViewers();
   console.log('\nVendor pronto. Rode `npm start` para abrir o Agzos Code.');
 }
 

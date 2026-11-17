@@ -78,3 +78,20 @@ test('fs:allowDropped libera só arquivos existentes', async () => {
   assert.equal(await call('fs:allowDropped', 42), null);
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+test('fs:readBinary devolve bytes só dentro do guard e respeita o limite', async () => {
+  const { ws, base, call } = setup();
+  const f = path.join(ws, 'a.docx');
+  fs.writeFileSync(f, Buffer.from([0x50, 0x4b, 3, 4, 0, 255]));
+  const res = await call('fs:readBinary', f);
+  assert.ok(res instanceof Uint8Array);
+  assert.deepEqual([...res], [0x50, 0x4b, 3, 4, 0, 255]);
+  fs.writeFileSync(path.join(base, 'fora.docx'), 'x');
+  await assert.rejects(() => call('fs:readBinary', path.join(base, 'fora.docx')), /Acesso negado/);
+  const big = path.join(ws, 'big.xlsx');
+  const fh = fs.openSync(big, 'w');
+  fs.ftruncateSync(fh, 60 * 1024 * 1024);
+  fs.closeSync(fh);
+  await assert.rejects(() => call('fs:readBinary', big), /muito grande/);
+  fs.rmSync(base, { recursive: true, force: true });
+});

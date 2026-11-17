@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('agzos', {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
     findFiles: (p, maxResults) => ipcRenderer.invoke('fs:findFiles', p, maxResults),
     readFile: (p, opts) => ipcRenderer.invoke('fs:readFile', p, opts),
+    readBinary: (p) => ipcRenderer.invoke('fs:readBinary', p),
     writeFile: (p, c) => ipcRenderer.invoke('fs:writeFile', p, c),
     mkdir: (p) => ipcRenderer.invoke('fs:mkdir', p),
     exists: (p) => ipcRenderer.invoke('fs:exists', p),

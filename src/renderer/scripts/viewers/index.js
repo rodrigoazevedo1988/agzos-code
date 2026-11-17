@@ -13,6 +13,8 @@ import { renderMedia } from './media.js';
 import { renderPdf } from './pdf.js';
 import { renderSheet } from './sheet.js';
 import { renderMarkdownViewer } from './markdown-view.js';
+import { renderDocx } from './docx.js';
+import { documentEngine } from './detect.js';
 
 let current = null;
 
@@ -34,13 +36,15 @@ function build(file, ctx) {
     case 'pdf': return renderPdf(file, ctx);
     case 'sheet': return renderSheet(file, ctx);
     case 'md-preview': return renderMarkdownViewer(file, ctx);
-    case 'docx': return {
-      element: fallbackScreen(file, ctx, {
-        title: 'Formato sem pré-visualização',
-        detail: 'Documentos Word/ODT ainda não são renderizados aqui (em breve). Abra no app padrão.',
-        icon: 'file-text',
-      }),
-    };
+    case 'docx':
+      if (documentEngine(file.path) === 'docx') return renderDocx(file, ctx);
+      return {
+        element: fallbackScreen(file, ctx, {
+          title: 'Formato sem pré-visualização',
+          detail: 'Documentos .doc/.odt/.rtf ainda não são renderizados aqui. Abra no app padrão.',
+          icon: 'file-text',
+        }),
+      };
     case 'binary': return {
       element: fallbackScreen(file, ctx, {
         kind: 'binary',
