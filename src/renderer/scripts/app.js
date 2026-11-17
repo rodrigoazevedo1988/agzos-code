@@ -27,6 +27,9 @@ import { setupEnvVault } from './envvault.js';
 import { setupSsh } from './ssh.js';
 import { setupTimeline } from './timeline.js';
 import { setupEditorMods } from './mods/index.js';
+import { setupTree } from './mods/tree.js';
+import { setupSnap } from './mods/snap.js';
+import { setupLive } from './mods/live.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -115,7 +118,7 @@ async function boot() {
   } catch (e) {
     console.error('[Módulos] setupModulesHub falhou:', e);
   }
-  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh], ['Git Slider', setupTimeline], ['Módulos de editor', setupEditorMods]]) {
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh], ['Git Slider', setupTimeline], ['Módulos de editor', setupEditorMods], ['Agzos Árvore', setupTree], ['Agzos Snap', setupSnap], ['Agzos Ao Vivo', setupLive]]) {
     try {
       setup();
     } catch (e) {

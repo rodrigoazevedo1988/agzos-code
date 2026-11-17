@@ -384,6 +384,20 @@ require('./ipc/envvault').register(ipcMain, modulesDeps);
 // Histórico local + Git Slider (userData/local-history).
 require('./ipc/history').register(ipcMain, modulesDeps);
 require('./ipc/formatter').register(ipcMain, modulesDeps);
+require('./ipc/tree').register(ipcMain, modulesDeps);
+// Agzos Snap: janela oculta só para renderizar a imagem (modules/snap/capture.js).
+require('./ipc/snap').register(ipcMain, {
+  ...modulesDeps,
+  getWindowFor: deps.getWindowFor,
+  capture: require('./modules/snap/capture').createCapture({ BrowserWindow, screen: require('electron').screen }),
+  clipboard: require('electron').clipboard,
+  dialog: { showSaveDialog: (...args) => dialog.showSaveDialog(...args) },
+});
+// Agzos Ao Vivo: servidor local em 127.0.0.1 por janela; abre no navegador só http(s).
+const liveServers = require('./ipc/live').register(ipcMain, {
+  ...modulesDeps,
+  openExternal: (url) => openExternalSafe(shell, url),
+});
 require('./ipc/chat-history').register(ipcMain, {
   ...deps, BrowserWindow, attachments: chatAttachments,
   getRecentFolders: () => settingsStore.load().recentFolders || [],
@@ -444,6 +458,7 @@ app.on('window-all-closed', () => {
   aiSessions.cancelAll();
   agentSessions.cancelAll();
   modulesWorker.dispose();
+  liveServers.stopAll().catch(() => {});
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();

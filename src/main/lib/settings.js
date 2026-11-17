@@ -99,6 +99,10 @@ const DEFAULT_SETTINGS = {
         javascript: false, typescript: false, json: false, css: false, scss: false, less: false, html: false, markdown: false, yaml: false,
       },
     },
+    // Módulos de ferramentas (1.2.0). Normalização em normalizeToolModules.
+    tree: { enabled: true },
+    snap: { enabled: true, watermark: true },
+    liveServer: { enabled: true, startPort: 5500 }, // 1024–65535
   },
 };
 
@@ -236,6 +240,7 @@ function normalizeHistoryModules(v) {
       enabled: typeof g.enabled === 'boolean' ? g.enabled : def.gitSlider.enabled,
       maxCommits: int(g.maxCommits, 10, 2000, def.gitSlider.maxCommits),
     },
+    ...normalizeToolModules(v),
   };
 }
 
@@ -283,6 +288,26 @@ function normalizeEditorMods(v) {
       tags: Array.isArray(hl.tags) ? hl.tags.map(normalizeHighlightTag).filter(Boolean) : [...def.highlighter.tags],
     },
     formatter: { ...fm, enabled: bool(fm.enabled, def.formatter.enabled), formatOnSave },
+  };
+}
+
+/** Agzos Árvore, Snap e Ao Vivo (1.2.0): campo a campo, como normalizeModules. */
+function normalizeToolModules(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const obj = (x) => (isPlainObject(x) ? x : {});
+  const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
+  const tree = obj(v.tree);
+  const snap = obj(v.snap);
+  const live = obj(v.liveServer);
+  const port = live.startPort;
+  return {
+    tree: { ...tree, enabled: bool(tree.enabled, def.tree.enabled) },
+    snap: { ...snap, enabled: bool(snap.enabled, def.snap.enabled), watermark: bool(snap.watermark, def.snap.watermark) },
+    liveServer: {
+      ...live,
+      enabled: bool(live.enabled, def.liveServer.enabled),
+      startPort: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : def.liveServer.startPort,
+    },
   };
 }
 

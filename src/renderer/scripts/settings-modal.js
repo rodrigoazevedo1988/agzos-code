@@ -181,6 +181,9 @@ const SETTINGS_DEF = [
         javascript: false, typescript: false, json: false, css: false, scss: false, less: false, html: false, markdown: false, yaml: false,
       },
     },
+    tree: { enabled: true },
+    snap: { enabled: true, watermark: true },
+    liveServer: { enabled: true, startPort: 5500 },
   },
   {
     key: 'fontSize',
@@ -812,6 +815,59 @@ const SETTINGS_DEF = [
     categories: ['modules'],
     section: 'Agzos Formatador',
     type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Árvore
+  {
+    key: 'modules.tree.enabled',
+    title: 'Agzos Árvore: Habilitada',
+    desc: 'Gera a árvore de pastas em texto (menu de contexto de pasta, paleta e ferramenta project_tree do agente).',
+    categories: ['modules'],
+    section: 'Agzos Árvore',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Snap
+  {
+    key: 'modules.snap.enabled',
+    title: 'Agzos Snap: Habilitado',
+    desc: 'Gera imagens (PNG) do código selecionado com tema, fundo, moldura e números de linha.',
+    categories: ['modules'],
+    section: 'Agzos Snap',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.snap.watermark',
+    title: 'Agzos Snap: Marca d\'água',
+    desc: 'Marca d\'água "Agzos Code" ligada por padrão nas imagens (pode ser desligada em cada captura).',
+    categories: ['modules'],
+    section: 'Agzos Snap',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Ao Vivo
+  {
+    key: 'modules.liveServer.enabled',
+    title: 'Agzos Ao Vivo: Habilitado',
+    desc: 'Servidor local (127.0.0.1) que serve a pasta do projeto e recarrega o navegador ao salvar.',
+    categories: ['modules'],
+    section: 'Agzos Ao Vivo',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.liveServer.startPort',
+    title: 'Agzos Ao Vivo: Porta inicial',
+    desc: 'Primeira porta tentada; se estiver ocupada, usa a próxima livre (1024 a 65535).',
+    categories: ['modules'],
+    section: 'Agzos Ao Vivo',
+    type: 'number',
+    min: 1024,
+    max: 65535,
     apply: notifyModules,
   },
 

@@ -211,6 +211,31 @@ contextBridge.exposeInMainWorld('agzos', {
     clear: (...args) => ipcRenderer.invoke('history:clear', ...args),
   },
 
+  // Agzos Árvore (ipc/tree.js): generate(dir, opções) → { text, count, truncated }.
+  tree: {
+    generate: (dir, opts) => ipcRenderer.invoke('tree:generate', dir, opts),
+  },
+
+  // Agzos Snap (ipc/snap.js): html(payload) → { html } · exportImage(payload, 'save'|'copy').
+  snap: {
+    html: (payload) => ipcRenderer.invoke('snap:html', payload),
+    exportImage: (payload, action) => ipcRenderer.invoke('snap:export', payload, action),
+  },
+
+  // Agzos Ao Vivo (ipc/live.js): servidor local com recarga; onChanged(cb(status)).
+  live: {
+    start: (target, opts) => ipcRenderer.invoke('live:start', target, opts),
+    stop: () => ipcRenderer.invoke('live:stop'),
+    status: () => ipcRenderer.invoke('live:status'),
+    open: () => ipcRenderer.invoke('live:open'),
+    fileSaved: (p) => ipcRenderer.invoke('live:fileSaved', p),
+    onChanged: (cb) => {
+      const handler = (_e, status) => cb(status);
+      ipcRenderer.on('live:changed', handler);
+      return () => ipcRenderer.removeListener('live:changed', handler);
+    },
+  },
+
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
   git: {
     available: () => ipcRenderer.invoke('git:available'),

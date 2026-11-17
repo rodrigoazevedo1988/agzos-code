@@ -6,7 +6,7 @@ const { launchApp } = require('./helpers');
 
 const base = { welcomeSeen: true, onboardingCompleted: true };
 // 5 da 1.1.0 + módulos de editor da 1.2.0 (Erros na Linha, Erros Claros, Marca-texto, Formatador).
-const CARDS = 5 + 4;
+const CARDS = 5 + 4 + 3;
 
 test('hub lista os cards, 2 "Em breve"', async () => {
   const { app, page, errors } = await launchApp({ settings: base });

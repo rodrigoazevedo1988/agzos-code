@@ -10,6 +10,7 @@ const MODULE_TOOLS = [
   { module: 'broom', load: () => require('./broom/agent-tool') },
   { module: 'envVault', load: () => require('./envvault/agent-tool') },
   { module: 'gitSlider', load: () => require('./history/agent-tool') },
+  { module: 'tree', load: () => require('./tree/agent-tool') },
 ];
 
 /** Ferramentas extras dos módulos habilitados em `settings.modules`. */
