@@ -43,6 +43,20 @@
 
 - Cabeçalho com Novo Arquivo, Nova Pasta, Atualizar e Recolher Pastas, só na view do Explorer.
 
+### Terminal
+
+- Windows: usa o ConPTY empacotado (o mesmo do Windows Terminal); corrige a barra de espaço que sumia no PowerShell 7. `AGZOS_CONPTY_DLL=0` volta ao do sistema.
+- Recolher nomes na lista de sessões (só ícones), com o estado salvo.
+
+### Segurança (revisão independente da 1.1.0)
+
+- Skills de `.agzos/skills` do projeto ficam num grupo próprio, não substituem as do app e só rodam depois que você confia nelas (vale para aquele conteúdo; se mudar, pede de novo).
+- Segredos redigidos na saída das ferramentas do agente; `read_file` e `search` mascaram os valores de `.env`.
+- Links só abrem fora do app com `http`, `https` ou `mailto` (inclusive clique do meio no preview de Markdown).
+- "Executar Arquivo Ativo" e "Executar Tarefa" usam aspas seguras por shell e recusam nomes perigosos.
+- Desfazer (agente, Vassoura, Cofre) só vale na janela que fez a alteração; cópias de segurança em disco com permissão 0700/0600.
+- A Vassoura nunca remove declarações içadas (`var`, `function`, tipos), fábricas de JSX (`h`, `jsx`, `@jsx`, `jsxFactory`) nem `console.*` com efeito nos argumentos.
+
 ### Interno
 
 - Testes, builds e publicação rodam só na VPS (workflows do GitHub Actions removidos).
