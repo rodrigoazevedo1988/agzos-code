@@ -29,7 +29,9 @@ function register(ipcMain, {
       try {
         const skill = loadSkills({ userDir: userDataDir ? path.join(userDataDir, 'skills') : null, projectRoot: root })
           .skills.find((item) => item.id === skillId);
-        if (skill?.prompt) messages.unshift({ role: 'system', content: `Você é o Agzos IA, assistente do editor Agzos Code.\n\n## Modo ativo: ${skill.label}\n${skill.prompt}` });
+        // Depois das mensagens de sistema do renderer (contexto do arquivo), antes da conversa.
+        const at = messages.findIndex((m) => m.role !== 'system');
+        if (skill?.prompt) messages.splice(at < 0 ? messages.length : at, 0, { role: 'system', content: `Você é o Agzos IA, assistente do editor Agzos Code.\n\n## Modo ativo: ${skill.label}\n${skill.prompt}` });
       } catch (err) { console.error('[ai] skill do chat indisponível:', err.message); }
     }
     return messages;

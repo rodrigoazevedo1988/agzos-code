@@ -25,7 +25,7 @@ async function setup({ script = [], mode = 'edit', files = {}, fakeOptions = {},
   }, fake.baseUrl);
   await expect(page.locator('#ai-chat')).toBeVisible();
   await expect(page.locator('.ai-pill-model')).toHaveText('fake-1');
-  await expect(page.locator('.ai-seg-btn[data-agent="agent"]')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'agent');
   const close = async () => { await app.close(); await fake.close(); };
   return { ...launched, fake, workspace, close };
 }
@@ -125,7 +125,9 @@ test('troca o modo pelo seletor e persiste', async () => {
     await expect(page.locator('#ai-agent-mode')).toContainText('Auto');
     await expect.poll(() => JSON.parse(fs.readFileSync(path.join(userData, 'settings.json'), 'utf8')).aiAgent?.mode).toBe('auto');
     // Chat desliga o agente e esconde o seletor de modo.
-    await page.locator('.ai-seg-btn[data-agent="chat"]').click();
+    await page.locator('#ai-skill-btn').click();
+    await page.locator('.ai-menu-item', { hasText: 'Chat' }).click();
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'chat');
     await expect(page.locator('#ai-agent-mode')).toBeHidden();
   } finally { await env.close(); }
 });
@@ -174,7 +176,7 @@ test('modelo sem ferramentas oferece responder como chat', async () => {
     await expect(page.locator('.ag-error[data-code="tools_unsupported"]')).toBeVisible();
     await page.locator('.ag-chat-fallback').click();
     await expect(page.locator('.ai-assistant').last()).toContainText('Resposta do chat');
-    await expect(page.locator('.ai-seg-btn[data-agent="chat"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'chat');
   } finally { await env.close(); }
 });
 

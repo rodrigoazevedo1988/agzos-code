@@ -65,3 +65,41 @@ test('relativeTime e baseName', async () => {
   assert.equal(baseName('C:\\x\\y.ts'), 'y.ts');
   assert.equal(baseName(''), '');
 });
+
+test('1.1.0: fitImageSize limita o maior lado a 1568 sem ampliar', async () => {
+  const { fitImageSize } = await load();
+  assert.deepEqual(fitImageSize(3136, 1000), { width: 1568, height: 500, scaled: true });
+  assert.deepEqual(fitImageSize(800, 2000), { width: 627, height: 1568, scaled: true });
+  assert.deepEqual(fitImageSize(100, 50), { width: 100, height: 50, scaled: false });
+});
+
+test('1.1.0: resolveSkill escolhe o modo salvo, senão Agente com pasta / Chat sem pasta', async () => {
+  const { resolveSkill, FALLBACK_SKILLS, skillLabel } = await load();
+  const skills = [...FALLBACK_SKILLS, { id: 'plan', label: 'Plan', kind: 'agent' }];
+  assert.equal(resolveSkill(skills, 'plan', true).id, 'plan');
+  assert.equal(resolveSkill(skills, null, true).id, 'agent');
+  assert.equal(resolveSkill(skills, null, false).id, 'chat');
+  assert.equal(resolveSkill(skills, 'sumiu', true).id, 'agent');
+  assert.equal(resolveSkill([], null, false).id, 'chat');
+  assert.equal(skillLabel(skills, 'plan'), 'Plan');
+});
+
+test('1.1.0: user_steer entra no turno e persiste no marcador', async () => {
+  const { createAgentTurn, applyAgentEvent, encodeAgentContent, decodeAgentContent, agentTurnText } = await load();
+  const turn = createAgentTurn('edit', 'plan');
+  applyAgentEvent(turn, { type: 'text', delta: 'Antes.' });
+  assert.equal(applyAgentEvent(turn, { type: 'user_steer', id: 's1', content: 'mude X' }).kind, 'steer');
+  applyAgentEvent(turn, { type: 'text', delta: 'Depois.' });
+  assert.deepEqual(turn.segments.map((s) => s.t), ['text', 'steer', 'text']);
+  assert.match(agentTurnText(turn), /durante a execução:_ mude X/);
+  const decoded = decodeAgentContent(encodeAgentContent(turn)).turn;
+  assert.equal(decoded.skill, 'plan');
+  assert.deepEqual(decoded.segments[1], { t: 'steer', text: 'mude X' });
+});
+
+test('1.1.0: payloadMessage leva só refs dos anexos', async () => {
+  const { payloadMessage } = await load();
+  const msg = { role: 'user', content: 'veja', attachments: [{ id: 'a'.repeat(32), name: 'x.png', kind: 'image', thumb: 'data:…', size: 9 }] };
+  assert.deepEqual(payloadMessage(msg), { role: 'user', content: 'veja', attachments: [{ id: 'a'.repeat(32), name: 'x.png', kind: 'image' }] });
+  assert.deepEqual(payloadMessage({ role: 'assistant', content: 'oi' }), { role: 'assistant', content: 'oi' });
+});

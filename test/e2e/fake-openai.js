@@ -15,7 +15,8 @@
  *   delayMs     atraso entre eventos SSE (padrão 20).
  *
  * Turno: objeto ou função (body, index) => objeto, com
- *   { text?: string, toolCalls?: [{ id?, name, arguments: object|string }] }
+ *   { text?: string, toolCalls?: [{ id?, name, arguments: object|string }], waitMs?: number }
+ *   - waitMs: espera antes de começar a responder (para testar fila/"Enviar agora").
  *   - OpenAI (POST /v1/chat/completions): texto em delta.content; cada tool call em
  *     delta.tool_calls ({index,id,type:'function',function:{name,arguments}}), com os
  *     argumentos JSON partidos em vários deltas; finish_reason 'tool_calls' ou 'stop'.
@@ -150,6 +151,7 @@ function startFakeOpenAI({ reply = 'Olá do fake', status = 200, script = [], to
         connection: 'keep-alive'
       });
       const turn = agent ? nextTurn(body) : { text: reply };
+      if (turn.waitMs) await wait(turn.waitMs);
       if (isAnthropic) await streamAnthropic(res, turn);
       else if (agent) await streamOpenAI(res, turn);
       else {

@@ -114,6 +114,8 @@ function register(ipcMain, {
   ipcMain.handle('agent:skills', (_event, payload) => {
     const root = getRoot(payload || {});
     const { skills, warnings } = skillsFor(root);
+    // Skills do usuário podem ser abertas no editor a partir das Configurações.
+    if (skillsDir && fs.existsSync(skillsDir)) guard.allow(skillsDir);
     return { skills: skills.map(describeSkill), warnings, userDir: skillsDir, projectDir: root ? path.join(root, '.agzos', 'skills') : null };
   });
   ipcMain.handle('agent:skills:new', () => {

@@ -196,7 +196,7 @@ async function runAgent({
     else if (err.code === 'tools_unsupported') {
       evt.code = 'tools_unsupported';
       evt.message = `Este modelo não suporta ferramentas (tool calling). ${evt.message}`.trim();
-    } else evt.code = 'provider_error';
+    } else evt.code = err.code === 'vision_unsupported' ? 'vision_unsupported' : 'provider_error';
     if (checkpointId) { evt.checkpointId = checkpointId; evt.changes = changes; }
     evt.steps = steps;
     emit(evt);
