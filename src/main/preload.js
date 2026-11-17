@@ -56,6 +56,14 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Atalho SSH (ipc/ssh.js). Conectar = term.create(..., { ssh: { alias } | { user, host, port } }).
+  ssh: {
+    hosts: () => ipcRenderer.invoke('ssh:hosts'),
+    addHost: (input) => ipcRenderer.invoke('ssh:addHost', input),
+    configPath: () => ipcRenderer.invoke('ssh:configPath'),
+    parseTarget: (text) => ipcRenderer.invoke('ssh:parseTarget', text),
+  },
+
   // Portas TCP em escuta (aba PORTAS do painel).
   ports: {
     list: () => ipcRenderer.invoke('ports:list'),
