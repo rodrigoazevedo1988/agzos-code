@@ -253,7 +253,7 @@ test('getModuleTools ignora módulo desabilitado e stub null', () => {
   const { DEFAULT_SETTINGS } = require('../../src/main/lib/settings');
   // registro real: clean_code, env_check e file_history, cada um só com o módulo habilitado
   const realNames = (s) => getModuleTools(s).map((t) => t.definition.name);
-  assert.deepEqual(realNames(DEFAULT_SETTINGS).sort(), ['clean_code', 'env_check', 'file_history', 'project_tree']);
+  assert.deepEqual(realNames(DEFAULT_SETTINGS).sort(), ['clean_code', 'env_check', 'file_history', 'insert_snippet', 'list_snippets', 'project_tree', 'save_snippet']);
   assert.ok(!realNames({ modules: { envVault: { enabled: false } } }).includes('env_check'));
   assert.ok(!realNames({ modules: { broom: { enabled: false } } }).includes('clean_code'));
   const a = extraTool({ definition: { name: 'a_tool', description: 'a', input_schema: {} } });

@@ -1,0 +1,17 @@
+<section class="bg-[{{cor_fundo}}] px-6 py-16 text-[{{cor_texto}}] md:py-20" style="font-family: {{fonte}}">
+  <div class="mx-auto max-w-6xl border-y border-[{{cor_texto}}]/15 py-12 md:grid md:grid-cols-2 md:items-end md:gap-12">
+    <div>
+      <p class="font-mono text-xs uppercase tracking-[0.2em] text-[{{cor_primaria}}]">Toda quinta, 7h</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">Uma ideia de marketing que dá para aplicar no mesmo dia.</h2>
+      <p class="mt-3 text-[{{cor_texto}}]/75">Cinco minutos de leitura. Sem spam, sem sequência de vendas.</p>
+    </div>
+    <form action="#" method="post" class="mt-8 md:mt-0">
+      <label for="news-email" class="mb-2 block text-sm font-medium">Seu melhor e-mail</label>
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <input id="news-email" name="email" type="email" autocomplete="email" required placeholder="voce@empresa.com.br" class="min-w-0 flex-1 w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none" />
+        <button type="submit" class="bg-[{{cor_primaria}}] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Assinar</button>
+      </div>
+      <p class="mt-3 text-xs text-[{{cor_texto}}]/60">Cancele com um clique, a qualquer momento.</p>
+    </form>
+  </div>
+</section>

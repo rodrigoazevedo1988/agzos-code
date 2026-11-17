@@ -214,6 +214,19 @@ const SETTINGS_DEF = [
       const tabsMod = await import('./tabs.js');
       tabsMod.renderTabs();
     },
+    snippets: {
+      enabled: true,
+      variables: [
+        { name: 'cor_primaria', value: '#D10A11' },
+        { name: 'cor_fundo', value: '#0E0E0E' },
+        { name: 'cor_texto', value: '#E8E8E8' },
+        { name: 'cor_secundaria', value: '#1A1A1A' },
+        { name: 'fonte', value: 'Inter, sans-serif' },
+        { name: 'nome_marca', value: 'Agzos' },
+        { name: 'url_site', value: 'https://seudominio.com.br' },
+        { name: 'email_contato', value: 'contato@seudominio.com.br' },
+      ],
+    },
   },
   {
     key: 'performanceMode',
@@ -871,6 +884,17 @@ const SETTINGS_DEF = [
     apply: notifyModules,
   },
 
+  // Módulos Agzos — Snippets (variáveis da marca: snippets-settings.js)
+  {
+    key: 'modules.snippets.enabled',
+    title: 'Snippets: Habilitados',
+    desc: 'Ativa a biblioteca de Snippets (inserir por clique ou arrastando) e as ferramentas de snippets do agente.',
+    categories: ['modules'],
+    section: 'Snippets',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
   // Atualizações (OTA)
   {
     key: 'update.autoDownload',
@@ -1061,6 +1085,12 @@ function renderContentHtml() {
     extraHtml = renderUpdateExtraHtml();
   } else if (!query && activeCategory === 'privacy') {
     extraHtml = renderPrivacyExtraHtml();
+  }
+  if (!query && activeCategory === 'modules') {
+    // Snippets: variáveis da marca (montado por snippets-settings.js em bindContentEvents)
+    extraHtml += '<div class="settings-section-card" id="snippets-vars-card"><h3 class="settings-section-title">Snippets: variáveis da marca</h3>'
+      + '<p class="setting-item-desc">Trocadas em <code>{{nome}}</code> ao inserir um snippet. Variável desconhecida fica como está.</p>'
+      + '<div id="snippets-vars-host"></div></div>';
   }
 
   if (items.length === 0 && !extraHtml) {
@@ -1299,6 +1329,8 @@ function bindContentEvents() {
   // Git & GitHub: contas montadas por github-settings.js
   const githubHost = document.getElementById('github-settings-host');
   if (githubHost) import('./github-settings.js').then((m) => m.mountGithubSettings(githubHost));
+  const snippetVarsHost = document.getElementById('snippets-vars-host');
+  if (snippetVarsHost) import('./snippets-settings.js').then((m) => m.mountSnippetVariables(snippetVarsHost, { notify: notifyModules }));
 
   // Limpar busca no botão vazio
   const resetSearch = document.getElementById('btn-reset-search');

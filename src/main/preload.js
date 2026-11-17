@@ -236,6 +236,26 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Módulos nativos — Snippets (ipc/snippets.js). Nenhum canal recebe caminho de arquivo.
+  snippets: {
+    list: (...args) => ipcRenderer.invoke('snippets:list', ...args),
+    get: (...args) => ipcRenderer.invoke('snippets:get', ...args),
+    save: (...args) => ipcRenderer.invoke('snippets:save', ...args),
+    remove: (...args) => ipcRenderer.invoke('snippets:remove', ...args),
+    duplicate: (...args) => ipcRenderer.invoke('snippets:duplicate', ...args),
+    restoreDefaults: (...args) => ipcRenderer.invoke('snippets:restoreDefaults', ...args),
+    import: (...args) => ipcRenderer.invoke('snippets:import', ...args),
+    export: (...args) => ipcRenderer.invoke('snippets:export', ...args),
+    render: (...args) => ipcRenderer.invoke('snippets:render', ...args),
+    interpolate: (...args) => ipcRenderer.invoke('snippets:interpolate', ...args),
+    tailwind: (...args) => ipcRenderer.invoke('snippets:tailwind', ...args),
+    onChanged: (cb) => {
+      const handler = () => cb();
+      ipcRenderer.on('snippets:changed', handler);
+      return () => ipcRenderer.removeListener('snippets:changed', handler);
+    },
+  },
+
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
   git: {
     available: () => ipcRenderer.invoke('git:available'),

@@ -385,6 +385,10 @@ require('./ipc/envvault').register(ipcMain, modulesDeps);
 require('./ipc/history').register(ipcMain, modulesDeps);
 require('./ipc/formatter').register(ipcMain, modulesDeps);
 require('./ipc/tree').register(ipcMain, modulesDeps);
+// Snippets (1.2.0): biblioteca em userData/snippets.json; import/export só por diálogo nativo.
+require('./ipc/snippets').register(ipcMain, {
+  ...modulesDeps, dialog, getWindowFor: (sender) => BrowserWindow.fromWebContents(sender),
+});
 // Agzos Snap: janela oculta só para renderizar a imagem (modules/snap/capture.js).
 require('./ipc/snap').register(ipcMain, {
   ...modulesDeps,

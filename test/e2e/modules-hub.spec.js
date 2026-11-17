@@ -8,7 +8,7 @@ const base = { welcomeSeen: true, onboardingCompleted: true };
 // 5 da 1.1.0 + módulos de editor da 1.2.0 (Erros na Linha, Erros Claros, Marca-texto, Formatador).
 const CARDS = 5 + 4 + 3;
 
-test('hub lista os cards, 2 "Em breve"', async () => {
+test('hub lista os cards, 1 "Em breve" (Sandbox)', async () => {
   const { app, page, errors } = await launchApp({ settings: base });
   try {
     const btn = page.locator('.activity-btn[data-view="modules"]');
@@ -25,11 +25,12 @@ test('hub lista os cards, 2 "Em breve"', async () => {
 
     const cards = panel.locator('.module-card');
     await expect(cards).toHaveCount(CARDS);
-    await expect(panel.locator('.module-card.coming-soon')).toHaveCount(2);
+    await expect(panel.locator('.module-card.coming-soon')).toHaveCount(1);
     await expect(panel.locator('.module-card[data-module="broom"]')).toContainText('Vassoura de Produção');
     await expect(panel.locator('.module-card[data-module="envVault"]')).toContainText('Cofre .env');
     await expect(panel.locator('.module-card[data-module="gitSlider"]')).toContainText('Agzos Git Slider');
-    for (const id of ['snippets', 'sandbox']) {
+    await expect(panel.locator('.module-card[data-module="snippets"]')).toContainText('Habilitado');
+    for (const id of ['sandbox']) {
       const card = panel.locator(`.module-card[data-module="${id}"]`);
       await expect(card).toContainText('Em breve');
       await expect(card).toHaveAttribute('aria-disabled', 'true');

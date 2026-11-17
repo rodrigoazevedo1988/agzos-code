@@ -11,6 +11,7 @@ const MODULE_TOOLS = [
   { module: 'envVault', load: () => require('./envvault/agent-tool') },
   { module: 'gitSlider', load: () => require('./history/agent-tool') },
   { module: 'tree', load: () => require('./tree/agent-tool') },
+  { module: 'snippets', load: () => require('./snippets/agent-tool') },
 ];
 
 /** Ferramentas extras dos módulos habilitados em `settings.modules`. */

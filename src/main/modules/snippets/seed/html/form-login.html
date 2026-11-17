@@ -1,0 +1,28 @@
+<section class="flex min-h-[640px] items-center justify-center bg-[{{cor_fundo}}] px-6 py-16 text-[{{cor_texto}}]" style="font-family: {{fonte}}">
+  <div class="w-full max-w-sm">
+    <a href="{{url_site}}" class="flex items-center gap-2 text-lg font-semibold tracking-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">
+      <svg class="h-8 w-8 text-[{{cor_primaria}}]" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M0 0h32v32H0z" /><path d="M9 23l7-14 7 14h-4l-3-6-3 6z" fill="#fff" /></svg>
+      {{nome_marca}}
+    </a>
+    <h1 class="mt-10 text-3xl font-semibold tracking-tight md:text-4xl">Entrar</h1>
+    <p class="mt-2 text-sm text-[{{cor_texto}}]/70">Ainda não tem conta? <a href="{{url_site}}/cadastro" class="font-semibold text-[{{cor_texto}}] underline decoration-[{{cor_primaria}}] underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Criar agora</a></p>
+    <form action="#" method="post" class="mt-8 space-y-5">
+      <div>
+        <label for="login-email" class="mb-2 block text-sm font-medium">E-mail</label>
+        <input id="login-email" name="email" type="email" autocomplete="email" required class="w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none" />
+      </div>
+      <div>
+        <div class="mb-2 flex items-center justify-between">
+          <label for="login-senha" class="block text-sm font-medium">Senha</label>
+          <a href="{{url_site}}/recuperar-senha" class="text-xs text-[{{cor_texto}}]/70 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Esqueci a senha</a>
+        </div>
+        <input id="login-senha" name="senha" type="password" autocomplete="current-password" required minlength="8" class="w-full border border-[{{cor_texto}}]/20 bg-[{{cor_secundaria}}] px-4 py-3 text-[{{cor_texto}}] placeholder:text-[{{cor_texto}}]/40 transition focus:border-[{{cor_primaria}}] focus:outline-none" />
+      </div>
+      <label for="login-lembrar" class="flex items-center gap-3 text-sm text-[{{cor_texto}}]/80">
+        <input id="login-lembrar" name="lembrar" type="checkbox" class="h-4 w-4 accent-[{{cor_primaria}}]" />
+        Manter conectado neste dispositivo
+      </label>
+      <button type="submit" class="w-full bg-[{{cor_primaria}}] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[{{cor_primaria}}]">Entrar</button>
+    </form>
+  </div>
+</section>
