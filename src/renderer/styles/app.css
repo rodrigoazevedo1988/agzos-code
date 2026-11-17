@@ -1772,3 +1772,39 @@ body.has-menubar .topbar-title { display: none; }
 /* Ver › Aparência › Barra de Status */
 body.statusbar-hidden { grid-template-rows: 40px minmax(0, 1fr) 0; }
 body.statusbar-hidden #statusbar { display: none; }
+/* Seletor rico da paleta (ex.: conexão remota): ícone, descrição, selo, desabilitado */
+#cmd-list li.cmd-item-pick { justify-content: flex-start; align-items: center; }
+#cmd-list .cmd-pick-icon { display: inline-flex; flex: none; opacity: 0.85; }
+#cmd-list .cmd-pick-label { flex: none; white-space: nowrap; }
+#cmd-list .cmd-pick-desc {
+  flex: 1; min-width: 0;
+  font-size: 11px; opacity: 0.65;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#cmd-list .cmd-pick-label + .kbd-hint, #cmd-list .cmd-pick-label + .cmd-pick-badge { margin-left: auto; }
+#cmd-list .cmd-pick-badge {
+  margin-left: auto; flex: none;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 1px 6px; border-radius: 3px;
+  border: 1px solid currentColor; opacity: 0.8;
+}
+#cmd-list li.cmd-item-pick.disabled { cursor: default; opacity: 0.55; }
+#cmd-list li.cmd-item-pick.disabled:hover,
+#cmd-list li.cmd-item-pick.disabled.active { background: var(--hover); color: inherit; }
+
+/* Botão remoto (canto esquerdo da status bar) */
+#status-remote-host {
+  border: 0; color: inherit; font: inherit;
+  cursor: pointer;
+  margin-left: -8px;
+  padding: 0 8px;
+  background: rgba(0, 0, 0, 0.16);
+  opacity: 1;
+}
+#status-remote-host:hover { background: rgba(0, 0, 0, 0.28); border-radius: 0; }
+#status-remote-host:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
+#status-remote-host.connected {
+  background: color-mix(in srgb, var(--accent) 55%, #000);
+  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.55);
+}
+#status-remote-host .status-remote-label:empty { display: none; }
