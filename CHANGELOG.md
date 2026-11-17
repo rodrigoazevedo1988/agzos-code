@@ -25,6 +25,18 @@
 
 - Botão "Abrir Arquivo" da tela inicial não fazia nada.
 
+### Release
+
+- Publicação na VPS mantém só as 2 releases mais recentes (`--keep`, padrão 2) e remove as antigas após trocar `current`.
+
+### Limitações conhecidas
+
+- Testado com servidores falsos (OpenAI/Anthropic/GitHub) e em Linux; falta validação em Windows real, no github.com e com modelos reais.
+- Login "Entrar com GitHub" (Device Flow) depende de um OAuth App da Agzos; por enquanto só token (PAT).
+- Sem interface de merge/rebase; conflitos aparecem na lista, mas são resolvidos no editor ou terminal.
+- Cabeçalho da sidebar mostra botões do Explorer também nas views Git e IA.
+- macOS não é buildado nesta release (depende de host macOS).
+
 ## 0.7.0 — 2026-11-16
 
 ### Terminal multi-sessão
