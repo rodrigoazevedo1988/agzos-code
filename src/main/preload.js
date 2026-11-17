@@ -80,6 +80,30 @@ contextBridge.exposeInMainWorld('agzos', {
     parseTarget: (text) => ipcRenderer.invoke('ssh:parseTarget', text),
   },
 
+  // Pasta remota via SSH (ipc/remote.js). Diálogos: onPrompt(cb) — cb(payload) → resposta
+  // ({ value, remember } para senha/passphrase; true/false para host key).
+  remote: {
+    connect: (target) => ipcRenderer.invoke('remote:connect', target),
+    reconnect: (authority) => ipcRenderer.invoke('remote:reconnect', authority),
+    disconnect: (authority) => ipcRenderer.invoke('remote:disconnect', authority),
+    list: () => ipcRenderer.invoke('remote:list'),
+    browse: (authority, dir) => ipcRenderer.invoke('remote:browse', authority, dir),
+    onState: (cb) => {
+      const handler = (_e, st) => cb(st);
+      ipcRenderer.on('remote:state', handler);
+      return () => ipcRenderer.removeListener('remote:state', handler);
+    },
+    onPrompt: (cb) => {
+      const handler = async (_e, id, payload) => {
+        let result = null;
+        try { result = await cb(payload); } catch { result = null; }
+        ipcRenderer.invoke('remote:prompt:reply', id, result).catch(() => {});
+      };
+      ipcRenderer.on('remote:prompt', handler);
+      return () => ipcRenderer.removeListener('remote:prompt', handler);
+    },
+  },
+
   // Portas TCP em escuta (aba PORTAS do painel).
   ports: {
     list: () => ipcRenderer.invoke('ports:list'),

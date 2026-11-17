@@ -357,6 +357,19 @@ const secretStore = createSecretStore({
   safeStorage: secretsBackend,
 });
 require('./ipc/secrets').register(ipcMain, { store: secretStore });
+// Pasta remota via SSH (1.2.0): uma conexão por host por janela; diálogos e estado
+// (remote:prompt / remote:state) só vão para a janela dona da conexão.
+const { createRemoteManager } = require('./remote/manager');
+const remoteRetryMs = Number(process.env.AGZOS_TEST === '1' && process.env.AGZOS_REMOTE_RETRY_MS) || 0;
+const remoteManager = createRemoteManager({
+  connectionOptions: () => ({ secretStore, home: require('os').homedir() }),
+  retryDelays: remoteRetryMs ? [remoteRetryMs, remoteRetryMs, remoteRetryMs] : undefined,
+  onState: (ownerId, st) => {
+    const wc = require('electron').webContents.fromId(ownerId);
+    if (wc && !wc.isDestroyed()) wc.send('remote:state', st);
+  },
+});
+require('./ipc/remote').register(ipcMain, { manager: remoteManager });
 // Git + GitHub: contas (tokens só no main) e operações git do sistema.
 const githubAccounts = require('./ipc/github').register(ipcMain, { guardFor, settingsStore, store: secretStore, app });
 require('./ipc/git').register(ipcMain, { guardFor, accounts: githubAccounts });
@@ -441,6 +454,7 @@ app.on('window-all-closed', () => {
   aiSessions.cancelAll();
   agentSessions.cancelAll();
   modulesWorker.dispose();
+  remoteManager.disposeAll();
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();
