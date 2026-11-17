@@ -268,6 +268,12 @@ require('./ipc/git').register(ipcMain, { guard, accounts: githubAccounts });
 const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
 // Agente (tools no workspace): chave da IA só no main; raiz via guard.
 const agentSessions = require('./ipc/agent').register(ipcMain, { settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData') });
+// Módulos nativos: um processo utilitário compartilhado, criado sob demanda.
+const { createWorkerHost } = require('./modules/worker-host');
+const modulesWorker = createWorkerHost({ script: path.join(__dirname, 'modules/worker.js') });
+const modulesDeps = { guard, settingsStore, userDataDir: app.getPath('userData'), workerHost: modulesWorker };
+require('./ipc/broom').register(ipcMain, modulesDeps);
+require('./ipc/envvault').register(ipcMain, modulesDeps);
 require('./ipc/chat-history').register(ipcMain, deps);
 require('./ipc/app-info').register(ipcMain, deps);
 const updater = require('./updater').createUpdater({
@@ -321,6 +327,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   aiSessions.cancelAll();
   agentSessions.cancelAll();
+  modulesWorker.dispose();
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();

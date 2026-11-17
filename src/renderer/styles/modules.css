@@ -1,0 +1,81 @@
+/* Hub "Módulos Agzos" (modules-hub.js) */
+#panel-modules { padding: 10px 10px 14px; }
+
+.modules-intro {
+  margin: 2px 4px 10px;
+  color: var(--fg-mute);
+  font-size: 11.5px;
+}
+
+.modules-list { display: flex; flex-direction: column; gap: 6px; }
+
+.module-card {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.module-card:hover { background: var(--hover); border-color: var(--line-2); }
+.module-card:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.module-card.coming-soon { cursor: default; opacity: 0.55; }
+.module-card.coming-soon:hover { background: var(--bg-soft); border-color: var(--line); }
+
+.module-card-icon { display: flex; align-items: center; justify-content: center; height: 28px; color: var(--accent-2); }
+.module-card.coming-soon .module-card-icon { color: var(--fg-mute); }
+
+.module-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.module-card-name { font-size: 12.5px; font-weight: 600; }
+.module-card-desc { font-size: 11.5px; color: var(--fg-dim); line-height: 1.35; }
+
+.module-card-status {
+  align-self: center;
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+.module-card-status.on { color: var(--fg-dim); }
+.module-card-status.off { color: var(--fg-mute); border-style: dashed; }
+
+.modules-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.modules-back {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.modules-back:hover { background: var(--hover); color: var(--fg); }
+.modules-header-title { font-size: 12px; font-weight: 600; color: var(--fg); }
+
+/* Badge discreto no Explorer (file-tree.js setFileBadge) */
+.tree-row .tree-badge {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-soft3);
+  color: var(--fg-dim);
+  font-size: 10px;
+  line-height: 15px;
+}

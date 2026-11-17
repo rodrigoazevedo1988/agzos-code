@@ -110,6 +110,38 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Módulos nativos — Vassoura de Produção (ipc/broom.js). Argumentos repassados como vêm.
+  broom: {
+    analyzeFile: (...args) => ipcRenderer.invoke('broom:analyzeFile', ...args),
+    cleanFile: (...args) => ipcRenderer.invoke('broom:cleanFile', ...args),
+    scanWorkspace: (...args) => ipcRenderer.invoke('broom:scanWorkspace', ...args),
+    cleanWorkspace: (...args) => ipcRenderer.invoke('broom:cleanWorkspace', ...args),
+    cancel: (...args) => ipcRenderer.invoke('broom:cancel', ...args),
+    undo: (...args) => ipcRenderer.invoke('broom:undo', ...args),
+    onEvent: (cb) => {
+      const handler = (_event, id, evt) => cb(id, evt);
+      ipcRenderer.on('broom:event', handler);
+      return () => ipcRenderer.removeListener('broom:event', handler);
+    },
+  },
+
+  // Módulos nativos — Cofre .env (ipc/envvault.js). Valores só chegam por reveal.
+  envVault: {
+    list: (...args) => ipcRenderer.invoke('envvault:list', ...args),
+    reveal: (...args) => ipcRenderer.invoke('envvault:reveal', ...args),
+    setValue: (...args) => ipcRenderer.invoke('envvault:setValue', ...args),
+    addKey: (...args) => ipcRenderer.invoke('envvault:addKey', ...args),
+    removeKey: (...args) => ipcRenderer.invoke('envvault:removeKey', ...args),
+    generateExample: (...args) => ipcRenderer.invoke('envvault:generateExample', ...args),
+    copy: (...args) => ipcRenderer.invoke('envvault:copy', ...args),
+    scanStaged: (...args) => ipcRenderer.invoke('envvault:scanStaged', ...args),
+    installHook: (...args) => ipcRenderer.invoke('envvault:installHook', ...args),
+    removeHook: (...args) => ipcRenderer.invoke('envvault:removeHook', ...args),
+    hookStatus: (...args) => ipcRenderer.invoke('envvault:hookStatus', ...args),
+    gitignoreStatus: (...args) => ipcRenderer.invoke('envvault:gitignoreStatus', ...args),
+    addToGitignore: (...args) => ipcRenderer.invoke('envvault:addToGitignore', ...args),
+  },
+
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
   git: {
     available: () => ipcRenderer.invoke('git:available'),

@@ -17,6 +17,9 @@ import {
 import { setupAiDock } from './ai-dock.js';
 import { openWorkspace } from './file-tree.js';
 import { setupGitPanel } from './git-panel.js';
+import { setupModulesHub } from './modules-hub.js';
+import { setupBroom } from './broom.js';
+import { setupEnvVault } from './envvault.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -79,6 +82,20 @@ async function boot() {
     setupGitPanel({ switchSidebarView });
   } catch (e) {
     console.error('[Git] setupGitPanel falhou:', e);
+  }
+
+  // 8b) Módulos nativos (hub + Vassoura + Cofre .env). Falha de um módulo não derruba o boot.
+  try {
+    setupModulesHub({ switchSidebarView });
+  } catch (e) {
+    console.error('[Módulos] setupModulesHub falhou:', e);
+  }
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault]]) {
+    try {
+      setup();
+    } catch (e) {
+      console.error(`[Módulos] ${name} falhou:`, e);
+    }
   }
 
   // 9) Welcome do editor (estado vazio)
@@ -229,7 +246,7 @@ function hydrateLucideIcons() {
     'explorer': 'folder-tree',
     'search': 'search',
     'git': 'git-branch',
-    'extensions': 'puzzle',
+    'modules': 'blocks',
     'ai': 'sparkles',
   };
   document.querySelectorAll('.activity-btn').forEach((btn) => {
@@ -464,9 +481,9 @@ function bindShortcuts() {
         e.preventDefault();
         switchSidebarView('git');
         break;
-      case 'view.extensions':
+      case 'view.modules':
         e.preventDefault();
-        switchSidebarView('extensions');
+        switchSidebarView('modules');
         break;
       // 'settings.open' é tratado em settings-modal.js (abre de forma idempotente)
       default:
@@ -494,13 +511,13 @@ function switchSidebarView(view) {
     explorer: { panel: 'file-tree', title: 'EXPLORER' },
     search:   { panel: 'panel-search', title: 'BUSCAR' },
     git:      { panel: 'panel-git', title: 'GIT' },
-    extensions: { panel: 'panel-extensions', title: 'EXTENSÕES' },
+    modules:  { panel: 'panel-modules', title: 'MÓDULOS AGZOS' },
     ai:       { panel: 'panel-ai', title: 'AGZOS IA' },
   };
   const cfg = map[view];
   if (!cfg) return;
   document.getElementById('sidebar-title').textContent = cfg.title;
-  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai'].forEach((id) => {
+  ['file-tree','empty-explorer','panel-search','panel-git','panel-modules','panel-ai'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });

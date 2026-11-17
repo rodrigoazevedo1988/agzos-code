@@ -11,6 +11,9 @@
   <link rel="stylesheet" href="styles/ai-panel.css" />
   <link rel="stylesheet" href="styles/terminal.css" />
   <link rel="stylesheet" href="styles/git.css" />
+  <link rel="stylesheet" href="styles/modules.css" />
+  <link rel="stylesheet" href="styles/broom.css" />
+  <link rel="stylesheet" href="styles/envvault.css" />
 </head>
 
 <body class="theme-agzos-dark">
@@ -39,7 +42,7 @@
       <button class="activity-btn active icon-host" data-view="explorer" title="Explorer (Ctrl+Shift+E)"></button>
       <button class="activity-btn icon-host" data-view="search" title="Buscar (Ctrl+Shift+F)"></button>
       <button class="activity-btn icon-host" data-view="git" title="Controle de Versão (Ctrl+Shift+G)"></button>
-      <button class="activity-btn icon-host" data-view="extensions" title="Extensões (Ctrl+Shift+X)"></button>
+      <button class="activity-btn icon-host" data-view="modules" title="Módulos Agzos (Ctrl+Shift+X)"></button>
       <button class="activity-btn icon-host" data-view="ai" title="Agzos IA"></button>
       <div class="activity-spacer"></div>
       <button class="activity-btn icon-host" id="btn-activity-settings" title="Configurações (Ctrl+,)"></button>
@@ -65,9 +68,8 @@
         </div>
         <!-- Controle de versão: preenchido por git-panel.js -->
         <div class="panel" id="panel-git" hidden aria-label="Controle de versão"></div>
-        <div class="panel" id="panel-extensions" hidden>
-          <p class="hint">Extensões — Open VSX será plugado na próxima fase.</p>
-        </div>
+        <!-- Hub "Módulos Agzos": preenchido por modules-hub.js -->
+        <div class="panel" id="panel-modules" hidden aria-label="Módulos Agzos"></div>
         <!-- Host "left" do Agzos IA. O #ai-panel é movido entre hosts por ai-dock.js
              (sidebar, #right-dock, #pane-ai) e preenchido por ai-chat.js. -->
         <div class="panel" id="panel-ai" hidden>

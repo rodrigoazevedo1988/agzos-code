@@ -52,6 +52,7 @@ const COMMANDS = [
   { id: 'view.focusExplorer',   label: 'Exibir: Focar no Explorer de Arquivos',         hint: 'Ctrl+Shift+E',   run: () => switchView('explorer') },
   { id: 'view.focusSearch',     label: 'Exibir: Focar na Busca no Projeto',             hint: 'Ctrl+Shift+F',   run: () => switchView('search') },
   { id: 'view.focusGit',        label: 'Exibir: Focar no Controle de Versão (Git)',     hint: 'Ctrl+Shift+G',   run: () => switchView('git') },
+  { id: 'view.focusModules',    label: 'Exibir: Abrir Módulos Agzos',                   hint: 'Ctrl+Shift+X',   run: () => switchView('modules') },
   { id: 'view.focusAI',         label: 'Exibir: Focar no Chat Agzos IA',                hint: 'Ctrl+Shift+A',   run: () => aiDock()?.show({ focus: true }) },
   { id: 'view.toggleTerminal',  label: 'Exibir: Alternar Terminal Integrado',           hint: 'Ctrl+`',         run: () => import('./terminal.js').then((m) => m.toggleTerminal()) },
   { id: 'view.termMoveRight',   label: 'Exibir: Mover Terminal para a Direita',         hint: '',               run: () => import('./terminal.js').then((m) => m.toggleTerminalPosition('right')) },
@@ -115,6 +116,20 @@ const COMMANDS = [
   { id: 'help.checkUpdates',    label: 'Ajuda: Verificar Atualizações Agora (OTA)',     hint: '',               run: () => window.agzos.update.check() },
   { id: 'help.about',           label: 'Ajuda: Sobre o Agzos Code',                     hint: '',               run: showAbout },
 ];
+
+/**
+ * Acrescenta comandos à paleta (módulos nativos). Mesmo id substitui o anterior.
+ * cmds: [{ id, label, run, hint? }]
+ */
+export function registerCommands(cmds) {
+  for (const cmd of Array.isArray(cmds) ? cmds : [cmds]) {
+    if (!cmd || typeof cmd.id !== 'string' || typeof cmd.label !== 'string' || typeof cmd.run !== 'function') continue;
+    const entry = { hint: '', ...cmd };
+    const i = COMMANDS.findIndex((c) => c.id === cmd.id);
+    if (i === -1) COMMANDS.push(entry);
+    else COMMANDS[i] = entry;
+  }
+}
 
 export async function showQuickOpen() {
   const overlay = document.getElementById('cmd-overlay');
@@ -601,6 +616,7 @@ export function showShortcutsModal() {
     { key: 'Ctrl + Shift + E', desc: 'Exibir: Focar no Explorer de Arquivos' },
     { key: 'Ctrl + Shift + F', desc: 'Exibir: Focar na Busca no Projeto' },
     { key: 'Ctrl + Shift + G', desc: 'Exibir: Focar no Controle de Versão (Git)' },
+    { key: 'Ctrl + Shift + X', desc: 'Exibir: Abrir Módulos Agzos' },
     { key: 'Ctrl + Shift + A', desc: 'Agzos IA: Abrir e focar no Chat de IA' },
     { key: 'Ctrl + = / -', desc: 'Zoom: Aumentar / diminuir tamanho da fonte' },
   ];

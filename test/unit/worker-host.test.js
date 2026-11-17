@@ -96,3 +96,23 @@ test('dispose encerra o processo e rejeita pendentes', async () => {
   await assert.rejects(p, /encerrad/);
   assert.equal(h.isAlive(), false);
 });
+
+test('worker.js dos módulos sobe e responde (método desconhecido rejeita)', async () => {
+  const h = make({ script: path.join(__dirname, '../../src/main/modules/worker.js') });
+  await assert.rejects(h.call('nao_existe'), /desconhecido/);
+  assert.equal(h.isAlive(), true);
+});
+
+test('ipc/broom e ipc/envvault registram os canais do preload', () => {
+  const channels = [];
+  const ipcMain = { handle: (ch) => channels.push(ch) };
+  const deps = { guard: {}, settingsStore: { load: () => ({}) }, userDataDir: '/tmp', workerHost: {} };
+  require('../../src/main/ipc/broom').register(ipcMain, deps);
+  require('../../src/main/ipc/envvault').register(ipcMain, deps);
+  for (const ch of ['broom:analyzeFile', 'broom:cleanFile', 'broom:scanWorkspace', 'broom:cleanWorkspace', 'broom:cancel', 'broom:undo',
+    'envvault:list', 'envvault:reveal', 'envvault:setValue', 'envvault:addKey', 'envvault:removeKey', 'envvault:generateExample',
+    'envvault:copy', 'envvault:scanStaged', 'envvault:installHook', 'envvault:removeHook', 'envvault:hookStatus',
+    'envvault:gitignoreStatus', 'envvault:addToGitignore']) {
+    assert.ok(channels.includes(ch), ch);
+  }
+});

@@ -109,3 +109,9 @@ test('matchShortcut: atalhos do terminal multi-sessão', async () => {
     assert.equal(shouldHandleInTarget(a, true), true);
   }
 });
+
+test('matchShortcut: Ctrl+Shift+X abre o hub Módulos Agzos', async () => {
+  const { matchShortcut } = await load('keymap.js');
+  assert.equal(matchShortcut(ev({ key: 'X', code: 'KeyX', ctrlKey: true, shiftKey: true })), 'view.modules');
+  assert.equal(matchShortcut(ev({ key: 'x', code: 'KeyX', metaKey: true, shiftKey: true }), { isMac: true }), 'view.modules');
+});

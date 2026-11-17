@@ -23,6 +23,9 @@ const emptyHost = () => document.getElementById('empty-explorer');
 const contextMenu = () => document.getElementById('context-menu');
 
 let treeRoot = null; // { name, path, isDirectory, children?, expanded? }
+const contextProviders = []; // registerContextMenuItems: (node) => [{ label, run }]
+let contextExtraRuns = []; // ações extras do menu aberto agora
+const fileBadges = new Map(); // caminho absoluto → texto (setFileBadge)
 
 /* --------------------------------------------------------------------------
    Render
@@ -104,6 +107,9 @@ function buildNode(node, depth) {
   name.className = 'name';
   name.textContent = node.name;
   row.appendChild(name);
+
+  const badgeText = fileBadges.get(node.path);
+  if (badgeText) row.appendChild(buildBadge(badgeText));
 
   // Click na linha
   row.addEventListener('click', (e) => {
@@ -221,6 +227,51 @@ function showContextMenu(x, y, node) {
   m.style.top = `${y}px`;
   m.dataset.targetPath = node.path;
   m.dataset.targetIsDir = String(node.isDirectory);
+
+  // Itens extras dos módulos (registerContextMenuItems)
+  m.querySelectorAll('li[data-extra]').forEach((li) => li.remove());
+  contextExtraRuns = [];
+  const ul = m.querySelector('ul') || m;
+  const info = { path: node.path, name: node.name, isDirectory: node.isDirectory };
+  for (const provider of contextProviders) {
+    let items = [];
+    try { items = provider(info) || []; } catch (err) { console.error('[file-tree] item de menu falhou:', err); }
+    for (const item of items) {
+      if (!item || typeof item.label !== 'string' || typeof item.run !== 'function') continue;
+      const li = document.createElement('li');
+      li.dataset.extra = String(contextExtraRuns.length);
+      li.textContent = item.label;
+      contextExtraRuns.push(item.run);
+      ul.appendChild(li);
+    }
+  }
+}
+
+/**
+ * Módulos acrescentam itens ao menu de contexto do Explorer.
+ * fn(node: { path, name, isDirectory }) → [{ label, run }]
+ */
+export function registerContextMenuItems(fn) {
+  if (typeof fn === 'function') contextProviders.push(fn);
+}
+
+function buildBadge(text) {
+  const badge = document.createElement('span');
+  badge.className = 'tree-badge';
+  badge.textContent = text;
+  return badge;
+}
+
+/** Contador discreto ao lado de um arquivo no Explorer; null/'' remove. */
+export function setFileBadge(absPath, text) {
+  if (typeof absPath !== 'string' || !absPath) return;
+  const value = text == null ? '' : String(text);
+  if (value) fileBadges.set(absPath, value);
+  else fileBadges.delete(absPath);
+  const row = treeHost()?.querySelector(`.tree-row[data-path="${cssEscape(absPath)}"]`);
+  if (!row) return;
+  row.querySelector('.tree-badge')?.remove();
+  if (value) row.appendChild(buildBadge(value));
 }
 
 document.addEventListener('click', () => {
@@ -231,6 +282,13 @@ document.addEventListener('click', () => {
 const ctx = contextMenu();
 if (ctx) {
   ctx.addEventListener('click', async (e) => {
+    const extra = e.target.closest?.('li[data-extra]');
+    if (extra) {
+      const run = contextExtraRuns[Number(extra.dataset.extra)];
+      ctx.hidden = true;
+      try { await run?.(); } catch (err) { toast(`Erro: ${err.message}`, 'error'); }
+      return;
+    }
     const action = e.target.dataset.action;
     if (!action) return;
     const m = contextMenu();

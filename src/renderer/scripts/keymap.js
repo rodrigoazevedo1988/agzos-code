@@ -70,7 +70,7 @@ export function matchShortcut(e, { isMac = false } = {}) {
       if (k === 'e') return 'view.explorer';
       if (k === 'f') return 'view.search';
       if (k === 'g') return 'view.git';
-      if (k === 'x') return 'view.extensions';
+      if (k === 'x') return 'view.modules';
       if (k === '+') return 'zoom.in';
       return null;
     }
