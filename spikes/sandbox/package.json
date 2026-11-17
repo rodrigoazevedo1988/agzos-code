@@ -1,0 +1,26 @@
+{
+  "name": "agzos-sandbox-spike",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Spike descartável do Sandbox de Componentes (Tarefa 15). Não entra no build. Resultado em docs/superpowers/specs/2026-11-17-sandbox-spike.md",
+  "scripts": {
+    "prep:bundles": "node bench-esbuild.js --engine native --react external --vendor --runs 1 --write && node bench-esbuild.js --engine native --react external --runs 1 --write && node bench-esbuild.js --engine native --react external --component LegacyNav --runs 1 --write && node tailwind-v3-node.js",
+    "prep:gen": "node prep-gen.js",
+    "prep:play": "mkdir -p vendor-dl && curl -sSL -o vendor-dl/tailwind-play-3.4.17.js https://cdn.tailwindcss.com/3.4.17",
+    "bench:esbuild": "node bench-esbuild.js --engine native --mode fs --react external --runs 30",
+    "tw:v3": "node tailwind-v3-node.js --runs 10",
+    "e2e:bench": "xvfb-run -a /var/www/agzos-code/node_modules/electron/dist/electron --no-sandbox --disable-gpu electron/main.js --scenario bench --warmup 1",
+    "e2e:tw": "xvfb-run -a /var/www/agzos-code/node_modules/electron/dist/electron --no-sandbox --disable-gpu electron/main.js --scenario tw",
+    "e2e:shims": "xvfb-run -a /var/www/agzos-code/node_modules/electron/dist/electron --no-sandbox --disable-gpu electron/main.js --scenario shims",
+    "e2e:ram": "xvfb-run -a /var/www/agzos-code/node_modules/electron/dist/electron --no-sandbox --disable-gpu electron/main.js --scenario iframe --n 1"
+  },
+  "dependencies": {
+    "@tailwindcss/browser": "4.3.5",
+    "clsx": "2.1.1",
+    "esbuild": "0.28.2",
+    "esbuild-wasm": "0.28.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "tailwindcss": "3.4.19"
+  }
+}

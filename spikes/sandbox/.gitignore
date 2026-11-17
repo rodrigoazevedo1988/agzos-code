@@ -1,0 +1,4 @@
+node_modules/
+vendor-dl/
+out-*
+electron/gen/
