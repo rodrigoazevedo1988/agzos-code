@@ -94,6 +94,7 @@ const COMMANDS = [
   { id: 'ai.document',          label: 'Agzos IA: Gerar Documentação',                  hint: '',               run: () => triggerAIAction('document') },
   { id: 'ai.tests',             label: 'Agzos IA: Gerar Testes Unitários',              hint: '',               run: () => triggerAIAction('tests') },
   { id: 'ai.togglePanel',       label: 'Agzos IA: Alternar Painel',                     hint: 'Ctrl+L',         run: () => aiDock()?.toggle({ focus: true }) },
+  { id: 'ai.compact',           label: 'Agzos IA: Compactar conversa',                  hint: '/compactar',     run: () => { aiDock()?.show?.(); return import('./ai-chat.js').then((m) => m.compactConversation()); } },
   { id: 'ai.agentMode',         label: 'Agzos IA: Alternar modo do agente',             hint: '',               run: () => import('./ai-chat.js').then((m) => m.pickAgentMode()) },
   { id: 'ai.moveLeft',          label: 'Agzos IA: Mover para Esquerda',                 hint: '',               run: () => moveAiDock('left') },
   { id: 'ai.moveRight',         label: 'Agzos IA: Mover para Direita',                  hint: '',               run: () => moveAiDock('right') },
