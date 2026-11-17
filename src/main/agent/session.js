@@ -50,6 +50,14 @@ function createAgentSessions({
       emit({ type: 'error', message: err.userMessage || err.message, code: err.code || 'no_profile' });
       return false;
     }
+    let skill;
+    try {
+      skill = safeSkill(getSkill, payload.skill, root);
+    } catch (err) {
+      // Skill de projeto não confiada: recusa antes de chamar o modelo.
+      emit({ type: 'error', message: err.message, code: err.code || 'skill_error' });
+      return false;
+    }
     const mode = MODES.includes(payload.mode) ? payload.mode : (MODES.includes(getMode()) ? getMode() : 'edit');
     const controller = new AbortController();
     const steering = createSteerQueue();
@@ -59,7 +67,6 @@ function createAgentSessions({
     const env = getEnv();
     const sh = shell || pickShell({ platform, env });
     const checkpoint = checkpoints.create({ root });
-    const skill = safeSkill(getSkill, payload.skill, root);
     const toolbox = restrictToolbox(createToolbox({
       root, checkpoint, platform, shell: sh, env, runCommand,
       secrets: secretValues(env, [resolved.apiKey]),
@@ -163,12 +170,16 @@ function createAgentSessions({
   };
 }
 
-/** Skill pedida (id) → objeto da skill ou null. Erro no loader nunca derruba o agente. */
+/**
+ * Skill pedida (id) → objeto da skill ou null. Erro no loader nunca derruba o agente,
+ * exceto `skill_untrusted` (skill de projeto sem confiança), que é repassado.
+ */
 function safeSkill(getSkill, id, root) {
   if (typeof id !== 'string' || !id) return null;
   try {
     return getSkill(id, root) || null;
   } catch (err) {
+    if (err.code === 'skill_untrusted') throw err;
     console.error('[agent] skill indisponível:', err.message);
     return null;
   }

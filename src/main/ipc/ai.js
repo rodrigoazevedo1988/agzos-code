@@ -4,7 +4,9 @@ const path = require('node:path');
 const { PRESETS } = require('../ai/presets');
 const { upsertProfile, removeProfile, setActiveProfile, getActiveProfile, createProviderForProfile } = require('../ai/profiles');
 const { createChatSessions } = require('../ai/sessions');
-const { loadSkills } = require('../agent/skills');
+const { loadSkills, pickSkill } = require('../agent/skills');
+const { SKILL_RULE } = require('../agent/prompt');
+const { normalizeAiSkills } = require('../lib/settings');
 const { guardResolver } = require('../lib/window-guards');
 
 const MAX_ATTACH_READ = 30 * 1024 * 1024;
@@ -17,7 +19,10 @@ function register(ipcMain, {
   // Guard da janela que pediu (várias janelas: lib/window-guards.js).
   const guardOf = guardResolver({ guard, guardFor });
 
-  /** Mensagens do chat: anexos (refs) viram conteúdo; skill de chat vira system prompt. */
+  /**
+   * Mensagens do chat: anexos (refs) viram conteúdo; skill de chat vira system prompt.
+   * Skill de projeto não confiada → lança Error com code 'skill_untrusted'.
+   */
   function prepareMessages(payload, sender) {
     const list = Array.isArray(payload?.messages) ? payload.messages : [];
     const messages = list.map((m) => {
@@ -30,12 +35,16 @@ function register(ipcMain, {
     if (skillId) {
       const root = typeof payload.root === 'string' && guardOf(sender)?.isAllowed?.(payload.root) ? payload.root : null;
       try {
-        const skill = loadSkills({ userDir: userDataDir ? path.join(userDataDir, 'skills') : null, projectRoot: root })
-          .skills.find((item) => item.id === skillId);
+        const { skills } = loadSkills({ userDir: userDataDir ? path.join(userDataDir, 'skills') : null, projectRoot: root });
+        const skill = pickSkill(skills, skillId, { trusted: normalizeAiSkills(settingsStore.load().aiSkills).trusted });
         // Depois das mensagens de sistema do renderer (contexto do arquivo), antes da conversa.
         const at = messages.findIndex((m) => m.role !== 'system');
-        if (skill?.prompt) messages.splice(at < 0 ? messages.length : at, 0, { role: 'system', content: `Você é o Agzos IA, assistente do editor Agzos Code.\n\n## Modo ativo: ${skill.label}\n${skill.prompt}` });
-      } catch (err) { console.error('[ai] skill do chat indisponível:', err.message); }
+        const origin = skill?.source === 'project' ? 'Este modo vem do repositório do projeto (arquivo .agzos/skills).\n' : '';
+        if (skill?.prompt) messages.splice(at < 0 ? messages.length : at, 0, { role: 'system', content: `Você é o Agzos IA, assistente do editor Agzos Code.\n\n## Modo ativo: ${skill.label}\n${origin}${SKILL_RULE}\n\n${skill.prompt}` });
+      } catch (err) {
+        if (err.code === 'skill_untrusted') throw err;
+        console.error('[ai] skill do chat indisponível:', err.message);
+      }
     }
     return messages;
   }
@@ -98,7 +107,15 @@ function register(ipcMain, {
   });
   ipcMain.handle('ai:chat', (event, requestId, payload) => {
     const profile = findProfile(payload.profileId);
-    forSender(event.sender).start(requestId, { ...payload, model: payload.model || profile?.model, messages: prepareMessages(payload, event.sender) });
+    let messages;
+    try {
+      messages = prepareMessages(payload, event.sender);
+    } catch (err) {
+      if (err.code !== 'skill_untrusted') throw err;
+      if (!event.sender.isDestroyed()) event.sender.send('ai:error', requestId, err.message);
+      return;
+    }
+    forSender(event.sender).start(requestId, { ...payload, model: payload.model || profile?.model, messages });
   });
 
   // Anexos: o renderer manda bytes (imagens já reduzidas); aqui classifica, extrai e guarda.

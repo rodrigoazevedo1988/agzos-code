@@ -241,3 +241,27 @@ test('window.confirmBeforeQuit: padrão true; inválido volta ao padrão; false 
   assert.deepEqual(loadSettings(p).window, { confirmBeforeQuit: true });
   assert.deepEqual(normalizeWindow(undefined), { confirmBeforeQuit: true });
 });
+
+test('aiSkills.trusted: normaliza registros de confiança e settings:save não aceita do renderer', () => {
+  const { normalizeAiSkills } = require('../../src/main/lib/settings');
+  const sha = 'a'.repeat(64);
+  const good = { root: path.resolve('/w/p'), path: path.resolve('/w/p/.agzos/skills/x.md'), sha256: sha };
+  assert.deepEqual(DEFAULT_SETTINGS.aiSkills, { trusted: [] });
+  assert.deepEqual(normalizeAiSkills(undefined), { trusted: [] });
+  assert.deepEqual(normalizeAiSkills({ trusted: [good, good, { ...good, sha256: 'curto' }, { ...good, root: 'relativo' }, 'lixo', null] }).trusted, [good]);
+  const p = tmpFile();
+  fs.writeFileSync(p, JSON.stringify({ aiSkills: { trusted: [good, { root: 1 }] } }));
+  assert.deepEqual(loadSettings(p).aiSkills.trusted, [good]);
+
+  const { register } = require('../../src/main/ipc/settings');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-settings-ipc-'));
+  const handlers = {};
+  register({ handle: (name, fn) => { handlers[name] = fn; } }, { app: { getPath: () => dir } });
+  const file = path.join(dir, 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ aiSkills: { trusted: [good] } }));
+  const evil = { ...good, path: path.resolve('/w/p/.agzos/skills/y.md') };
+  handlers['settings:save'](null, { theme: 'monokai', aiSkills: { trusted: [evil] } });
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.theme, 'monokai');
+  assert.deepEqual(saved.aiSkills.trusted, [good]);
+});

@@ -1,6 +1,10 @@
 /**
  * IPC do agente (window.agzos.agent): agent:run / approve / steer / cancel / undo / setMode,
- * skills (agent:skills, agent:skills:new, agent:skills:openFolder).
+ * skills (agent:skills, agent:skills:new, agent:skills:openFolder, agent:skills:trust).
+ *
+ * Skills de projeto (.agzos/skills, id `project:<id>`) só rodam depois que o usuário confia
+ * nelas: agent:skills:trust({ root?, id, sha256 }) grava raiz + caminho + sha256 em
+ * settings.aiSkills.trusted. Sem registro (ou conteúdo mudou) → erro `skill_untrusted`.
  * Eventos main → renderer no canal 'agent:event' (requestId, evt).
  *
  * Ferramentas que leem o editor (read_terminal, get_problems): o main pergunta ao
@@ -21,7 +25,10 @@ const fs = require('fs');
 const { randomUUID } = require('crypto');
 const { getModuleTools } = require('../modules/agent-tools');
 const { guardResolver } = require('../lib/window-guards');
-const { loadSkills, describeSkill, SKILL_TEMPLATE } = require('../agent/skills');
+const {
+  loadSkills, describeSkill, SKILL_TEMPLATE, pickSkill, trustRecord, isSkillTrusted,
+} = require('../agent/skills');
+const { normalizeAiSkills } = require('../lib/settings');
 const { createRendererTools } = require('../agent/renderer-tools');
 
 const QUERY_TIMEOUT = 5000;
@@ -38,6 +45,7 @@ function register(ipcMain, {
   function skillsFor(root) {
     return loadSkills({ userDir: skillsDir, projectRoot: root || null });
   }
+  const trustedSkills = () => normalizeAiSkills(settingsStore.load().aiSkills).trusted;
 
   /** Pergunta algo ao renderer (terminal, problemas). Sem resposta em 5 s → erro. */
   function queryRenderer(sender, what, args) {
@@ -97,7 +105,7 @@ function register(ipcMain, {
         getProvider,
         getMode: () => settingsStore.load().aiAgent?.mode,
         getExtraTools: () => [...createRendererTools((what, args) => queryRenderer(sender, what, args)), ...getModuleTools(settingsStore.load())],
-        getSkill: (id, root) => skillsFor(root).skills.find((skill) => skill.id === id && skill.kind === 'agent') || null,
+        getSkill: (id, root) => pickSkill(skillsFor(root).skills, id, { trusted: trustedSkills(), kind: 'agent' }),
         ...(attachments ? { buildContent: (text, list) => attachments.buildContent(text, list) } : {}),
         checkpoints,
         send: (requestId, evt) => { if (!sender.isDestroyed()) sender.send('agent:event', requestId, evt); },
@@ -125,7 +133,28 @@ function register(ipcMain, {
     const { skills, warnings } = skillsFor(root);
     // Skills do usuário podem ser abertas no editor a partir das Configurações.
     if (skillsDir && fs.existsSync(skillsDir)) guardOf(event?.sender).allow(skillsDir);
-    return { skills: skills.map(describeSkill), warnings, userDir: skillsDir, projectDir: root ? path.join(root, '.agzos', 'skills') : null };
+    const trusted = trustedSkills();
+    return { skills: skills.map((skill) => describeSkill(skill, { trusted })), warnings, userDir: skillsDir, projectDir: root ? path.join(root, '.agzos', 'skills') : null };
+  });
+  // Usuário confiou numa skill de projeto depois de ver caminho, hash e prompt (diálogo do renderer).
+  // O sha256 enviado precisa bater com o arquivo atual: se mudou, o usuário confiou em outro conteúdo.
+  ipcMain.handle('agent:skills:trust', (event, payload) => {
+    const root = getRoot(payload || {}, event.sender);
+    if (!root) return { ok: false, error: 'Abra uma pasta de projeto.' };
+    const skill = skillsFor(root).skills.find((s) => s.id === payload?.id && s.source === 'project');
+    if (!skill) return { ok: false, error: 'Skill do projeto não encontrada.' };
+    if (typeof payload?.sha256 !== 'string' || payload.sha256 !== skill.sha256) {
+      return { ok: false, error: 'O arquivo da skill mudou; revise de novo antes de confiar.' };
+    }
+    const settings = settingsStore.load();
+    const current = normalizeAiSkills(settings.aiSkills).trusted;
+    if (!isSkillTrusted(skill, current)) {
+      const record = trustRecord(skill);
+      // Um registro por raiz + arquivo: confiar no conteúdo novo substitui o antigo.
+      const others = current.filter((t) => !(t.root === record.root && t.path === record.path));
+      settingsStore.save({ ...settings, aiSkills: normalizeAiSkills({ trusted: [...others, record] }) });
+    }
+    return { ok: true };
   });
   ipcMain.handle('agent:skills:new', (event) => {
     if (!skillsDir) return null;

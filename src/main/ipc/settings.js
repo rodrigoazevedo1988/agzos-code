@@ -95,14 +95,15 @@ function register(ipcMain, { app, listWebContents = () => [] }) {
   ipcMain.handle('settings:save', (evt, settings) => {
     const sender = evt?.sender;
     const disk = loadSettings(settingsPath);
-    const { recentFolders, ai, github } = disk;
+    const { recentFolders, ai, github, aiSkills } = disk;
     const payload = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
     const base = sender && sender.id !== undefined ? bases.get(sender.id) : undefined;
     const merged = base?.length ? applyChanges(disk, base.map((e) => e.snap), payload) : { ...disk, ...payload };
     const nextAi = { ...(merged.ai || {}), profiles: ai?.profiles || [], activeProfileId: ai?.activeProfileId ?? null };
     const modules = normalizeModules(base?.length ? merged.modules : mergeSection(disk.modules, payload.modules));
     // Contas GitHub são do main (ver ipc/github.js): mantém o valor do disco.
-    const ok = saveSettings(settingsPath, { ...merged, recentFolders, ai: nextAi, github, modules });
+    // Confiança em skills de projeto também (ver ipc/agent.js, agent:skills:trust).
+    const ok = saveSettings(settingsPath, { ...merged, recentFolders, ai: nextAi, github, modules, aiSkills });
     if (!ok) return ok;
     const saved = loadSettings(settingsPath);
     remember(sender, saved);

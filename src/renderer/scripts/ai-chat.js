@@ -19,6 +19,7 @@ import {
 } from './ai-chat-utils.js';
 import { TurnView } from './agent-ui.js';
 import { attachFile, attachFromMain } from './ai-attachments.js';
+import { openGitDialog } from './git-dialog.js';
 
 const State = window.AgzosState;
 const IS_MAC = /Mac/i.test(navigator.platform || '');
@@ -781,11 +782,13 @@ function openMenu(anchor, items, { align = 'start', placement = 'below' } = {}) 
     const btn = h('button', {
       type: 'button', class: 'ai-menu-item', role, tabindex: '-1',
       'aria-checked': item.checked === undefined ? null : String(!!item.checked), disabled: item.disabled || null,
+      'data-value': item.value || null,
     },
     h('span', { class: 'ai-menu-icon' }, item.checked ? icon('check', 13) : (item.icon ? icon(item.icon, 13) : null)),
     item.detail
       ? h('span', { class: 'ai-menu-text' }, h('span', { class: 'ai-menu-label', text: item.label }), h('span', { class: 'ai-menu-detail', text: item.detail }))
-      : h('span', { class: 'ai-menu-label', text: item.label }));
+      : h('span', { class: 'ai-menu-label', text: item.label }),
+    item.badge ? h('span', { class: 'ai-menu-badge', title: item.badgeTitle || null, text: item.badge }) : null);
     if (item.detail) btn.classList.add('has-detail');
     btn.addEventListener('click', () => { closeMenu({ restoreFocus: true }); item.action?.(); });
     menu.append(btn);
@@ -1341,10 +1344,54 @@ async function refreshSkills() {
   return skills;
 }
 
-/** Troca o modo (skill) do composer e lembra a escolha. */
-function setSkill(id) {
+/**
+ * Skill do projeto (.agzos/skills) só roda depois que o usuário confia nela: diálogo com
+ * caminho, hash e primeiras linhas do prompt. Recarrega a lista antes (o arquivo pode ter
+ * mudado). → true se confiável (já era ou o usuário confiou agora).
+ */
+async function ensureSkillTrusted(skill) {
+  if (!skill || skill.source !== 'project') return true;
+  await refreshSkills();
+  const fresh = skills.find((s) => s.id === skill.id);
+  if (!fresh) { toast('A skill do projeto não existe mais.', 'error'); return false; }
+  if (fresh.trusted) return true;
+  const api = agentApi();
+  if (!api?.trustSkill) return false;
+  const ok = await openGitDialog({
+    id: 'ai-skill-trust',
+    title: `Confiar na skill "${fresh.label}"?`,
+    icon: 'shield-alert',
+    description: 'Esta skill vem do repositório aberto, não do Agzos nem de você. Ela muda as instruções da IA; '
+      + 'só confie se você conhece o conteúdo. As regras de segurança e as aprovações continuam valendo.',
+    fields: [
+      { name: 'path', label: 'Arquivo', value: fresh.relPath || fresh.file || '' },
+      { name: 'hash', label: 'sha256', value: fresh.sha256Short || '' },
+      { name: 'prompt', label: 'Primeiras linhas do prompt', type: 'textarea', rows: 8, value: fresh.preview || '' },
+    ],
+    submitLabel: 'Confiar nesta skill',
+    cancelLabel: 'Cancelar',
+    onOpen: (ctl) => {
+      for (const name of ['path', 'hash', 'prompt']) {
+        const field = ctl.field(name);
+        if (field) { field.readOnly = true; field.classList?.add('ai-skill-trust-readonly'); }
+      }
+    },
+    onSubmit: async () => {
+      const res = await api.trustSkill({ root: State.workspaceRoot || null, id: fresh.id, sha256: fresh.sha256 });
+      if (!res?.ok) throw new Error(res?.error || 'Não foi possível confiar nesta skill.');
+      return true;
+    },
+  });
+  if (!ok) return false;
+  await refreshSkills();
+  return !!skills.find((s) => s.id === fresh.id)?.trusted;
+}
+
+/** Troca o modo (skill) do composer e lembra a escolha. Skill do projeto pede confiança antes. */
+async function setSkill(id) {
   const skill = skills.find((s) => s.id === id) || FALLBACK_SKILLS.find((s) => s.id === id);
   if (!skill) return;
+  if (skill.source === 'project' && !(await ensureSkillTrusted(skill))) return;
   State.settings.aiPanel = { ...(State.settings.aiPanel || {}), skill: skill.id };
   Promise.resolve(window.agzos.settings?.save?.(State.settings)).catch(() => {});
   syncAgentBar();
@@ -1355,15 +1402,18 @@ async function openSkillMenu() {
   if (menuState?.anchor === anchor) { closeMenu({ restoreFocus: true }); return; }
   await refreshSkills();
   const current = currentSkill();
-  const sourceTag = { project: ' · projeto', user: ' · seu' };
-  const items = [{ heading: 'Modo' }];
-  for (const skill of skills) {
-    if (skill.kind === 'agent' && !agentApi()) continue;
-    items.push({
-      label: `${skill.label}${sourceTag[skill.source] || ''}`, detail: skill.description || '', icon: skill.icon || 'sparkles',
-      checked: skill.id === current.id, action: () => setSkill(skill.id),
-    });
-  }
+  const available = skills.filter((skill) => !(skill.kind === 'agent' && !agentApi()));
+  const itemFor = (skill) => ({
+    label: `${skill.label}${skill.source === 'user' ? ' · seu' : ''}`, detail: skill.description || '', icon: skill.icon || 'sparkles',
+    value: skill.id, checked: skill.id === current.id, action: () => { setSkill(skill.id); },
+    ...(skill.source === 'project' ? {
+      badge: skill.trusted ? 'projeto' : 'projeto · não confiável',
+      badgeTitle: `Vem de ${skill.relPath || '.agzos/skills'}${skill.trusted ? '' : ' — pede confirmação antes de usar'}`,
+    } : {}),
+  });
+  const items = [{ heading: 'Modo' }, ...available.filter((s) => s.source !== 'project').map(itemFor)];
+  const fromProject = available.filter((s) => s.source === 'project');
+  if (fromProject.length) items.push({ separator: true }, { heading: 'Do projeto' }, ...fromProject.map(itemFor));
   items.push({ separator: true }, { label: 'Gerenciar skills…', icon: 'settings', action: openAiSettings });
   openMenu(anchor, items, { placement: 'above' });
 }
@@ -1434,6 +1484,12 @@ function submitComposer({ fromButton = false } = {}) {
     if (!content && !attachments.length) return;
     if (!selectedProfile) return;
     if (visionBlocked(attachments)) return;
+    const skill = currentSkill();
+    if (skill.source === 'project' && !skill.trusted) {
+      // Pede confiança e reenvia; o texto continua no composer até lá.
+      ensureSkillTrusted(skill).then((ok) => { if (ok) submitComposer({ fromButton }); });
+      return;
+    }
     sendToChat(content, { attachments });
   }
   input.value = '';

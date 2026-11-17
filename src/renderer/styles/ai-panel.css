@@ -537,6 +537,8 @@ body.theme-monokai .ai-panel {
 .ai-menu-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .ai-menu-item.has-detail .ai-menu-label { white-space: normal; font-weight: 550; }
 .ai-menu-detail { color: var(--fg-mute); font-size: 11px; line-height: 1.4; white-space: normal; }
+.ai-menu-badge { margin-left: auto; align-self: center; flex: none; font-size: 10px; padding: 0 6px; border-radius: 8px; border: 1px solid currentColor; color: var(--accent-2); white-space: nowrap; }
+.ai-skill-trust-readonly { font-family: var(--font-mono, monospace); font-size: 11.5px; }
 .ai-menu:has(.has-detail) { width: min(290px, calc(100% - 12px)); }
 
 /* ------------------------------------------------------------------ turno */
