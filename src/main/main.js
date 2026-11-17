@@ -372,7 +372,7 @@ const agentSessions = require('./ipc/agent').register(ipcMain, {
 });
 // Módulos nativos: um processo utilitário compartilhado, criado sob demanda.
 const { createWorkerHost } = require('./modules/worker-host');
-const modulesWorker = createWorkerHost({ script: path.join(__dirname, 'modules/worker.js') });
+const modulesWorker = createWorkerHost({ script: path.join(__dirname, 'modules/worker.js'), idleMs: 20000 });
 const modulesDeps = {
   guardFor,
   getWindowRoot: (sender) => workspaces.rootFor(sender.id),
