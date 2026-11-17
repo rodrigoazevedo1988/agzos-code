@@ -383,6 +383,7 @@ require('./ipc/broom').register(ipcMain, modulesDeps);
 require('./ipc/envvault').register(ipcMain, modulesDeps);
 // Histórico local + Git Slider (userData/local-history).
 require('./ipc/history').register(ipcMain, modulesDeps);
+require('./ipc/formatter').register(ipcMain, modulesDeps);
 require('./ipc/chat-history').register(ipcMain, {
   ...deps, BrowserWindow, attachments: chatAttachments,
   getRecentFolders: () => settingsStore.load().recentFolders || [],

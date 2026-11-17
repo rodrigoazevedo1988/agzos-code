@@ -90,6 +90,8 @@ const handlers = {
     return out;
   },
   'broom.listFiles': listFiles,
+  // formatter.* — Agzos Formatador (prettier embutido; nunca código do projeto)
+  'formatter.format': (params) => require('./formatter/worker').format(params),
 };
 
 serveWorker(handlers);

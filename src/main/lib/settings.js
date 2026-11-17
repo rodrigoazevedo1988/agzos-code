@@ -89,6 +89,16 @@ const DEFAULT_SETTINGS = {
     // Histórico local e Git Slider (1.2.0). Normalização em normalizeHistoryModules.
     localHistory: { enabled: true, maxPerFile: 50, maxDays: 30, maxTotalMB: 300 },
     gitSlider: { enabled: true, maxCommits: 200 },
+    // Módulos de editor (1.2.0). Normalização em normalizeEditorMods.
+    inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
+    prettyErrors: { enabled: true },
+    highlighter: { enabled: true, tags: ['!=#FF5252', '?=#4FC3F7', 'TODO=#FF9800', 'FIXME=#FF9800', '*=#98C379', '//=#7A7A7A'] },
+    formatter: {
+      enabled: true,
+      formatOnSave: {
+        javascript: false, typescript: false, json: false, css: false, scss: false, less: false, html: false, markdown: false, yaml: false,
+      },
+    },
   },
 };
 
@@ -229,6 +239,53 @@ function normalizeHistoryModules(v) {
   };
 }
 
+const INLINE_SEVERITIES = ['error', 'warning', 'info'];
+const HIGHLIGHT_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/** "marcador=#cor" válido → forma canônica (sem espaços); inválido → null. */
+function normalizeHighlightTag(raw) {
+  if (typeof raw !== 'string') return null;
+  const at = raw.lastIndexOf('=');
+  if (at <= 0) return null;
+  const tag = raw.slice(0, at).trim();
+  const color = raw.slice(at + 1).trim();
+  if (!tag || tag.length > 20 || /\s/.test(tag) || !HIGHLIGHT_COLOR.test(color)) return null;
+  return `${tag}=${color}`;
+}
+
+/** Módulos de editor da 1.2.0 (Erros na Linha, Erros Claros, Marca-texto, Formatador). */
+function normalizeEditorMods(v) {
+  const def = DEFAULT_SETTINGS.modules;
+  const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
+  const obj = (val) => (isPlainObject(val) ? val : {});
+
+  const ie = obj(v.inlineErrors);
+  const hl = obj(v.highlighter);
+  const fm = obj(v.formatter);
+  const fosIn = obj(fm.formatOnSave);
+  const formatOnSave = {};
+  for (const [lang, val] of Object.entries(def.formatter.formatOnSave)) formatOnSave[lang] = bool(fosIn[lang], val);
+  const severities = Array.isArray(ie.severities)
+    ? INLINE_SEVERITIES.filter((s) => ie.severities.includes(s))
+    : [...def.inlineErrors.severities];
+
+  return {
+    inlineErrors: {
+      ...ie,
+      enabled: bool(ie.enabled, def.inlineErrors.enabled),
+      severities,
+      onlyCursorLine: bool(ie.onlyCursorLine, def.inlineErrors.onlyCursorLine),
+    },
+    prettyErrors: { ...obj(v.prettyErrors), enabled: bool(obj(v.prettyErrors).enabled, def.prettyErrors.enabled) },
+    highlighter: {
+      ...hl,
+      enabled: bool(hl.enabled, def.highlighter.enabled),
+      tags: Array.isArray(hl.tags) ? hl.tags.map(normalizeHighlightTag).filter(Boolean) : [...def.highlighter.tags],
+    },
+    formatter: { ...fm, enabled: bool(fm.enabled, def.formatter.enabled), formatOnSave },
+  };
+}
+
 /** Valores inválidos de `modules` voltam ao padrão (campo a campo; listas item a item). */
 function normalizeModules(value) {
   const def = DEFAULT_SETTINGS.modules;
@@ -277,6 +334,7 @@ function normalizeModules(value) {
       revealTimeoutSec,
     },
     ...normalizeHistoryModules(v),
+    ...normalizeEditorMods(v),
   };
 }
 

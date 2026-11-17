@@ -117,7 +117,8 @@ test('settings:save mantém perfis de IA do disco (cópia do renderer pode estar
 test('modules: defaults de modules', () => {
   const p = tmpFile();
   const s = loadSettings(p);
-  assert.deepEqual(s.modules, {
+  // Só os módulos da 1.1.0; os da 1.2.0 têm testes próprios.
+  assert.deepEqual({ broom: s.modules.broom, envVault: s.modules.envVault }, {
     broom: {
       enabled: true,
       rules: { console: true, comments: true, unusedImports: true, deadCode: true },

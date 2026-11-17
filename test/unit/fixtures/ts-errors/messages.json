@@ -1,0 +1,7 @@
+{
+  "simple": "Type 'string' is not assignable to type 'number'.",
+  "chain": "Type '{ name: string; age: number; }' is not assignable to type 'User'.\n  Object literal may only specify known properties, and 'age' does not exist in type 'User'.",
+  "long": "Argument of type '{ id: number; title: string; done: boolean; tags: string[]; owner: { name: string; email: string; }; }' is not assignable to parameter of type 'Task'.\n  Property 'createdAt' is missing in type '{ id: number; title: string; done: boolean; tags: string[]; owner: { name: string; email: string; }; }' but required in type 'Task'.",
+  "noTypes": "Cannot find name 'foo'.",
+  "literal": "Type '\"a\" | \"b\"' is not assignable to type '\"c\"'."
+}
