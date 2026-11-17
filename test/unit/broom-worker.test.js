@@ -50,7 +50,8 @@ test('broom.analyzeMany é cancelável entre arquivos', async () => {
   // O worker para de verdade: a próxima chamada responde logo.
   const r = await host.call('broom.analyze', { path: '/w/a.js', text: 'x();\n', options: {} });
   assert.deepEqual(r.edits, []);
-  assert.ok(Date.now() - t0 < 1000, `demorou ${Date.now() - t0} ms`);
+  // Margem folgada: sem cancelamento levaria dezenas de segundos; 3 s tolera máquina carregada.
+  assert.ok(Date.now() - t0 < 3000, `demorou ${Date.now() - t0} ms`);
 });
 
 test('broom.listFiles ignora pastas, extensões, 1 MB e links; respeita maxFiles', async () => {
