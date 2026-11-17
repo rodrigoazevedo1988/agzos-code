@@ -133,8 +133,6 @@ test('modules: defaults de modules', () => {
       allowlist: [],
       revealTimeoutSec: 10,
     },
-    localHistory: { enabled: true, maxPerFile: 50, maxDays: 30, maxTotalMB: 300 },
-    gitSlider: { enabled: true, maxCommits: 200 },
   });
   const { normalizeModules } = require('../../src/main/lib/settings');
   assert.deepEqual(normalizeModules(undefined), DEFAULT_SETTINGS.modules);
