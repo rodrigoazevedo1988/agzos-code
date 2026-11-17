@@ -385,6 +385,18 @@ export function refreshTree(keepState = false) {
   render();
 }
 
+/** Recolhe todas as pastas, mantendo a raiz aberta. */
+export function collapseAllFolders() {
+  State.expandedDirs.clear();
+  const walk = (node) => {
+    for (const child of node.children || []) {
+      if (child.isDirectory) { child.expanded = false; walk(child); }
+    }
+  };
+  if (treeRoot) walk(treeRoot);
+  render();
+}
+
 export function getCurrentDir() {
   return State.workspaceRoot;
 }

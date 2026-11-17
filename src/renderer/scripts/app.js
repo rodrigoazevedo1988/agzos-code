@@ -15,7 +15,7 @@ import {
   createTerminal, splitTerminal, focusNextTerminal,
 } from './terminal.js';
 import { setupAiDock } from './ai-dock.js';
-import { openWorkspace } from './file-tree.js';
+import { openWorkspace, refreshTree, collapseAllFolders } from './file-tree.js';
 import { setupGitPanel } from './git-panel.js';
 import { setupModulesHub } from './modules-hub.js';
 import { setupBroom } from './broom.js';
@@ -119,7 +119,8 @@ async function boot() {
   if (btnActSettings) btnActSettings.addEventListener('click', () => openSettingsModal());
 
   // 12) Botões do header da sidebar
-  document.getElementById('btn-open-folder').addEventListener('click', openFolderDialog);
+  document.getElementById('btn-refresh-explorer').addEventListener('click', () => { refreshTree(false); invalidateQuickOpenCache(); });
+  document.getElementById('btn-collapse-folders').addEventListener('click', collapseAllFolders);
   document.getElementById('btn-open-folder-2').addEventListener('click', openFolderDialog);
   document.getElementById('btn-new-file').addEventListener('click', newFileInRoot);
   document.getElementById('btn-new-folder').addEventListener('click', newFolderInRoot);
@@ -232,7 +233,8 @@ function hydrateLucideIcons() {
     'btn-activity-settings': 'settings',
     'btn-new-file': 'file-plus',
     'btn-new-folder': 'folder-plus',
-    'btn-open-folder': 'folder-open',
+    'btn-refresh-explorer': 'refresh-cw',
+    'btn-collapse-folders': 'copy-minus',
     'btn-pos-terminal': 'panel-right',
     'btn-maximize-bottom': 'maximize-2',
     'btn-close-bottom': 'x',
@@ -517,6 +519,8 @@ function switchSidebarView(view) {
   const cfg = map[view];
   if (!cfg) return;
   document.getElementById('sidebar-title').textContent = cfg.title;
+  const explorerActions = document.getElementById('explorer-actions');
+  if (explorerActions) explorerActions.hidden = view !== 'explorer';
   ['file-tree','empty-explorer','panel-search','panel-git','panel-modules','panel-ai'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;

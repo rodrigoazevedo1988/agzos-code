@@ -247,6 +247,8 @@ body.resizing-ai-dock { cursor: col-resize; user-select: none; }
   text-transform: uppercase;
 }
 #sidebar-title { flex: 1; }
+.sidebar-actions { display: flex; align-items: center; gap: 2px; }
+.sidebar-actions[hidden] { display: none; }
 .icon-btn {
   background: transparent; border: none;
   color: var(--fg-dim); cursor: pointer;

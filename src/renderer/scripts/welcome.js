@@ -145,7 +145,7 @@ export function showEditorWelcome() {
   // Handlers
   welcome.querySelector('[data-action="open-folder"]').addEventListener('click', () => {
     document.getElementById('welcome-open-folder')?.click() ||
-    document.querySelector('#btn-open-folder')?.click();
+    document.querySelector('#btn-open-folder-2')?.click();
   });
   welcome.querySelector('[data-action="open-file"]').addEventListener('click', () => {
     window.agzos.dialog.openFile().then(async (p) => {

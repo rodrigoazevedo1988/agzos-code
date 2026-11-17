@@ -1,0 +1,51 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { test, expect } = require('@playwright/test');
+const { launchApp } = require('./helpers');
+
+test('cabeçalho do Explorer: 4 ações, atualizar e recolher pastas', async () => {
+  const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-explorer-')));
+  fs.mkdirSync(path.join(ws, 'src', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(ws, 'src', 'lib', 'a.js'), '1');
+  const { app, page, errors } = await launchApp({ settings: { welcomeSeen: true, onboardingCompleted: true } });
+  try {
+    await app.evaluate((_e, d) => global.__agzosAllowRoot(d), ws);
+    await page.evaluate(async (d) => { const m = await import('./scripts/file-tree.js'); await m.openWorkspace(d); }, ws);
+
+    const actions = page.locator('#explorer-actions');
+    await expect(actions).toBeVisible();
+    await expect(actions.locator('button')).toHaveCount(4);
+    for (const id of ['btn-new-file', 'btn-new-folder', 'btn-refresh-explorer', 'btn-collapse-folders']) {
+      await expect(actions.locator(`#${id}`)).toBeVisible();
+    }
+    await expect(page.locator('#btn-open-folder')).toHaveCount(0);
+
+    // Expande src e src/lib
+    await page.locator('.tree-row', { hasText: 'src' }).first().click();
+    await page.locator('.tree-row', { hasText: 'lib' }).first().click();
+    await expect(page.locator('.tree-row', { hasText: 'a.js' })).toBeVisible();
+
+    // Arquivo criado fora aparece ao atualizar, mantendo pastas abertas
+    fs.writeFileSync(path.join(ws, 'src', 'lib', 'novo.js'), '2');
+    await page.locator('#btn-refresh-explorer').click();
+    await expect(page.locator('.tree-row', { hasText: 'novo.js' })).toBeVisible();
+
+    // Recolher pastas
+    await page.locator('#btn-collapse-folders').click();
+    await expect(page.locator('.tree-row', { hasText: 'a.js' })).toHaveCount(0);
+    await expect(page.locator('.tree-row', { hasText: 'src' })).toBeVisible();
+
+    // Só aparece no Explorer
+    await page.locator('.activity-btn[data-view="git"]').click();
+    await expect(actions).toBeHidden();
+    await page.locator('.activity-btn[data-view="modules"]').click();
+    await expect(actions).toBeHidden();
+    await page.locator('.activity-btn[data-view="explorer"]').click();
+    await expect(actions).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
