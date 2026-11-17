@@ -50,3 +50,36 @@ test('broom.analyzeMany é cancelável entre arquivos', async () => {
   assert.deepEqual(r.edits, []);
   assert.ok(Date.now() - t0 < 1000, `demorou ${Date.now() - t0} ms`);
 });
+
+test('broom.listFiles ignora pastas, extensões, 1 MB e links; respeita maxFiles', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-list-')));
+  try {
+    const w = (rel, text = 'x();\n') => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
+    w('a.js'); w('src/b.tsx'); w('src/c.css'); w('node_modules/p/d.js'); w('grande.js', 'x'.repeat(2048));
+    fs.symlinkSync(path.join(root, 'a.js'), path.join(root, 'link.js'));
+    const params = { root, ignoredDirs: ['node_modules'], extensions: ['.js', '.tsx'], maxBytes: 1024 };
+    const r = await host.call('broom.listFiles', params);
+    assert.deepEqual(r.files.map((f) => path.relative(root, f.path)), ['a.js', path.join('src', 'b.tsx')]);
+    assert.equal(typeof r.files[0].mtimeMs, 'number');
+    assert.equal(r.truncated, false);
+    const lim = await host.call('broom.listFiles', { ...params, maxFiles: 1 });
+    assert.equal(lim.files.length, 1);
+    assert.equal(lim.truncated, true);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('broom.analyzeMany sem text lê o arquivo no worker', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-am-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'a.js'), 'console.log(1);\n');
+    fs.writeFileSync(path.join(dir, 'b.js'), 'x'.repeat(2048));
+    const r = await host.call('broom.analyzeMany', { files: [{ path: path.join(dir, 'a.js') }, { path: path.join(dir, 'b.js') }], options: {}, maxBytes: 1024 });
+    assert.equal(r[0].edits.length, 1);
+    assert.equal(typeof r[0].mtimeMs, 'number');
+    assert.equal(r[1].skipped, true);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
