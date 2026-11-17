@@ -24,6 +24,7 @@
  * .example/.sample/.template) mostram `CHAVE=****`; para chaves, o agente usa env_check.
  */
 
+const { compileGlob } = require('../lib/glob-match');
 const fs = require('fs');
 const path = require('path');
 const { createPathGuard } = require('../lib/path-guard');
@@ -192,25 +193,14 @@ const DEFINITIONS = [
   },
 ];
 
+/**
+ * Glob do agente (`search.glob`) → objeto com `.test(caminho)`. Usa o matcher sem
+ * backtracking de lib/glob-match (o glob vem do modelo: um padrão patológico não
+ * pode congelar o processo main). Padrão inválido não casa com nada.
+ */
 function globToRegExp(glob) {
-  let re = '';
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i];
-    if (ch === '*') {
-      if (glob[i + 1] === '*') {
-        i++;
-        if (glob[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*';
-      } else re += '[^/]*';
-    } else if (ch === '?') re += '[^/]';
-    else if (ch === '{') {
-      const end = glob.indexOf('}', i);
-      if (end > i) {
-        re += `(?:${glob.slice(i + 1, end).split(',').map((s) => s.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')).join('|')})`;
-        i = end;
-      } else re += '\\{';
-    } else re += ch.replace(/[.+^${}()|[\]\\/]/g, '\\$&');
-  }
-  return new RegExp(`^${re}$`);
+  const match = compileGlob(glob, { braces: true });
+  return { test: (p) => (match ? match(String(p)) : false) };
 }
 
 function isBinary(buf) {

@@ -73,6 +73,11 @@ test('search: ignora node_modules, glob, regex e limite', async () => {
   const many = await run('search', { query: 'x', glob: 'many.txt' });
   assert.match(many.result, /truncados em 200/);
   assert.ok(globToRegExp('**/*.{js,ts}').test('a/b/c.ts'));
+  // glob patológico vindo do modelo não trava o processo main
+  const t0 = Date.now();
+  assert.equal(globToRegExp('**a**a**a**a**a**a**a**b').test('a'.repeat(1000)), false);
+  assert.ok(Date.now() - t0 < 200);
+  assert.equal(globToRegExp('[z-a]').test('x'), false);
 });
 
 test('write_file: cria pastas pai, preview e meta', async () => {
