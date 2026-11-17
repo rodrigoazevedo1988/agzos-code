@@ -84,3 +84,40 @@ test('mantém no máximo N checkpoints no disco', () => {
     assert.ok(fs.existsSync(path.join(dir, `${ids[4]}.json`)));
   } finally { cleanup(); }
 });
+
+test('undo com assertPath: caminho negado → nada é restaurado e o checkpoint continua', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-cp-guard-')));
+  try {
+    const store = createCheckpointStore({});
+    const f = path.join(root, 'a.txt');
+    fs.writeFileSync(f, 'antes');
+    const cp = store.create({ root });
+    cp.record(f);
+    fs.writeFileSync(f, 'depois');
+    cp.finalize();
+    const denied = store.undo(cp.id, { assertPath: (p) => { throw new Error(`Acesso negado: ${p}`); } });
+    assert.deepEqual(denied.restored, []);
+    assert.match(denied.errors[0].message, /Acesso negado/);
+    assert.equal(fs.readFileSync(f, 'utf8'), 'depois');
+    const ok = store.undo(cp.id, { assertPath: (p) => p });
+    assert.deepEqual(ok.errors, []);
+    assert.equal(fs.readFileSync(f, 'utf8'), 'antes');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('checkpoints no disco: pasta 0700 e arquivos 0600 (inclusive pasta já existente)', { skip: process.platform === 'win32' }, () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-cp-perm-')));
+  const dir = path.join(root, 'cps');
+  try {
+    fs.mkdirSync(dir, { mode: 0o755 });
+    fs.chmodSync(dir, 0o755);
+    const store = createCheckpointStore({ dir });
+    const f = path.join(root, 'segredo.env');
+    fs.writeFileSync(f, 'X=1');
+    const cp = store.create({ root });
+    cp.record(f);
+    cp.finalize();
+    assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(path.join(dir, `${cp.id}.json`)).mode & 0o777, 0o600);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

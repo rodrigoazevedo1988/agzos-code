@@ -62,7 +62,7 @@ function cleanMessages(list) {
       const attachments = Array.isArray(m.attachments) ? m.attachments.map(cleanAttachment).filter(Boolean).slice(0, 20) : [];
       if (attachments.length) out.attachments = attachments;
       if (typeof m.model === 'string' && m.model) out.model = m.model.slice(0, 120);
-      if (typeof m.skill === 'string' && /^[a-z0-9-]{1,40}$/.test(m.skill)) out.skill = m.skill;
+      if (typeof m.skill === 'string' && /^(?:project:)?[a-z0-9-]{1,40}$/.test(m.skill)) out.skill = m.skill;
       return out;
     })
     .slice(-MAX_MESSAGES);

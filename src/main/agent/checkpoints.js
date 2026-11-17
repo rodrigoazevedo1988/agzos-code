@@ -4,6 +4,9 @@
  * tudo: recria apagados, sobrescreve editados e apaga o que foi criado.
  *
  * Em memória + userData/agent-checkpoints/<id>.json (máx. 20 checkpoints, 50MB).
+ * Os arquivos guardam conteúdo original (pode ter segredos): pasta 0700, arquivos 0600.
+ * `undo(id, { assertPath })`: cada caminho passa por assertPath (guard da janela) antes
+ * de qualquer mudança; um negado → nada é restaurado e o checkpoint continua.
  */
 
 const fs = require('fs');
@@ -133,8 +136,11 @@ function createCheckpointStore({ dir, maxCount = 20, maxBytes = 50 * 1024 * 1024
       memory.set(id, toJSON());
       if (dir) {
         try {
-          fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(fileFor(id), JSON.stringify(toJSON()));
+          fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+          try { fs.chmodSync(dir, 0o700); } catch { /* Windows/FS sem chmod */ }
+          const file = fileFor(id);
+          fs.writeFileSync(file, JSON.stringify(toJSON()), { mode: 0o600 });
+          try { fs.chmodSync(file, 0o600); } catch { /* Windows/FS sem chmod */ }
         } catch (err) {
           console.error('[agent] checkpoint não gravado', err.message);
         }
@@ -154,10 +160,17 @@ function createCheckpointStore({ dir, maxCount = 20, maxBytes = 50 * 1024 * 1024
   }
 
   /** Restaura o checkpoint. → { restored: [path], errors: [{ path, message }] } */
-  function undo(id) {
+  function undo(id, { assertPath = null } = {}) {
     const data = load(id);
     if (!data) return { restored: [], errors: [{ path: null, message: 'Checkpoint não encontrado' }] };
     const entries = data.entries || [];
+    if (typeof assertPath === 'function') {
+      const denied = [];
+      for (const [p] of entries) {
+        try { assertPath(p); } catch (err) { denied.push({ path: p, message: String(err?.message || err) }); }
+      }
+      if (denied.length) return { restored: [], errors: denied };
+    }
     const restored = [];
     const errors = [];
     const fail = (p, err) => errors.push({ path: p, message: String(err?.message || err) });

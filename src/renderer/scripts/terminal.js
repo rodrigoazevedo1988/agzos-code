@@ -510,7 +510,18 @@ export async function runInTerminal(text, { newTerminal = false } = {}) {
     toast('Não foi possível abrir um terminal para executar o comando.', 'error');
     return false;
   }
-  const payload = String(text).replace(/\r?\n$/, '');
+  // `text` pode ser uma função (sessão) → comando, para montar as aspas conforme o shell
+  // da sessão que vai rodar. Erro na montagem (caminho inseguro) → toast, nada é escrito.
+  let built = text;
+  if (typeof text === 'function') {
+    try {
+      built = text({ shell: session.ssh ? 'ssh' : (session.shell || session.profile?.shell || ''), ssh: !!session.ssh });
+    } catch (err) {
+      toast(err?.message || String(err), 'error', 6000);
+      return false;
+    }
+  }
+  const payload = String(built).replace(/\r?\n$/, '');
   await window.agzos.term.write(session.termId, `${payload}\r`);
   return true;
 }

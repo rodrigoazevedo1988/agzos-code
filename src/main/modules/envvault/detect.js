@@ -7,6 +7,9 @@
  *   (nem em logs, nem no retorno).
  * - allowlist: valores ou sha256 (hex, com ou sem prefixo `sha256:`) que nunca disparam.
  * - extraPatterns: [{ name, regex }] (regex em texto; grupo 1, se houver, é o valor).
+ *
+ * `redactSecrets(text, opts)` → o texto com cada valor detectado trocado por `[redigido]`
+ * (saídas de ferramentas do agente antes de irem ao modelo).
  */
 
 const path = require('node:path');
@@ -161,7 +164,7 @@ function scanLine(line, specs, allowed) {
       if (spec.accept && !spec.accept(value)) continue;
       if (allowed(value)) { covered.push(range); continue; }
       covered.push(range);
-      found.push({ column: index + 1, rule: spec.rule, preview: previewOf(value) });
+      found.push({ column: index + 1, rule: spec.rule, preview: previewOf(value), length: value.length });
     }
   }
   return found.sort((a, b) => a.column - b.column);
@@ -179,9 +182,35 @@ function detectSecrets(text, { fileName, extraPatterns = [], allowlist = [] } = 
     let line = lines[i];
     if (line.endsWith('\r')) line = line.slice(0, -1);
     if (line.length > MAX_LINE) line = line.slice(0, MAX_LINE);
-    for (const f of scanLine(line, specs, allowed)) out.push({ line: i + 1, ...f });
+    // `length` é interno (redactSecrets); o retorno público continua sem tamanho/valor.
+    for (const f of scanLine(line, specs, allowed)) {
+      const hit = { line: i + 1, ...f };
+      delete hit.length;
+      out.push(hit);
+    }
   }
   return out;
 }
 
-module.exports = { detectSecrets, shannon, isPlaceholder, LOCKFILES, RULES };
+const REDACTED = '[redigido]';
+
+/** Troca os valores que o detector reconhece por `[redigido]` (linhas longas: só o início é varrido). */
+function redactSecrets(text, { extraPatterns = [], allowlist = [] } = {}) {
+  const src = String(text ?? '');
+  if (!src) return src;
+  const specs = [...RULES, ...compileExtra(extraPatterns)];
+  const allowed = buildAllowlist(allowlist);
+  return src.split('\n').map((full) => {
+    const cr = full.endsWith('\r');
+    const line = cr ? full.slice(0, -1) : full;
+    const hits = scanLine(line.length > MAX_LINE ? line.slice(0, MAX_LINE) : line, specs, allowed);
+    if (!hits.length) return full;
+    let out = line;
+    for (const h of hits.sort((a, b) => b.column - a.column)) {
+      out = out.slice(0, h.column - 1) + REDACTED + out.slice(h.column - 1 + h.length);
+    }
+    return cr ? `${out}\r` : out;
+  }).join('\n');
+}
+
+module.exports = { detectSecrets, redactSecrets, shannon, isPlaceholder, LOCKFILES, RULES };

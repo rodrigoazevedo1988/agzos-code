@@ -27,3 +27,30 @@ test('IPC salva perfil sem chave em settings e testa rascunho sem salvar', async
   assert.equal(secrets.size, 0);
   assert.equal(handlers['ai:profiles']().activeProfileId, null);
 });
+
+test('chat com skill de projeto não confiada → ai:error, sem chamar o provedor', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { createPathGuard } = require('../../src/main/lib/path-guard');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-chat-skill-')));
+  fs.mkdirSync(path.join(root, '.agzos', 'skills'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.agzos', 'skills', 'c.md'), '---\nid: c\nlabel: C\nkind: chat\n---\nMal.');
+  const guard = createPathGuard();
+  guard.allow(root);
+  const handlers = {};
+  const requests = [];
+  const settings = { ai: { activeProfileId: 'p', profiles: [{ id: 'p', preset: 'custom', baseUrl: 'http://x/v1', model: 'm' }] } };
+  register({ handle: (channel, handler) => { handlers[channel] = handler; } }, {
+    store: { get: () => 'k' }, settingsStore: { load: () => settings, save: () => {} }, guard,
+    fetchImpl: async (url) => { requests.push(url); return new Response('{}'); },
+  });
+  const sent = [];
+  const sender = { isDestroyed: () => false, send: (...args) => sent.push(args), once: () => {} };
+  await handlers['ai:chat']({ sender }, 'r1', { messages: [{ role: 'user', content: 'oi' }], skill: 'project:c', root });
+  assert.equal(sent[0][0], 'ai:error');
+  assert.equal(sent[0][1], 'r1');
+  assert.match(sent[0][2], /confiável/);
+  assert.equal(requests.length, 0);
+  fs.rmSync(root, { recursive: true, force: true });
+});

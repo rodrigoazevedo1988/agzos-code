@@ -4,6 +4,7 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 
 const DEFAULT_SETTINGS = {
   theme: 'agzos-dark',
@@ -29,6 +30,8 @@ const DEFAULT_SETTINGS = {
   },
   // Agente: modo de autonomia ask | edit | auto. Dono: ipc/agent.js (agent:setMode).
   aiAgent: { mode: 'edit' },
+  // Skills de projeto confiadas pelo usuário: [{ root, path, sha256 }] (só o main grava).
+  aiSkills: { trusted: [] },
   // Contas GitHub (só metadados; tokens no cofre em github.<id>). Dono: ipc/github.js.
   github: { accounts: [], defaultAccountId: null, repoAccounts: {} },
   editor: {
@@ -141,6 +144,29 @@ function normalizeAiAgent(value) {
   return { ...v, mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode };
 }
 
+const MAX_TRUSTED_SKILLS = 500;
+
+/**
+ * `aiSkills.trusted`: registros { root, path, sha256 } de skills de projeto confiadas.
+ * Descarta itens inválidos (caminho relativo, hash que não é sha256 hex) e duplicados.
+ */
+function normalizeAiSkills(value) {
+  const v = isPlainObject(value) ? value : {};
+  const seen = new Set();
+  const trusted = [];
+  for (const t of Array.isArray(v.trusted) ? v.trusted : []) {
+    if (!isPlainObject(t)) continue;
+    const { root, path: file, sha256 } = t;
+    if (typeof root !== 'string' || typeof file !== 'string' || !path.isAbsolute(root) || !path.isAbsolute(file)) continue;
+    if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) continue;
+    const key = `${root}\0${file}\0${sha256}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    trusted.push({ root, path: file, sha256 });
+  }
+  return { trusted: trusted.slice(-MAX_TRUSTED_SKILLS) };
+}
+
 /** `window.confirmBeforeQuit` não booleano volta ao padrão (true). */
 function normalizeWindow(value) {
   const v = isPlainObject(value) ? value : {};
@@ -241,6 +267,7 @@ function loadSettings(filePath) {
   // Contexto padrão herda a escolha antiga (ai.context) de quem já usava o chat.
   merged.aiPanel = normalizeAiPanel(parsed.aiPanel, parsed.ai?.context);
   merged.aiAgent = normalizeAiAgent(parsed.aiAgent);
+  merged.aiSkills = normalizeAiSkills(parsed.aiSkills);
   merged.modules = normalizeModules(parsed.modules);
   merged.window = normalizeWindow(parsed.window);
   return merged;
@@ -301,5 +328,5 @@ function migrateLegacySecrets(settings, store) {
 }
 
 module.exports = {
-  DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, normalizeModules, normalizeWindow, loadSettings, saveSettings, migrateLegacySecrets,
+  DEFAULT_SETTINGS, normalizeAiPanel, normalizeAiAgent, normalizeAiSkills, normalizeModules, normalizeWindow, loadSettings, saveSettings, migrateLegacySecrets,
 };

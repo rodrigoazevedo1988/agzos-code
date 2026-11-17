@@ -13,10 +13,14 @@
  *   ---
  *   <instruções do modo — vão no system prompt, junto com o prompt base>
  *
- * Fontes, da menor para a maior precedência (mesmo `id` sobrescreve):
+ * Fontes:
  *   embutidas  src/main/agent/skills/*.md
- *   usuário    userData/skills/*.md
- *   projeto    <projeto>/.agzos/skills/*.md
+ *   usuário    userData/skills/*.md          (mesmo `id` sobrescreve a embutida)
+ *   projeto    <projeto>/.agzos/skills/*.md  (namespace próprio: id `project:<id>`)
+ * Skills de projeto vêm do repositório (fonte não confiável): nunca substituem embutidas
+ * nem do usuário, e só rodam depois que o usuário confia nelas ("Workspace Trust").
+ * A confiança vale para raiz + caminho + sha256 do arquivo (settings.aiSkills.trusted);
+ * mudou o conteúdo, precisa confiar de novo. `pickSkill` lança `skill_untrusted`.
  * Frontmatter inválido → skill ignorada com aviso no log (nunca derruba o agente).
  * Só usam system prompt + allowlist + regras do laço: funcionam com qualquer provider
  * que tenha tool calling.
@@ -24,11 +28,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const BUILTIN_DIR = path.join(__dirname, 'skills');
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const MAX_FILE = 64 * 1024;
 const MAX_FILES = 100;
+const PROJECT_PREFIX = 'project:';
+const PREVIEW_LINES = 12;
 
 function parseScalar(raw) {
   const v = raw.trim();
@@ -102,8 +109,11 @@ function normalizeSkill(data, body, { source, file }) {
 function readSkillFile(file, source) {
   const stat = fs.statSync(file);
   if (stat.size > MAX_FILE) throw new Error('arquivo grande demais (máx. 64 KB)');
-  const { data, body } = parseFrontmatter(fs.readFileSync(file, 'utf8'));
-  return normalizeSkill(data, body, { source, file });
+  const raw = fs.readFileSync(file);
+  const { data, body } = parseFrontmatter(raw.toString('utf8'));
+  const skill = normalizeSkill(data, body, { source, file });
+  if (source === 'project') skill.sha256 = crypto.createHash('sha256').update(raw).digest('hex');
+  return skill;
 }
 
 function listMarkdown(dir) {
@@ -121,7 +131,8 @@ function listMarkdown(dir) {
  * @returns {{ skills: Array, warnings: Array<{ file, source, message }> }}
  */
 function loadSkills({ builtinDir = BUILTIN_DIR, userDir = null, projectRoot = null, log = console.warn } = {}) {
-  const sources = [['builtin', builtinDir], ['user', userDir], ['project', projectRoot ? path.join(projectRoot, '.agzos', 'skills') : null]];
+  const projectDir = projectRoot ? path.join(projectRoot, '.agzos', 'skills') : null;
+  const sources = [['builtin', builtinDir], ['user', userDir], ['project', projectDir]];
   const byId = new Map();
   const warnings = [];
   for (const [source, dir] of sources) {
@@ -129,6 +140,12 @@ function loadSkills({ builtinDir = BUILTIN_DIR, userDir = null, projectRoot = nu
     for (const file of listMarkdown(dir)) {
       try {
         const skill = readSkillFile(file, source);
+        if (source === 'project') {
+          // Namespace próprio: nunca colide com embutidas/usuário.
+          skill.localId = skill.id;
+          skill.id = `${PROJECT_PREFIX}${skill.id}`;
+          skill.root = projectRoot;
+        }
         const previous = byId.get(skill.id);
         if (previous) skill.overrides = previous.source;
         byId.set(skill.id, skill);
@@ -143,6 +160,36 @@ function loadSkills({ builtinDir = BUILTIN_DIR, userDir = null, projectRoot = nu
   return { skills, warnings };
 }
 
+const samePath = (a, b) => typeof a === 'string' && typeof b === 'string'
+  && (process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
+
+/** Registro de confiança gravado em settings.aiSkills.trusted. */
+function trustRecord(skill) {
+  return { root: skill.root, path: skill.file, sha256: skill.sha256 };
+}
+
+/** Embutidas/usuário: sempre. Projeto: só com registro de raiz + caminho + sha256 iguais. */
+function isSkillTrusted(skill, trusted = []) {
+  if (!skill || skill.source !== 'project') return true;
+  if (!skill.root || !skill.file || !skill.sha256) return false;
+  return (Array.isArray(trusted) ? trusted : []).some((t) => t && t.sha256 === skill.sha256
+    && samePath(t.root, skill.root) && samePath(t.path, skill.file));
+}
+
+/**
+ * Skill pelo id (opcionalmente só de um `kind`). Skill de projeto não confiada →
+ * Error com code 'skill_untrusted'. Não encontrada → null.
+ */
+function pickSkill(skills, id, { trusted = [], kind = null } = {}) {
+  const skill = (Array.isArray(skills) ? skills : []).find((s) => s.id === id && (!kind || s.kind === kind)) || null;
+  if (skill && !isSkillTrusted(skill, trusted)) {
+    const err = new Error(`A skill "${skill.label}" vem do projeto e ainda não foi marcada como confiável. Escolha-a de novo no seletor para revisar e confiar.`);
+    err.code = 'skill_untrusted';
+    throw err;
+  }
+  return skill;
+}
+
 /** Definições de ferramentas filtradas pela allowlist da skill (null = todas). */
 function filterDefinitions(definitions, skill) {
   if (!skill || !Array.isArray(skill.tools)) return definitions;
@@ -150,10 +197,22 @@ function filterDefinitions(definitions, skill) {
   return definitions.filter((d) => allowed.has(d.name));
 }
 
-/** Versão pública (sem o prompt completo) para o renderer. */
-function describeSkill(skill) {
+/**
+ * Versão pública (sem o prompt completo) para o renderer. Skills de projeto levam o
+ * necessário para o diálogo de confiança: caminho relativo, hash e primeiras linhas.
+ */
+function describeSkill(skill, { trusted = [] } = {}) {
   const { id, label, icon, description, kind, tools, readOnly, source, file, overrides, order } = skill;
-  return { id, label, icon, description, kind, tools, readOnly, source, file, overrides: overrides || null, order };
+  const out = { id, label, icon, description, kind, tools, readOnly, source, file, overrides: overrides || null, order };
+  if (source === 'project') {
+    out.localId = skill.localId;
+    out.sha256 = skill.sha256;
+    out.sha256Short = String(skill.sha256 || '').slice(0, 12);
+    out.relPath = skill.root ? path.relative(skill.root, file).split(path.sep).join('/') : file;
+    out.preview = String(skill.prompt || '').split('\n').slice(0, PREVIEW_LINES).join('\n');
+    out.trusted = isSkillTrusted(skill, trusted);
+  }
+  return out;
 }
 
 const SKILL_TEMPLATE = `---
@@ -175,4 +234,5 @@ Descreva aqui, em português, como o agente deve trabalhar neste modo:
 
 module.exports = {
   parseFrontmatter, normalizeSkill, loadSkills, filterDefinitions, describeSkill, SKILL_TEMPLATE, BUILTIN_DIR,
+  pickSkill, isSkillTrusted, trustRecord, PROJECT_PREFIX,
 };

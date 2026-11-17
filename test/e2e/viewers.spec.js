@@ -166,6 +166,36 @@ test('markdown: pré-visualização na aba atual e voltar ao texto', async () =>
   await expect(page.locator('#viewer-host')).toBeHidden();
 });
 
+test('markdown: clique do meio em link relativo/file: não chama shell.openExternal', async () => {
+  const { page, app, ws } = ctx;
+  fs.writeFileSync(path.join(ws, 'docs', 'links.md'),
+    '# Links\n\n[relativo](../app.js)\n\n[arquivo](file:///etc/passwd)\n\n[site](https://agzos.dev/)\n');
+  await app.evaluate(({ shell }) => {
+    global.__opened = [];
+    global.__realOpenExternal = global.__realOpenExternal || shell.openExternal;
+    shell.openExternal = async (url) => { global.__opened.push(url); };
+  });
+  try {
+    await open(path.join(ws, 'docs', 'links.md'));
+    await page.locator('#editor-actions [data-action="md-preview-tab"]').click();
+    const viewer = page.locator('#viewer-host .viewer-markdown');
+    await expect(viewer.locator('h1')).toHaveText('Links');
+    await viewer.locator('a', { hasText: 'arquivo' }).click({ button: 'middle' });
+    // window.open direto também passa pelo filtro do main
+    await page.evaluate(() => { window.open('file:///etc/passwd'); });
+    await page.waitForTimeout(300);
+    expect(await app.evaluate(() => global.__opened)).toEqual([]);
+    await viewer.locator('a', { hasText: 'site' }).click({ button: 'middle' });
+    await expect.poll(() => app.evaluate(() => global.__opened)).toEqual(['https://agzos.dev/']);
+    // relativo: abre no editor (como o clique normal), nunca no SO
+    await viewer.locator('a', { hasText: 'relativo' }).click({ button: 'middle' });
+    await expect(page.locator('#tabs .tab.active')).toContainText('app.js');
+    expect(await app.evaluate(() => global.__opened)).toEqual(['https://agzos.dev/']);
+  } finally {
+    await app.evaluate(({ shell }) => { shell.openExternal = global.__realOpenExternal; });
+  }
+});
+
 test('csv vira tabela', async () => {
   const { page, ws } = ctx;
   await open(path.join(ws, 'dados.csv'));

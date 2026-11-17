@@ -137,6 +137,8 @@ contextBridge.exposeInMainWorld('agzos', {
     skills: (payload) => ipcRenderer.invoke('agent:skills', payload),
     newSkill: () => ipcRenderer.invoke('agent:skills:new'),
     openSkillsFolder: () => ipcRenderer.invoke('agent:skills:openFolder'),
+    // Confia numa skill do projeto ({ root?, id, sha256 }) depois do diálogo → { ok, error? }.
+    trustSkill: (payload) => ipcRenderer.invoke('agent:skills:trust', payload),
     onEvent: (cb) => {
       const handler = (_event, id, evt) => cb(id, evt);
       ipcRenderer.on('agent:event', handler);

@@ -69,7 +69,10 @@ export function renderMarkdownInto(container, text, { filePath, workspaceRoot = 
 
   if (!container.dataset.linksBound) {
     container.dataset.linksBound = '1';
-    container.addEventListener('click', (e) => {
+    // Clique e clique do meio (auxclick) seguem o mesmo caminho: o middle-click não pode
+    // cair no comportamento padrão (nova janela → shell.openExternal com qualquer esquema).
+    const onLink = (e) => {
+      if (e.type === 'auxclick' && e.button !== 1) return;
       const a = e.target.closest('a[href]');
       if (!a || !container.contains(a)) return;
       e.preventDefault();
@@ -79,10 +82,12 @@ export function renderMarkdownInto(container, text, { filePath, workspaceRoot = 
         target?.scrollIntoView({ block: 'start' });
         return;
       }
-      if (/^https?:/i.test(href)) { window.agzos.app.openExternal(href); return; }
+      if (/^(?:https?|mailto):/i.test(href)) { window.agzos.app.openExternal(href); return; }
       const abs = resolveMarkdownPath(container.dataset.filePath, href, State?.workspaceRoot);
       if (abs) window.AgzosEditor?.openFile(abs);
-    });
+    };
+    container.addEventListener('click', onLink);
+    container.addEventListener('auxclick', onLink);
   }
   container.dataset.filePath = filePath || '';
   highlight(container);
