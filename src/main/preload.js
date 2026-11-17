@@ -198,9 +198,20 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
-  // Workspace (libera a pasta no guard de arquivos)
+  // Workspace (libera a pasta no guard de arquivos; pasta por janela)
   workspace: {
     open: (p) => ipcRenderer.invoke('workspace:open', p),
+    close: () => ipcRenderer.invoke('workspace:close'),
+    clearRecent: () => ipcRenderer.invoke('workspace:clearRecent'),
+  },
+
+  // Janela atual (barra de menus in-app)
+  window: {
+    newWindow: () => ipcRenderer.invoke('window:new'),
+    close: () => ipcRenderer.invoke('window:close'),
+    toggleFullScreen: () => ipcRenderer.invoke('window:toggleFullScreen'),
+    toggleDevTools: () => ipcRenderer.invoke('window:toggleDevTools'),
+    quit: () => ipcRenderer.invoke('app:quit'),
   },
 
   // Settings

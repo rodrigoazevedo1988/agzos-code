@@ -2,9 +2,10 @@
  * IPC: diálogos nativos (dialog:*). Caminho escolhido pelo usuário é liberado no guard.
  */
 
-function register(ipcMain, { dialog, getMainWindow, guard }) {
-  ipcMain.handle('dialog:openFolder', async () => {
-    const win = getMainWindow();
+// Diálogo modal na janela que pediu (várias janelas).
+function register(ipcMain, { dialog, getWindowFor, guard }) {
+  ipcMain.handle('dialog:openFolder', async (evt) => {
+    const win = getWindowFor(evt);
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
@@ -15,8 +16,8 @@ function register(ipcMain, { dialog, getMainWindow, guard }) {
     return result.filePaths[0];
   });
 
-  ipcMain.handle('dialog:openFile', async () => {
-    const win = getMainWindow();
+  ipcMain.handle('dialog:openFile', async (evt) => {
+    const win = getWindowFor(evt);
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
@@ -27,8 +28,8 @@ function register(ipcMain, { dialog, getMainWindow, guard }) {
     return result.filePaths[0];
   });
 
-  ipcMain.handle('dialog:saveFile', async (_evt, defaultPath) => {
-    const win = getMainWindow();
+  ipcMain.handle('dialog:saveFile', async (evt, defaultPath) => {
+    const win = getWindowFor(evt);
     if (!win) return null;
     const result = await dialog.showSaveDialog(win, {
       title: 'Salvar Como',
