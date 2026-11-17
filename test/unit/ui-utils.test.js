@@ -41,6 +41,11 @@ test('quickOpenEnterAction: arquivo nunca executa run em modo comandos', async (
   assert.equal(quickOpenEnterAction('files', undefined), null);
 });
 
+test('quickOpenEnterAction: item desabilitado do seletor não executa', async () => {
+  const { quickOpenEnterAction } = await load();
+  assert.equal(quickOpenEnterAction('commands', { label: 'x', run: () => {}, disabled: true }), null);
+});
+
 test('resetModalOwnedSettings preserva IA, GitHub, onboarding e recentes', async () => {
   const { resetModalOwnedSettings } = await load();
   const defaults = { theme: 'agzos-dark', fontSize: 14, editor: { tabSize: 2, minimap: true } };

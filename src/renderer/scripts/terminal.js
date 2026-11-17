@@ -48,6 +48,7 @@ const SHELL_ICONS = {
   cmd: 'square-chevron-right',
   bash: 'terminal',
   wsl: 'server',
+  remote: 'chevrons-left-right',
   terminal: 'square-terminal',
 };
 
@@ -261,6 +262,7 @@ function handleExit(session, code) {
   session.xterm.write(`\r\n\x1b[31m[Processo encerrou com código ${code}]\x1b[0m \x1b[2mEnter reinicia\x1b[0m\r\n`);
   if (session.id === store.activeSessionId) syncState();
   renderList();
+  renderChip();
 }
 
 // Listeners globais (window resize + IPC) uma única vez por renderer.
@@ -356,7 +358,8 @@ async function spawnSession(session) {
   let res;
   try {
     const opts = { cwd: State.workspaceRoot || null };
-    if (session.profile?.id) opts.profileId = session.profile.id;
+    if (session.ssh) opts.ssh = { ...session.ssh };
+    else if (session.profile?.id) opts.profileId = session.profile.id;
     res = await window.agzos.term.create(xterm.cols || 80, xterm.rows || 24, opts);
   } catch (e) {
     toast(`Não foi possível iniciar o terminal: ${e.message}`, 'error');
@@ -368,13 +371,16 @@ async function spawnSession(session) {
     if (res?.id) window.agzos.term.kill(res.id).catch(() => {});
     return;
   }
-  const { id, error, warning, mode } = res || {};
-  if (error) toast(`Aviso do terminal: ${error}`, 'error');
+  const { id, error, warning, mode, code } = res || {};
+  if (error && typeof code === 'string' && code.startsWith('ssh-')) toast(error, 'error', 8000);
+  else if (error) toast(`Aviso do terminal: ${error}`, 'error');
   else if (warning) toast(`Terminal: ${warning}`, 'info', 6000);
   if (!id) {
     session.exited = true;
+    if (session.ssh && error) xterm.write(`\x1b[31m[${error}]\x1b[0m\r\n`);
     xterm.write('\x1b[31m[Não foi possível iniciar o shell]\x1b[0m \x1b[2mEnter tenta de novo\x1b[0m\r\n');
     renderList();
+    renderChip();
     return;
   }
   session.termId = id;
@@ -386,7 +392,7 @@ async function spawnSession(session) {
   // convertEol como rede de segurança só nesse modo (no pty quebra TUIs).
   xterm.options.convertEol = session.mode !== 'pty';
   // O main pode ter caído no perfil padrão (shell do perfil inexistente).
-  if (res.profileId && res.profileId !== session.profile?.id) {
+  if (!session.ssh && res.profileId && res.profileId !== session.profile?.id) {
     const p = profilesCache?.profiles.find((x) => x.id === res.profileId);
     if (p) {
       session.profile = p;
@@ -408,16 +414,31 @@ async function spawnSession(session) {
 /**
  * Cria uma sessão (perfil padrão ou `profileId`). Com `split`, divide o grupo
  * ativo. Abre o painel na aba TERMINAL se preciso. Devolve a sessão ou null.
+ *
+ * `ssh` ({ alias } | { user, host, port }) cria uma sessão do cliente ssh do
+ * sistema; o main valida e monta os argumentos. `title` sobrepõe o título.
+ * O perfil "SSH…" (picker) sem `ssh` abre o seletor de conexão remota.
  */
-export async function createTerminal({ profileId = null, split = false, focus = true } = {}) {
+export async function createTerminal({ profileId = null, split = false, focus = true, ssh = null, title = null } = {}) {
   setupTerminalPanel();
+  const { profiles, defaultId } = await getTerminalProfiles();
+  let profile = null;
+  if (ssh) {
+    const name = ssh.alias || ssh.host || 'remoto';
+    profile = { id: 'ssh', label: title || `SSH: ${name}`, shell: 'ssh', icon: 'remote' };
+  } else {
+    profile = profileId ? profiles.find((p) => p.id === profileId) : null;
+    if (profile?.picker) {
+      const m = await import('./ssh.js');
+      m.openRemotePicker();
+      return null;
+    }
+    if (profileId && !profile) toast('Perfil de terminal não encontrado; usando o padrão.', 'info');
+    if (!profile) profile = profiles.find((p) => p.id === defaultId && !p.picker) || profiles.find((p) => !p.picker) || FALLBACK_PROFILE;
+  }
   const lib = await ensureXterm();
   if (!lib) return null;
   bindIpcOnce();
-  const { profiles, defaultId } = await getTerminalProfiles();
-  let profile = profileId ? profiles.find((p) => p.id === profileId) : null;
-  if (profileId && !profile) toast('Perfil de terminal não encontrado; usando o padrão.', 'info');
-  if (!profile) profile = profiles.find((p) => p.id === defaultId) || profiles[0] || FALLBACK_PROFILE;
 
   const host = document.createElement('div');
   host.className = 'term-instance';
@@ -427,7 +448,7 @@ export async function createTerminal({ profileId = null, split = false, focus = 
   const id = store.nextId();
   host.dataset.sessionId = id;
   const session = {
-    id, termId: null, xterm, fit, host, profile,
+    id, termId: null, xterm, fit, host, profile, ssh: ssh ? { ...ssh } : null,
     title: defaultTitle(profile.label, store.ordered().map((s) => s.title)),
     mode: null, output: '', exited: false, disposed: false, weight: 1,
   };
@@ -457,7 +478,8 @@ export async function createTerminal({ profileId = null, split = false, focus = 
 /** Divide o terminal ativo (cria uma sessão ao lado, mesmo perfil). */
 export function splitTerminal({ profileId } = {}) {
   const active = store.active();
-  return createTerminal({ profileId: profileId || active?.profile?.id || null, split: !!active });
+  if (!profileId && active?.ssh) return createTerminal({ ssh: active.ssh, split: true });
+  return createTerminal({ profileId: profileId || (active?.ssh ? null : active?.profile?.id) || null, split: !!active });
 }
 
 /** Mata a sessão (ativa por padrão). A última fecha o painel. */
@@ -468,8 +490,11 @@ export async function killTerminal(id = store.activeSessionId) {
   const termId = s.termId;
   if (termId) byTermId.delete(termId);
   s.termId = null;
-  try { s.xterm.dispose(); } catch {}
   s.host.remove();
+  // O xterm agenda refresh do viewport em requestAnimationFrame e não cancela
+  // no dispose ("reading 'dimensions'" ao matar sessões em sequência): deixa o
+  // frame pendente rodar antes de descartar.
+  requestAnimationFrame(() => { try { s.xterm.dispose(); } catch {} });
   store.remove(id);
   layoutGroups();
   syncState();
@@ -516,6 +541,7 @@ export function listTerminals() {
     termId: r.session.termId,
     title: r.session.title,
     profileId: r.session.profile?.id || null,
+    ssh: r.session.ssh ? { ...r.session.ssh } : null,
     groupId: r.groupId,
     groupSize: r.groupSize,
     active: r.active,
@@ -735,6 +761,10 @@ function renderChip() {
   if (icon) icon.replaceChildren(shellIcon(s?.profile, 13));
   const chip = $('term-active');
   if (chip) chip.title = s ? [s.title, s.shell || s.profile?.shell, s.cwd].filter(Boolean).join('\n') : '';
+  // Botão remoto da status bar (ssh.js) acompanha a sessão ativa.
+  window.dispatchEvent(new CustomEvent('agzos:terminal-active', {
+    detail: s ? { id: s.id, title: s.title, ssh: s.ssh ? { ...s.ssh } : null, exited: !!s.exited } : null,
+  }));
 }
 
 function renderAll() {

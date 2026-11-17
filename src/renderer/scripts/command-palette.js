@@ -11,6 +11,7 @@
 import { perfLabel } from './labels.js';
 import { renderFileIcon } from './icon-theme.js';
 import { toast } from './toast.js';
+import { lucideIcon } from './lucide.js';
 import { isQuickOpenResultCurrent, quickOpenEnterAction } from './ui-utils.js';
 
 const State = window.AgzosState;
@@ -176,10 +177,12 @@ export function showCommandPalette() {
 }
 
 /**
- * Lista de escolha na paleta (ex.: perfis de terminal).
- * items: [{ label, hint?, run }]
+ * Lista de escolha na paleta (ex.: perfis de terminal, conexão remota).
+ * items: [{ label, hint?, description?, icon?, badge?, disabled?, id?, run }]
+ * `title` (opcional) vira o placeholder do campo, como no quick pick do VS Code.
  */
-export function showPicker({ placeholder = 'Escolha…', items = [] } = {}) {
+export function showPicker({ placeholder = 'Escolha…', title = '', items = [] } = {}) {
+  if (title) placeholder = title;
   const overlay = document.getElementById('cmd-overlay');
   const input = document.getElementById('cmd-input');
   if (!overlay || !input) return;
@@ -232,7 +235,7 @@ export function setupCommandPalette() {
     if (currentMode === 'pick' && !val.startsWith('>')) {
       const q = val.trim().toLowerCase();
       currentResults = pickItems
-        .map((c) => ({ c, score: fuzzyScore(c.label, q) }))
+        .map((c) => ({ c, score: Math.max(fuzzyScore(c.label, q), c.description ? fuzzyScore(c.description, q) - 1 : -1) }))
         .filter((r) => r.score >= 0)
         .sort((a, b) => b.score - a.score)
         .map((r) => r.c);
@@ -375,7 +378,9 @@ function renderList() {
     const li = document.createElement('li');
     if (idx === activeIndex) li.classList.add('active');
 
-    if (currentMode === 'commands' || currentMode === 'pick') {
+    if (currentMode === 'pick' && (item.icon || item.description || item.badge || item.disabled)) {
+      renderPickItem(li, item);
+    } else if (currentMode === 'commands' || currentMode === 'pick') {
       const label = document.createElement('span');
       label.textContent = item.label;
       const hint = document.createElement('span');
@@ -429,6 +434,41 @@ function renderList() {
   if (activeEl) {
     activeEl.scrollIntoView({ block: 'nearest' });
   }
+}
+
+/** Item rico do seletor: ícone, rótulo, descrição, selo e estado desabilitado. */
+function renderPickItem(li, item) {
+  li.classList.add('cmd-item-pick');
+  if (item.id) li.dataset.pickId = item.id;
+  if (item.disabled) {
+    li.classList.add('disabled');
+    li.setAttribute('aria-disabled', 'true');
+  }
+  if (item.icon) {
+    const ic = document.createElement('span');
+    ic.className = 'cmd-pick-icon';
+    ic.appendChild(lucideIcon(item.icon, { size: 15, strokeWidth: 1.8 }));
+    li.appendChild(ic);
+  }
+  const label = document.createElement('span');
+  label.className = 'cmd-pick-label';
+  label.textContent = item.label;
+  li.appendChild(label);
+  if (item.description) {
+    const desc = document.createElement('span');
+    desc.className = 'cmd-pick-desc';
+    desc.textContent = item.description;
+    li.appendChild(desc);
+  }
+  const tail = document.createElement('span');
+  tail.className = item.badge ? 'cmd-pick-badge' : 'kbd-hint';
+  tail.textContent = item.badge || item.hint || '';
+  li.appendChild(tail);
+  li.addEventListener('click', () => {
+    if (item.disabled) return;
+    hideCommandPalette();
+    item.run();
+  });
 }
 
 function updateActiveVisual(list, idx) {
