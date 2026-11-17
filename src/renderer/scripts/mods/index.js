@@ -6,12 +6,14 @@
 import { setupInlineErrors } from './inline-errors.js';
 import { setupPrettyErrors } from './pretty-errors.js';
 import { setupProblemsPanel } from './problems-panel.js';
+import { setupHighlighter } from './highlighter.js';
 
 export function setupEditorMods() {
   for (const [name, setup] of [
     ['Erros na Linha', setupInlineErrors],
     ['Erros Claros', setupPrettyErrors],
     ['Painel Problemas', setupProblemsPanel],
+    ['Marca-texto', setupHighlighter],
   ]) {
     try {
       setup();

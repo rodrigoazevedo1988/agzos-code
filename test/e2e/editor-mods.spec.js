@@ -115,3 +115,28 @@ test.describe('Agzos Erros Claros', () => {
     } finally { await env.close(); }
   });
 });
+
+test.describe('Agzos Marca-texto', () => {
+  test('colore comentários por marcador e segue a lista das Configurações', async () => {
+    const env = await setup({ files: { 'a.js': "// ! alerta\n// TODO: depois\n// comum\n//// velho\nconst x = 1;\n" } });
+    const { page } = env;
+    try {
+      await env.open('a.js');
+      const alert = page.locator('.view-lines span.agzos-hl', { hasText: 'alerta' });
+      await expect(alert).toBeVisible({ timeout: 10000 });
+      await expect(alert).toHaveCSS('color', 'rgb(255, 82, 82)');
+      await expect(page.locator('.view-lines span.agzos-hl', { hasText: 'TODO' })).toHaveCSS('color', 'rgb(255, 152, 0)');
+      await expect(page.locator('.view-lines span.agzos-hl', { hasText: 'velho' })).toHaveCSS('text-decoration-line', 'line-through');
+      await expect(page.locator('.view-lines span.agzos-hl', { hasText: 'comum' })).toHaveCount(0);
+
+      // Nova cor para "!" pelas Configurações (lista "marcador=#cor").
+      await page.evaluate(() => import('./scripts/mods/common.js').then((m) => m.setModSetting('highlighter', 'tags', ['!=#00FF00'])));
+      await expect(alert).toHaveCSS('color', 'rgb(0, 255, 0)');
+      await expect(page.locator('.view-lines span.agzos-hl', { hasText: 'TODO' })).toHaveCount(0);
+
+      await page.evaluate(() => import('./scripts/mods/common.js').then((m) => m.setModSetting('highlighter', 'enabled', false)));
+      await expect(page.locator('.view-lines span.agzos-hl')).toHaveCount(0);
+      expect(env.errors).toEqual([]);
+    } finally { await env.close(); }
+  });
+});

@@ -24,3 +24,15 @@ test('prettyErrors: padrão ligado; enabled inválido volta ao padrão', () => {
   assert.deepEqual(normalizeModules({ prettyErrors: 'x' }).prettyErrors, { enabled: true });
   assert.equal(normalizeModules({ prettyErrors: { enabled: false } }).prettyErrors.enabled, false);
 });
+
+test('highlighter: padrão com os 6 marcadores; itens inválidos descartados', () => {
+  assert.deepEqual(DEFAULT_SETTINGS.modules.highlighter, {
+    enabled: true,
+    tags: ['!=#FF5252', '?=#4FC3F7', 'TODO=#FF9800', 'FIXME=#FF9800', '*=#98C379', '//=#7A7A7A'],
+  });
+  const out = normalizeModules({ highlighter: { enabled: 'x', tags: ['NOTE=#00ff00', 'ruim', 'A=red', 7, 'HACK = #abc'] } });
+  assert.equal(out.highlighter.enabled, true);
+  assert.deepEqual(out.highlighter.tags, ['NOTE=#00ff00', 'HACK=#abc']);
+  assert.deepEqual(normalizeModules({ highlighter: { tags: 'TODO' } }).highlighter.tags, DEFAULT_SETTINGS.modules.highlighter.tags);
+  assert.deepEqual(normalizeModules({ highlighter: { tags: [] } }).highlighter.tags, []);
+});

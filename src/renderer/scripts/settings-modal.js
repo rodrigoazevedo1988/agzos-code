@@ -94,6 +94,7 @@ const DEFAULTS = {
     },
     inlineErrors: { enabled: true, severities: ['error', 'warning'], onlyCursorLine: false },
     prettyErrors: { enabled: true },
+    highlighter: { enabled: true, tags: ['!=#FF5252', '?=#4FC3F7', 'TODO=#FF9800', 'FIXME=#FF9800', '*=#98C379', '//=#7A7A7A'] },
   },
 };
 
@@ -595,6 +596,26 @@ const SETTINGS_DEF = [
     categories: ['modules'],
     section: 'Agzos Erros Claros',
     type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Marca-texto
+  {
+    key: 'modules.highlighter.enabled',
+    title: 'Marca-texto: Habilitado',
+    desc: 'Colore comentários que começam com um marcador (!, ?, TODO, FIXME, *, //).',
+    categories: ['modules'],
+    section: 'Agzos Marca-texto',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.highlighter.tags',
+    title: 'Marca-texto: Marcadores e cores',
+    desc: 'Lista "marcador=#cor" separada por vírgula (ex.: TODO=#FF9800, NOTE=#00BCD4). O marcador // fica riscado.',
+    categories: ['modules'],
+    section: 'Agzos Marca-texto',
+    type: 'list',
     apply: notifyModules,
   },
 
