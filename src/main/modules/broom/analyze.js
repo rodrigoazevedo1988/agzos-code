@@ -293,8 +293,8 @@ function analyze(fullText, options = {}) {
 
   // ------------------------------------------------------------- unusedImports
   if (opts.rules.unusedImports) {
-    const removed = raw.flatMap((e) => pieces(e));
-    const inRemoved = (pos) => removed.some(([s, e]) => pos >= s && pos < e);
+    const removed = unionOf(raw.flatMap((e) => pieces(e)));
+    const inRemoved = (pos) => removed.contains(pos);
     const uses = countUses(sf, inRemoved);
     // Nomes citados em JSDoc que não será removido contam como uso.
     const docText = comments
@@ -365,18 +365,61 @@ function analyze(fullText, options = {}) {
   return { edits };
 }
 
+/** Intervalos disjuntos ordenados, com busca binária. */
+function createIntervalSet() {
+  const list = [];
+  // Índice do primeiro intervalo com fim > pos.
+  function firstEndAfter(pos) {
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid][1] > pos) hi = mid; else lo = mid + 1;
+    }
+    return lo;
+  }
+  return {
+    /** Intervalos que sobrepõem [s, e), em ordem. */
+    overlapping(s, e) {
+      const out = [];
+      for (let i = firstEndAfter(s); i < list.length && list[i][0] < e; i++) out.push(list[i]);
+      return out;
+    },
+    contains(pos) {
+      const i = firstEndAfter(pos);
+      return i < list.length && list[i][0] <= pos;
+    },
+    /** Acrescenta um intervalo disjunto dos existentes. */
+    add(s, e) {
+      list.splice(firstEndAfter(s), 0, [s, e]);
+    },
+  };
+}
+
+/** União de intervalos quaisquer como IntervalSet (mescla sobreposições). */
+function unionOf(ranges) {
+  const set = createIntervalSet();
+  const sorted = ranges.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  let cur = null;
+  for (const [s, e] of sorted) {
+    if (cur && s <= cur[1]) cur[1] = Math.max(cur[1], e);
+    else { if (cur) set.add(cur[0], cur[1]); cur = [s, e]; }
+  }
+  if (cur) set.add(cur[0], cur[1]);
+  return set;
+}
+
 /** Remove edições contidas em outras e apara sobreposições parciais (a união não muda). */
 function dedupe(list) {
   const sorted = [...list].sort((a, b) => a.start - b.start || b.end - a.end);
   const accepted = [];
-  const taken = [];
+  const taken = createIntervalSet();
   for (const e of sorted) {
-    const own = pieces(e);
-    if (!own.length) continue;
+    if (!pieces(e).length) continue;
     const hasKeep = e.keepStart !== undefined;
     let { start } = e;
     let drop = false;
-    for (const [s, t] of taken) {
+    for (const [s, t] of taken.overlapping(start, e.end)) {
       if (start >= s && e.end <= t) { drop = true; break; }
       if (start < t && e.end > s) {
         if (hasKeep || start < s) { drop = true; break; }
@@ -386,7 +429,7 @@ function dedupe(list) {
     if (drop || start >= e.end) continue;
     const next = { ...e, start };
     accepted.push(next);
-    taken.push(...pieces(next));
+    for (const [s, t] of pieces(next)) taken.add(s, t);
   }
   return accepted;
 }
@@ -394,7 +437,8 @@ function dedupe(list) {
 /** Comentários do arquivo (sem os que caem dentro de texto JSX). */
 function collectComments(sf, text, jsxTextRanges) {
   const seen = new Map();
-  const insideJsxText = (pos) => jsxTextRanges.some(([s, e]) => pos >= s && pos < e);
+  const jsxText = unionOf(jsxTextRanges);
+  const insideJsxText = (pos) => jsxText.contains(pos);
   const add = (ranges) => {
     for (const r of ranges || []) {
       if (seen.has(r.pos) || insideJsxText(r.pos)) continue;
