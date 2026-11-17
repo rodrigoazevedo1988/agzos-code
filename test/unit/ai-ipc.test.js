@@ -54,3 +54,44 @@ test('chat com skill de projeto não confiada → ai:error, sem chamar o provedo
   assert.equal(requests.length, 0);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+function summarizeSetup(fake) {
+  const handlers = {};
+  const settings = { ai: { activeProfileId: 'p', profiles: [{ id: 'p', preset: 'custom', baseUrl: `${fake.baseUrl}/v1`, model: 'm1' }] } };
+  register({ handle: (channel, handler) => { handlers[channel] = handler; } }, {
+    store: { get: () => 'k' }, settingsStore: { load: () => settings, save: () => {} },
+  });
+  return handlers;
+}
+
+test('ai:summarize: chama o modelo com o prompt de resumo e devolve o texto', async () => {
+  const { startFakeOpenAI } = require('../e2e/fake-openai');
+  const { SUMMARY_PROMPT } = require('../../src/main/ai/compact');
+  const fake = await startFakeOpenAI({ reply: '## Objetivo\nTestar.', delayMs: 1 });
+  try {
+    const handlers = summarizeSetup(fake);
+    const out = await handlers['ai:summarize']({ sender: {} }, 's1', {
+      profileId: 'p', model: 'm2',
+      messages: [{ role: 'system', content: 'ctx' }, { role: 'user', content: 'oi' }, { role: 'assistant', content: 'olá' }],
+    });
+    assert.deepEqual(out, { ok: true, summary: '## Objetivo\nTestar.' });
+    const body = fake.requests.find((r) => r.path === '/v1/chat/completions').body;
+    assert.equal(body.model, 'm2');
+    assert.equal(body.messages[0].content, SUMMARY_PROMPT);
+    assert.deepEqual(body.messages.slice(1, 3).map((m) => m.content), ['oi', 'olá']);
+    assert.match(body.messages.at(-1).content, /Resuma/);
+  } finally { await fake.close(); }
+});
+
+test('ai:summarize: erro do provedor → { ok: false, error } claro', async () => {
+  const { startFakeOpenAI } = require('../e2e/fake-openai');
+  const fake = await startFakeOpenAI({ status: 500 });
+  try {
+    const handlers = summarizeSetup(fake);
+    const out = await handlers['ai:summarize']({ sender: {} }, 's2', { messages: [{ role: 'user', content: 'oi' }] });
+    assert.equal(out.ok, false);
+    assert.match(out.error, /resumir|compactar/i);
+    const empty = await handlers['ai:summarize']({ sender: {} }, 's3', { messages: [] });
+    assert.equal(empty.ok, false);
+  } finally { await fake.close(); }
+});

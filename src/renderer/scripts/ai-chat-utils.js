@@ -306,6 +306,12 @@ export function applyAgentEvent(turn, evt) {
     }
     case 'file_changed':
       return { kind: 'file' };
+    case 'compacted': {
+      // Saídas antigas de ferramentas compactadas no meio da execução (selo discreto).
+      const removed = Number(evt.removedChars);
+      turn.segments.push({ t: 'compacted', removedChars: Number.isFinite(removed) && removed > 0 ? removed : 0 });
+      return { kind: 'compacted' };
+    }
     case 'user_steer': {
       // "Enviar agora": a mensagem entrou na execução neste ponto.
       const text = String(evt.content ?? '');
@@ -414,7 +420,12 @@ export function compactAgentTurn(turn) {
   }
   const out = {
     v: 1, mode: turn.mode,
-    segments: turn.segments.map((s) => (s.t === 'text' ? { t: 'text', text: s.text } : s.t === 'steer' ? { t: 'steer', text: clip(s.text, 4000) } : { t: 'step', id: s.id })),
+    segments: turn.segments.map((s) => {
+      if (s.t === 'text') return { t: 'text', text: s.text };
+      if (s.t === 'steer') return { t: 'steer', text: clip(s.text, 4000) };
+      if (s.t === 'compacted') return { t: 'compacted', removedChars: Number(s.removedChars) || 0 };
+      return { t: 'step', id: s.id };
+    }),
     steps, done: turn.done, error: turn.error, undone: !!turn.undone, cancelled: !!turn.cancelled,
   };
   if (turn.skill) out.skill = turn.skill;
@@ -511,4 +522,64 @@ export function payloadMessage(message, strip = (c) => c) {
 /** Erro de visão? (provider respondeu que o modelo não aceita imagens) */
 export function isVisionError(text) {
   return /não aceita imagens/i.test(String(text || ''));
+}
+
+/* ======================================================================== */
+/* 1.2.0 — compactar conversa                                               */
+/* ======================================================================== */
+
+/** Imagem conta ~1000 tokens; PDF conta 1/4 do tamanho (texto extraído é bem menor que o arquivo). */
+const IMAGE_CHARS = 4000;
+
+/** Texto que acompanha o resumo quando ele vai ao modelo (como mensagem do usuário). */
+export const SUMMARY_PREFIX = 'Resumo da conversa até aqui (as mensagens anteriores foram compactadas para liberar contexto; continue a partir dele):\n\n';
+
+export const isSummary = (m) => !!m && m.kind === 'summary';
+
+/**
+ * Tokens estimados (caracteres / 4) do que iria ao modelo: texto sem o marcador do agente,
+ * anexos de texto pelo tamanho, PDFs por 1/4 do tamanho e imagens por um valor fixo.
+ */
+export function estimateTokens(messages) {
+  if (!Array.isArray(messages)) return 0;
+  let chars = 0;
+  for (const m of messages) {
+    if (!m) continue;
+    chars += stripAgentMarker(typeof m.content === 'string' ? m.content : '').length;
+    for (const a of Array.isArray(m.attachments) ? m.attachments : []) {
+      const size = Number(a?.size) || 0;
+      chars += a?.kind === 'image' ? IMAGE_CHARS : a?.kind === 'pdf' ? size / 4 : size;
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+function lastSummaryIndex(messages) {
+  for (let i = (messages?.length || 0) - 1; i >= 0; i--) if (isSummary(messages[i])) return i;
+  return -1;
+}
+
+/** Quantas mensagens ficam antes do último resumo (esmaecidas na UI). */
+export function compactedBefore(messages) {
+  return Math.max(0, lastSummaryIndex(messages));
+}
+
+/** O que vai ao modelo: tudo, ou o último resumo (como mensagem do usuário) + as posteriores. */
+export function modelMessages(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  const at = lastSummaryIndex(list);
+  if (at < 0) return list;
+  const summary = list[at];
+  return [{ role: 'user', content: `${SUMMARY_PREFIX}${summary.content}` }, ...list.slice(at + 1)];
+}
+
+/** Mensagens que uma nova compactação resume: o último resumo (se houver) e as posteriores. */
+export function compactableMessages(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  const at = lastSummaryIndex(list);
+  return at < 0 ? list : list.slice(at);
+}
+
+export function makeSummaryMessage(content, compactedCount, now = Date.now()) {
+  return { role: 'assistant', kind: 'summary', content: String(content || '').trim(), compactedCount, createdAt: now };
 }

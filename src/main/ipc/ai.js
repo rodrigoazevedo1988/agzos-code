@@ -8,6 +8,7 @@ const { loadSkills, pickSkill } = require('../agent/skills');
 const { SKILL_RULE } = require('../agent/prompt');
 const { normalizeAiSkills } = require('../lib/settings');
 const { guardResolver } = require('../lib/window-guards');
+const { buildSummaryMessages } = require('../ai/compact');
 
 const MAX_ATTACH_READ = 30 * 1024 * 1024;
 
@@ -16,6 +17,7 @@ function register(ipcMain, {
   getMainWindow = () => null, getWindowFor = null, userDataDir = null,
 }) {
   const sessions = new Map();
+  const summarizing = new Map(); // requestId → AbortController (ai:summarize)
   // Guard da janela que pediu (várias janelas: lib/window-guards.js).
   const guardOf = guardResolver({ guard, guardFor });
 
@@ -159,7 +161,46 @@ function register(ipcMain, {
     }
     return out;
   });
-  ipcMain.handle('ai:cancel', (event, requestId) => sessions.get(event.sender)?.cancel(requestId));
-  return { cancelAll: () => { for (const chat of sessions.values()) chat.cancelAll(); } };
+  /**
+   * Compactar conversa: resume `messages` com o modelo do perfil (prompt de ai/compact.js).
+   * → { ok: true, summary } | { ok: false, error }. Nunca lança: a conversa fica intacta no renderer.
+   * Cancelável por ai:cancel(requestId).
+   */
+  ipcMain.handle('ai:summarize', async (event, requestId, payload) => {
+    const controller = new AbortController();
+    if (typeof requestId === 'string' && requestId) summarizing.set(requestId, controller);
+    try {
+      const profile = findProfile(payload?.profileId);
+      if (!profile) return { ok: false, error: 'Configure um perfil de IA para compactar a conversa.' };
+      const conversation = prepareMessages({ messages: payload?.messages }, event?.sender);
+      if (!conversation.some((m) => m.role === 'user' || m.role === 'assistant')) {
+        return { ok: false, error: 'Não há mensagens para compactar.' };
+      }
+      let summary = '';
+      const chat = provider(profile).chat({
+        model: payload?.model || profile.model, messages: buildSummaryMessages(conversation), signal: controller.signal,
+      });
+      for await (const text of chat) summary += text;
+      summary = summary.trim();
+      if (!summary) return { ok: false, error: 'Não foi possível compactar: o modelo devolveu um resumo vazio.' };
+      return { ok: true, summary };
+    } catch (err) {
+      if (controller.signal.aborted) return { ok: false, error: 'Interrompido', cancelled: true };
+      return { ok: false, error: `Não foi possível resumir a conversa: ${err.userMessage || err.message || 'erro do provedor'}` };
+    } finally {
+      if (summarizing.get(requestId) === controller) summarizing.delete(requestId);
+    }
+  });
+  ipcMain.handle('ai:cancel', (event, requestId) => {
+    const summary = summarizing.get(requestId);
+    if (summary) { summary.abort(); return true; }
+    return sessions.get(event.sender)?.cancel(requestId);
+  });
+  return {
+    cancelAll: () => {
+      for (const chat of sessions.values()) chat.cancelAll();
+      for (const controller of summarizing.values()) controller.abort();
+    },
+  };
 }
 module.exports = { register };

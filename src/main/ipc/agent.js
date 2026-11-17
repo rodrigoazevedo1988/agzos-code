@@ -32,7 +32,7 @@ const { guardResolver } = require('../lib/window-guards');
 const {
   loadSkills, describeSkill, SKILL_TEMPLATE, pickSkill, trustRecord, isSkillTrusted,
 } = require('../agent/skills');
-const { normalizeAiSkills } = require('../lib/settings');
+const { normalizeAiSkills, normalizeAiPanel } = require('../lib/settings');
 const { createRendererTools } = require('../agent/renderer-tools');
 
 const QUERY_TIMEOUT = 5000;
@@ -117,6 +117,10 @@ function register(ipcMain, {
         getProvider,
         getMode: () => settingsStore.load().aiAgent?.mode,
         getMaxSteps: () => settingsStore.load().aiAgent?.maxSteps,
+        getCompactThreshold: () => {
+          const panel = normalizeAiPanel(settingsStore.load().aiPanel);
+          return panel.autoCompact ? panel.compactThresholdTokens : 0;
+        },
         getExtraTools: () => [...createRendererTools((what, args) => queryRenderer(sender, what, args)), ...getModuleTools(settingsStore.load())],
         getSkill: (id, root) => pickSkill(skillsFor(root).skills, id, { trusted: trustedSkills(), kind: 'agent' }),
         ...(attachments ? { buildContent: (text, list) => attachments.buildContent(text, list) } : {}),

@@ -275,3 +275,19 @@ test('aiAgent.maxSteps: padrão 100, aceita só 25/50/100/200/500 (string vinda 
   assert.equal(n(7), 100);
   assert.equal(n('abc'), 100);
 });
+
+test('aiPanel.autoCompact (padrão true) e compactThresholdTokens (padrão 60000, 8k–400k)', () => {
+  const { normalizeAiPanel, DEFAULT_SETTINGS: D } = require('../../src/main/lib/settings');
+  assert.equal(D.aiPanel.autoCompact, true);
+  assert.equal(D.aiPanel.compactThresholdTokens, 60000);
+  const p = (v) => normalizeAiPanel(v);
+  assert.equal(p(undefined).autoCompact, true);
+  assert.equal(p({ autoCompact: false }).autoCompact, false);
+  assert.equal(p({ autoCompact: 'sim' }).autoCompact, true);
+  assert.equal(p({}).compactThresholdTokens, 60000);
+  assert.equal(p({ compactThresholdTokens: 100 }).compactThresholdTokens, 8000);
+  assert.equal(p({ compactThresholdTokens: 999999 }).compactThresholdTokens, 400000);
+  assert.equal(p({ compactThresholdTokens: '120000' }).compactThresholdTokens, 120000);
+  assert.equal(p({ compactThresholdTokens: 'abc' }).compactThresholdTokens, 60000);
+  assert.equal(p({ compactThresholdTokens: 30000.6 }).compactThresholdTokens, 30001);
+});

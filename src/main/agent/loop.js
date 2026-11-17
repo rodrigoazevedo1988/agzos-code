@@ -3,7 +3,12 @@
  * até o modelo responder sem tool calls, o limite de passos ou o cancelamento.
  *
  * Emite (via emit(evt)) os eventos do contrato IPC de window.agzos.agent:
- *   text · tool_start · approval · tool_output · tool_end · file_changed · user_steer · done · error
+ *   text · tool_start · approval · tool_output · tool_end · file_changed · user_steer · compacted · done · error
+ *
+ * Compactação (compactThreshold > 0): antes de cada chamada ao modelo, se o tamanho
+ * estimado de `messages` passar do limite, as saídas de ferramenta antigas (todas menos
+ * as últimas 10) viram `[saída compactada: …]` sem chamar o modelo (ai/compact.js) e o
+ * laço emite `{ type: 'compacted', removedChars }`.
  *
  * Steer ("Enviar agora"): mensagens do usuário que chegam durante a execução entram
  * numa fila (createSteerQueue). No próximo ponto seguro — depois de terminar as
@@ -15,6 +20,7 @@
 
 const { randomUUID } = require('crypto');
 const { normalizeContent } = require('../ai/content');
+const { estimateTokens, compactToolOutputs } = require('../ai/compact');
 
 const MAX_STEPS = 50;
 const MODES = ['ask', 'edit', 'auto'];
@@ -69,7 +75,7 @@ function abortError() {
 async function runAgent({
   provider, model, history, mode = 'edit', toolbox, checkpoint, emit, requestApproval,
   signal, systemPrompt, maxSteps = MAX_STEPS, sessionAllow = new Set(), steering = createSteerQueue(),
-  readOnly = false,
+  readOnly = false, compactThreshold = 0,
 }) {
   const effectiveMode = MODES.includes(mode) ? mode : 'edit';
   const messages = [{ role: 'system', content: systemPrompt }, ...sanitizeHistory(history)];
@@ -150,6 +156,13 @@ async function runAgent({
     for (;;) {
       if (signal?.aborted) throw abortError();
       applySteers();
+      if (compactThreshold > 0 && estimateTokens(messages) > compactThreshold) {
+        const { messages: compacted, removedChars } = compactToolOutputs(messages);
+        if (removedChars > 0) {
+          messages.splice(0, messages.length, ...compacted);
+          emit({ type: 'compacted', removedChars });
+        }
+      }
       let text = '';
       const calls = [];
       for await (const ev of provider.chatTools({ model, messages, tools: toolbox.definitions, signal })) {

@@ -93,3 +93,20 @@ test('makeTitle: limpa markdown/código e corta em 60 caracteres', () => {
   assert.equal(long.length, 60);
   assert.ok(long.endsWith('…'));
 });
+
+test('normalizeHistory: resumo (kind summary) mantém compactedCount/createdAt; histórico antigo sem resumo carrega igual', () => {
+  const at = Date.UTC(2026, 10, 17);
+  const out = normalizeHistory({ conversations: [{ id: 'c', title: 't', updatedAt: 1, messages: [
+    { role: 'user', content: 'a' },
+    { role: 'assistant', content: 'b' },
+    { role: 'assistant', kind: 'summary', content: '## Objetivo\nx', compactedCount: 2, createdAt: at },
+    { role: 'assistant', kind: 'lixo', content: 'c', compactedCount: 'x' },
+    { role: 'user', kind: 'summary', content: 'usuário não pode ser resumo', compactedCount: 3 },
+  ] }] });
+  const [, , summary, other, user] = out.conversations[0].messages;
+  assert.deepEqual(summary, { role: 'assistant', content: '## Objetivo\nx', kind: 'summary', compactedCount: 2, createdAt: at });
+  assert.deepEqual(other, { role: 'assistant', content: 'c' });
+  assert.deepEqual(user, { role: 'user', content: 'usuário não pode ser resumo' });
+  const old = normalizeHistory({ conversations: [{ id: 'o', title: 'o', updatedAt: 1, messages: [{ role: 'user', content: 'oi' }, { role: 'assistant', content: 'olá', model: 'm' }] }] });
+  assert.deepEqual(old.conversations[0].messages, [{ role: 'user', content: 'oi' }, { role: 'assistant', content: 'olá', model: 'm' }]);
+});

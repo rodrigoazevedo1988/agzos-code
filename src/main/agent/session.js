@@ -19,13 +19,14 @@ const winEnv = require('../lib/win-env');
  *   checkpoints: createCheckpointStore(...)
  *   send(requestId, evt)
  *   getExtraTools() → ferramentas extras dos módulos habilitados (ver modules/agent-tools.js)
+ *   getCompactThreshold() → limite (tokens estimados) para compactar saídas antigas no laço; 0 desliga
  */
 function createAgentSessions({
   getRoot, getProvider, getMode = () => 'edit', checkpoints, send,
   platform = process.platform, getEnv = () => winEnv.freshEnv({ platform }),
   runCommand, shell, maxSteps, getMaxSteps = () => undefined, getExtraTools = () => [],
   buildContent = (text) => text,
-  getSkill = () => null,
+  getSkill = () => null, getCompactThreshold = () => 0,
 }) {
   const active = new Map(); // requestId → { controller, pending: Map(callId → { resolve, reject }) }
   const conversations = new Map(); // conversationId → Set(sessionKey)
@@ -96,6 +97,7 @@ function createAgentSessions({
           readOnly: !!skill?.readOnly,
           sessionAllow: allowSetFor(conversationKey),
           steering,
+          compactThreshold: safeNumber(getCompactThreshold),
           ...((Number(getMaxSteps()) || maxSteps) ? { maxSteps: Number(getMaxSteps()) || maxSteps } : {}),
         });
       } finally {
@@ -197,6 +199,14 @@ function restrictToolbox(toolbox, skill) {
       return toolbox.prepare(name, input);
     },
   };
+}
+
+/** Número ≥ 0 de uma configuração (erro ou valor inválido → 0). */
+function safeNumber(get) {
+  try {
+    const n = Number(get());
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch { return 0; }
 }
 
 /** Falha ao carregar ferramentas de módulos não derruba o agente. */
