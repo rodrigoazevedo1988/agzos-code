@@ -1,1 +1,34 @@
-/* Cofre .env — estilos (preenchido pelo Agente C). */
+/* Cofre .env — estilos. */
+
+:root {
+  --ev-danger: #FF5A5F;
+  --ev-warn: #E2B341;
+  --ev-info: #6CB6FF;
+  --ev-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+body.theme-agzos-light {
+  --ev-danger: #C4141B;
+  --ev-warn: #9A6700;
+  --ev-info: #0969DA;
+}
+
+/* -------------------------------------------------------------------------
+   Diálogo "Commit bloqueado: possíveis segredos" (painel Git)
+   ------------------------------------------------------------------------- */
+.envvault-blocked { width: min(540px, calc(100vw - 32px)); }
+.envvault-blocked .git-dialog-icon { color: var(--ev-danger); background: color-mix(in srgb, var(--ev-danger) 14%, transparent); }
+.envvault-findings {
+  list-style: none; margin: 12px 0 0; padding: 0;
+  max-height: 240px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.envvault-finding + .envvault-finding { border-top: 1px solid var(--line); }
+.envvault-finding-link {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 7px 10px; border: 0; background: transparent; color: var(--fg);
+  text-align: left; cursor: pointer; font-size: 12px;
+}
+.envvault-finding-link:hover, .envvault-finding-link:focus-visible { background: var(--bg-soft2); outline: none; }
+.envvault-finding-file { font-family: var(--ev-mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.envvault-finding-rule { color: var(--ev-danger); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.envvault-finding-preview { color: var(--fg-mute); font-family: var(--ev-mono); font-size: 11px; }

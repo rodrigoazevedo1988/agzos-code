@@ -266,3 +266,27 @@ test('getModuleTools ignora módulo desabilitado e stub null', () => {
   assert.deepEqual(names({ modules: { envVault: { enabled: false } } }), ['a_tool']);
   assert.deepEqual(names(undefined), ['a_tool', 'b_tool']);
 });
+
+test('extra: gancho commandRisk marca run_command como risco (síncrono ou assíncrono)', async () => {
+  const mk = (commandRisk) => ({
+    definition: { name: 'hook_tool', description: 'x', input_schema: { type: 'object', properties: {} } },
+    kind: 'read',
+    prepare: () => ({ title: 'x', run: async () => ({ summary: 'ok' }) }),
+    commandRisk,
+  });
+  const seen = [];
+  const syncBox = createToolbox({ root, checkpoint: cp, extraTools: [mk((c, ctx) => { seen.push(ctx.cwd); return c.includes('perigo') ? 'motivo x' : null; })] });
+  const p = syncBox.prepare('run_command', { command: 'echo perigo' });
+  assert.equal(p.risky, true);
+  assert.equal(p.riskReason, 'motivo x');
+  assert.equal(p.preview.reason, 'motivo x');
+  assert.equal(syncBox.prepare('run_command', { command: 'echo ok' }).risky, false);
+  assert.deepEqual(seen, [root, root]);
+
+  const asyncBox = createToolbox({ root, checkpoint: cp, extraTools: [mk(async () => 'motivo y')] });
+  const a = await asyncBox.prepare('run_command', { command: 'echo 1' });
+  assert.equal(a.riskReason, 'motivo y');
+
+  const brokenBox = createToolbox({ root, checkpoint: cp, extraTools: [mk(() => { throw new Error('x'); })] });
+  assert.equal(brokenBox.prepare('run_command', { command: 'echo 1' }).risky, false);
+});

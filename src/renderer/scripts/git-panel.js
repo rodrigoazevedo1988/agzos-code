@@ -12,7 +12,7 @@ import { lucideIcon } from './lucide.js';
 import { renderFileIcon } from './icon-theme.js';
 import { showDiff } from './diff-view.js';
 import * as editorApi from './editor.js';
-import { git, github } from './git-api.js';
+import { git, github, GitUiError } from './git-api.js';
 import { openGitDialog, confirmGit, isGitDialogOpen } from './git-dialog.js';
 import { setGitDecorations } from './git-decorations.js';
 
@@ -799,7 +799,21 @@ async function doCommit({ push = false } = {}) {
   try {
     await withBusy(push ? 'Commit e push' : 'Commit', async () => {
       if (!st.staged.length) await git.stage(cwd(), []);
-      const res = await git.commit(cwd(), message);
+      let res;
+      try {
+        res = await commitRaw(message);
+      } catch (e) {
+        if (e?.kind !== 'secrets_detected') throw e;
+        const choice = await showSecretsBlockedDialog(e.findings || []);
+        if (choice === 'unstage') {
+          const files = [...new Set((e.findings || []).map((f) => f.file))];
+          await git.unstage(cwd(), files);
+          toast(`${files.length === 1 ? '1 arquivo removido' : `${files.length} arquivos removidos`} do stage.`, 'info', 3000);
+          return;
+        }
+        if (choice !== 'ignore') return;
+        res = await commitRaw(message, { ignoreSecretsOnce: true });
+      }
       G.message = '';
       els.textarea.value = '';
       autoGrow(els.textarea);
@@ -811,6 +825,112 @@ async function doCommit({ push = false } = {}) {
       }
     });
   } catch { /* já notificado */ }
+}
+
+/** git:commit sem o unwrap genérico: preserva `findings` do bloqueio do Cofre .env. */
+async function commitRaw(message, options) {
+  const res = await window.agzos.git.commit(cwd(), message, options);
+  if (res && res.ok === true) return res.data;
+  const err = new GitUiError(res?.error?.message || 'Falha', res?.error?.kind);
+  if (Array.isArray(res?.error?.findings)) err.findings = res.error.findings;
+  throw err;
+}
+
+const RULE_LABELS = {
+  'env-file': 'arquivo .env no stage',
+  'aws-access-key': 'chave de acesso AWS',
+  'aws-secret-key': 'segredo AWS',
+  stripe: 'chave Stripe',
+  openai: 'chave OpenAI',
+  anthropic: 'chave Anthropic',
+  github: 'token GitHub',
+  'google-api-key': 'chave de API Google',
+  slack: 'token Slack',
+  jwt: 'JWT/chave Supabase',
+  'private-key': 'chave privada',
+  'url-credentials': 'URL com senha',
+  'generic-secret': 'possível segredo',
+};
+
+async function openFindingAt(f) {
+  const abs = absPath(f.file);
+  if (!abs) return;
+  await editorApi.openFile(abs);
+  const ed = editorApi.getActiveEditor();
+  if (ed && f.line > 0) {
+    ed.revealLineInCenter(f.line);
+    ed.setPosition({ lineNumber: f.line, column: 1 });
+    ed.focus();
+  }
+}
+
+/**
+ * Diálogo "Commit bloqueado: possíveis segredos".
+ * → Promise<'cancel' | 'unstage' | 'ignore'>. Cancelar tem o foco padrão; Esc cancela.
+ * Só mostra arquivo:linha:regra e o preview mascarado (o valor nunca chega ao renderer).
+ */
+export function showSecretsBlockedDialog(findings) {
+  return new Promise((resolve) => {
+    const previousFocus = document.activeElement;
+    const overlay = h('div', 'git-dialog-overlay');
+    overlay.setAttribute('role', 'presentation');
+    const dialog = h('div', 'git-dialog envvault-blocked');
+    dialog.id = 'envvault-blocked-dialog';
+    dialog.setAttribute('role', 'alertdialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const head = h('div', 'git-dialog-head');
+    const ic = h('span', 'git-dialog-icon');
+    ic.append(icon('shield-alert', 18));
+    const title = h('h2', 'git-dialog-title', 'Commit bloqueado: possíveis segredos');
+    title.id = 'envvault-blocked-title';
+    dialog.setAttribute('aria-labelledby', title.id);
+    head.append(ic, title);
+    const desc = h('p', 'git-dialog-desc',
+      'O Cofre .env encontrou o que parecem ser segredos nas alterações preparadas. Revise antes de commitar.');
+    const list = h('ul', 'envvault-findings');
+    for (const f of findings) {
+      const li = h('li', 'envvault-finding');
+      const btn = h('button', 'envvault-finding-link');
+      btn.type = 'button';
+      btn.title = 'Abrir no editor';
+      btn.append(h('span', 'envvault-finding-file', f.line > 0 ? `${f.file}:${f.line}` : f.file));
+      btn.append(h('span', 'envvault-finding-rule', RULE_LABELS[f.rule] || f.rule));
+      if (f.preview) btn.append(h('code', 'envvault-finding-preview', f.preview));
+      btn.addEventListener('click', () => { close('cancel'); openFindingAt(f); });
+      li.append(btn);
+      list.append(li);
+    }
+    const actions = h('div', 'git-dialog-actions');
+    const cancel = h('button', 'git-btn git-btn-primary', 'Cancelar');
+    cancel.type = 'button';
+    cancel.dataset.action = 'cancel';
+    const unstage = h('button', 'git-btn git-btn-ghost', 'Remover do stage');
+    unstage.type = 'button';
+    unstage.dataset.action = 'unstage';
+    const ignore = h('button', 'git-btn git-btn-danger', 'Ignorar uma vez');
+    ignore.type = 'button';
+    ignore.dataset.action = 'ignore';
+    actions.append(ignore, unstage, cancel);
+    dialog.append(head, desc, list, actions);
+    overlay.append(dialog);
+    document.body.append(overlay);
+
+    function close(result) {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+      resolve(result);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close('cancel'); }
+    }
+    document.addEventListener('keydown', onKey, true);
+    cancel.addEventListener('click', () => close('cancel'));
+    unstage.addEventListener('click', () => close('unstage'));
+    ignore.addEventListener('click', () => close('ignore'));
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close('cancel'); });
+    setTimeout(() => cancel.focus(), 30);
+  });
 }
 
 /* --------------------------------------------------------------------------

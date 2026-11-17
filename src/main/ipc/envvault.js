@@ -15,7 +15,11 @@ const CHANNELS = [
   'installHook', 'removeHook', 'hookStatus', 'gitignoreStatus', 'addToGitignore',
 ];
 
-function register(ipcMain, _deps = {}) {
+const { configureCommitGuard } = require('../modules/envvault/commit-guard');
+
+function register(ipcMain, { settingsStore, userDataDir } = {}) {
+  // Bloqueio de commit (ipc/git.js e run_command do agente) lê as settings atuais.
+  configureCommitGuard({ getSettings: () => settingsStore?.load?.() || {}, userDataDir });
   for (const name of CHANNELS) {
     ipcMain.handle(`envvault:${name}`, () => {
       throw new Error('Cofre .env: ainda não implementado');

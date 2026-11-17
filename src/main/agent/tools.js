@@ -14,6 +14,9 @@
  *   ctx = { resolvePath, rel, checkpoint, readTextFile, root }. prepare pode ser assíncrono
  *   (então toolbox.prepare devolve Promise). preview.risk = '<motivo>' força aprovação em
  *   qualquer modo. `changed` (caminhos absolutos) vira evento file_changed.
+ *   Opcional: commandRisk(command, { cwd, root }) → string|null|Promise<string|null>, consultado
+ *   no preparo do run_command (ex.: Cofre .env marca `git commit` com segredos no stage como risco).
+ *   Só comandos para os quais algum gancho devolve Promise tornam o preparo assíncrono.
  */
 
 const fs = require('fs');
@@ -508,7 +511,7 @@ function createToolbox({
       Math.max(1, Number.parseInt(input.timeout_s, 10) || LIMITS.commandTimeoutDefault));
     const risk = assessCommand(input.command);
     const cmd = input.command.trim();
-    return {
+    const prepared = {
       title: `Executar ${cmd.length > 80 ? `${cmd.slice(0, 77)}…` : cmd}`,
       category: 'command',
       risky: risk.risky,
@@ -536,6 +539,26 @@ function createToolbox({
         };
       },
     };
+    return withCommandRisk(prepared, cmd, cwd);
+  }
+
+  /** Ganchos `commandRisk` das ferramentas extras: o primeiro motivo encontrado vira risco. */
+  function withCommandRisk(prepared, cmd, cwd) {
+    const hooks = [...EXTRA.values()].filter((t) => typeof t.commandRisk === 'function');
+    const results = [];
+    for (const t of hooks) {
+      try { results.push(t.commandRisk(cmd, { cwd, root: rootAbs })); } catch { /* gancho com erro é ignorado */ }
+    }
+    const markRisk = (reasons) => {
+      const reason = reasons.find((r) => typeof r === 'string' && r);
+      if (!reason || prepared.risky) return prepared;
+      prepared.risky = true;
+      prepared.riskReason = reason;
+      prepared.preview = { ...prepared.preview, risky: true, reason };
+      return prepared;
+    };
+    if (!results.some((r) => r && typeof r.then === 'function')) return markRisk(results);
+    return Promise.all(results.map((r) => Promise.resolve(r).catch(() => null))).then(markRisk);
   }
 
   const PREPARE = {
