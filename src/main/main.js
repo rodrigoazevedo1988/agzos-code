@@ -63,6 +63,7 @@ function sendToTarget(channel, ...args) {
 // Visualizadores (imagem/vídeo/áudio/PDF): agzos-file:// serve só caminhos liberados
 // no path-guard da janela dona do token (host da URL). Registrado antes do app ficar pronto.
 const fileProtocol = require('./lib/file-protocol');
+const { openExternalSafe } = require('./lib/external-url');
 protocol.registerSchemesAsPrivileged([{
   scheme: fileProtocol.SCHEME,
   privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true },
@@ -143,8 +144,9 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Links externos abrem no browser padrão, nunca dentro do app
-    shell.openExternal(url);
+    // Links externos abrem no browser padrão, nunca dentro do app; só http(s)/mailto
+    // (file:, smb:, protocolos de apps… são negados — lib/external-url.js).
+    openExternalSafe(shell, url);
     return { action: 'deny' };
   });
 
@@ -445,13 +447,18 @@ app.on('window-all-closed', () => {
 });
 
 // Hardening extra
+const RENDERER_URL = require('url').pathToFileURL(path.join(__dirname, '..', 'renderer') + path.sep).href;
 app.on('web-contents-created', (_e, contents) => {
+  // Nenhuma janela nova dentro do app (inclui middle-click/target=_blank em qualquer webContents).
+  contents.setWindowOpenHandler(({ url }) => {
+    openExternalSafe(shell, url);
+    return { action: 'deny' };
+  });
   contents.on('will-navigate', (event, url) => {
-    // Bloqueia navegação para URLs externas dentro do app
-    const isLocal = url.startsWith('file://');
-    if (!isLocal) {
-      event.preventDefault();
-      shell.openExternal(url);
-    }
+    // Só navega dentro das páginas do próprio app; o resto é bloqueado e, se for
+    // http(s)/mailto, abre fora (nunca file: de fora do app nem outros esquemas).
+    if (url.startsWith(RENDERER_URL)) return;
+    event.preventDefault();
+    openExternalSafe(shell, url);
   });
 });

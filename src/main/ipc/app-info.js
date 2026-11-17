@@ -2,6 +2,8 @@
  * IPC: informações do app e links externos (app:*).
  */
 
+const { openExternalSafe } = require('../lib/external-url');
+
 function register(ipcMain, { app, shell, isDev, APP_NAME }) {
   ipcMain.handle('app:info', () => ({
     name: APP_NAME,
@@ -14,13 +16,8 @@ function register(ipcMain, { app, shell, isDev, APP_NAME }) {
     isDev,
   }));
 
-  ipcMain.handle('app:openExternal', (_evt, url) => {
-    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
-      shell.openExternal(url);
-      return true;
-    }
-    return false;
-  });
+  // Só https:, http: e mailto: (lib/external-url.js).
+  ipcMain.handle('app:openExternal', (_evt, url) => openExternalSafe(shell, url));
 }
 
 module.exports = { register };
