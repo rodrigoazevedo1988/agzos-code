@@ -156,3 +156,36 @@ test('hub: card Agzos Git Slider habilitado abre a view', async () => {
     await expect(page.locator('.module-view[data-module="gitSlider"]')).toContainText('Linha do tempo');
   } finally { await env.close(); }
 });
+
+test('agente: edit_file entra no histórico (origem agente) e file_history lista as versões', async () => {
+  const { startFakeOpenAI } = require('./fake-openai');
+  const fake = await startFakeOpenAI({
+    delayMs: 5,
+    script: [
+      { toolCalls: [{ name: 'edit_file', arguments: { path: 'c.txt', old_string: 'antes', new_string: 'depois' } }] },
+      { toolCalls: [{ name: 'file_history', arguments: { path: 'c.txt' } }] },
+      { text: 'Pronto.' },
+    ],
+  });
+  const env = await setup({ files: { 'c.txt': 'antes\n' }, settings: { aiAgent: { mode: 'auto' } } });
+  const { page } = env;
+  try {
+    await page.evaluate(async (url) => {
+      await window.agzos.ai.saveProfile({ preset: 'custom', label: 'Fake', baseUrl: `${url}/v1`, model: 'fake-1' });
+      window.dispatchEvent(new CustomEvent('agzos:ai-profiles-changed'));
+      window.AgzosAiDock.show();
+    }, fake.baseUrl);
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'agent');
+    await page.locator('#ai-input').fill('Troque antes por depois');
+    await page.locator('#ai-input').press('Enter');
+    await expect(page.locator('.ag-step[data-tool="file_history"]')).toHaveAttribute('data-status', 'ok', { timeout: 15000 });
+    await expect.poll(() => fs.readFileSync(env.file('c.txt'), 'utf8')).toBe('depois\n');
+    const list = await page.evaluate((p) => window.agzos.history.list(p), env.file('c.txt'));
+    expect(list.map((e) => e.origin)).toEqual(['agente']);
+    await expect.poll(() => fake.requests.length).toBeGreaterThanOrEqual(3);
+    const toolMsg = fake.requests.flatMap((r) => r.body.messages || [])
+      .find((m) => m.role === 'tool' && String(m.content).includes('"versions"'));
+    expect(toolMsg.content).toContain('"origin": "agente"');
+    expect(toolMsg.content).not.toContain('antes\\n');
+  } finally { await env.close(); await fake.close(); }
+});

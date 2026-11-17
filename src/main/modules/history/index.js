@@ -17,6 +17,11 @@ function options() {
   return normalizeModules(state?.getSettings?.()?.modules).localHistory;
 }
 
+/** Opções do Git Slider (settings.modules.gitSlider normalizado). */
+function sliderOptions() {
+  return normalizeModules(state?.getSettings?.()?.modules).gitSlider;
+}
+
 function configureHistory({ userDataDir, getSettings = () => ({}), now } = {}) {
   if (!userDataDir) return null;
   const store = createHistoryStore({
@@ -52,4 +57,6 @@ function resetHistory() {
   state = null;
 }
 
-module.exports = { configureHistory, getHistoryStore, isEnabled, recordBefore, resetHistory };
+module.exports = {
+  configureHistory, getHistoryStore, isEnabled, recordBefore, sliderOptions, resetHistory,
+};
