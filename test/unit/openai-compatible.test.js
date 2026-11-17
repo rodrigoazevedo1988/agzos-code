@@ -43,3 +43,37 @@ test('mapeia erros HTTP e limita mensagem', () => {
   assert.match(toUserError({ status: 429 }, { baseUrl }), /Limite de uso/);
   assert.equal(toUserError({ status: 500, message: 'x'.repeat(250) }, { baseUrl }).split(': ')[1].length, 200);
 });
+
+// Gemini (AI Studio, endpoint OpenAI-compatível) devolve o erro como array.
+const geminiBusy = () => response(JSON.stringify([{ error: { code: 503, message: 'The model is overloaded. Please try again later.', status: 'UNAVAILABLE' } }]), 503);
+
+test('503 do Gemini mostra a mensagem do provider (corpo em array)', async () => {
+  const { request } = require('../../src/main/ai/errors');
+  await assert.rejects(
+    request(async () => geminiBusy(), `${baseUrl}/x`, {}, { baseUrl, retryDelaysMs: [] }),
+    (err) => /sobrecarregado/i.test(err.message) && /overloaded/.test(err.message) && err.status === 503,
+  );
+});
+
+test('503/429 tentam de novo e seguem quando o provider volta', async () => {
+  const { request } = require('../../src/main/ai/errors');
+  let calls = 0;
+  const res = await request(async () => (++calls < 3 ? geminiBusy() : response('ok')), `${baseUrl}/x`, {}, { baseUrl, retryDelaysMs: [1, 1] });
+  assert.equal(calls, 3);
+  assert.equal(res.status, 200);
+});
+
+test('400/401 não tentam de novo', async () => {
+  const { request } = require('../../src/main/ai/errors');
+  let calls = 0;
+  await assert.rejects(request(async () => { calls++; return response('{}', 401); }, `${baseUrl}/x`, {}, { baseUrl, retryDelaysMs: [1, 1] }));
+  assert.equal(calls, 1);
+});
+
+test('cancelar durante a espera do retry interrompe', async () => {
+  const { request } = require('../../src/main/ai/errors');
+  const controller = new AbortController();
+  const p = request(async () => geminiBusy(), `${baseUrl}/x`, {}, { baseUrl, signal: controller.signal, retryDelaysMs: [5000] });
+  setTimeout(() => controller.abort(), 20);
+  await assert.rejects(p, /Interrompido/);
+});
