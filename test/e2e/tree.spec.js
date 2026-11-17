@@ -73,7 +73,8 @@ test('opções mudam a prévia e Criar ARVORE.md grava na pasta', async () => {
     await expect(preview).not.toContainText('util.js');
     await dialog.locator('button', { hasText: 'Criar ARVORE.md' }).click();
     const file = path.join(workspace, 'ARVORE.md');
-    await expect.poll(() => fs.existsSync(file)).toBe(true);
+    // Espera a gravação terminar (o arquivo pode existir vazio por um instante).
+    await expect.poll(() => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '')).toContain('```text\n');
     const text = fs.readFileSync(file, 'utf8');
     expect(text).toContain('```text\n');
     expect(text).toContain('├── src/');
