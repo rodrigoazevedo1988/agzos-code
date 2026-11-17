@@ -31,7 +31,7 @@ function projectTree(root, { levels = 2, max = 200 } = {}) {
   return lines.length ? lines.join('\n') : '(pasta vazia)';
 }
 
-function buildSystemPrompt({ root, platform = process.platform, shell, mode, tree }) {
+function buildSystemPrompt({ root, platform = process.platform, shell, mode, tree, skill }) {
   const shellName = shell ? String(shell).split(/[\\/]/).pop() : (platform === 'win32' ? 'powershell' : 'bash');
   return [
     'Você é o Agzos IA, um agente de programação dentro do editor Agzos Code.',
@@ -53,7 +53,18 @@ function buildSystemPrompt({ root, platform = process.platform, shell, mode, tre
     '',
     'Estrutura do projeto (2 níveis):',
     tree ?? projectTree(root),
+    ...skillSection(skill),
   ].join('\n');
 }
 
-module.exports = { buildSystemPrompt, projectTree };
+/** Instruções do modo (skill) ativo; vêm depois do prompt base e prevalecem sobre ele. */
+function skillSection(skill) {
+  if (!skill || !skill.prompt) return [];
+  const lines = ['', `## Modo ativo: ${skill.label}`];
+  if (Array.isArray(skill.tools)) lines.push(`Ferramentas disponíveis neste modo: ${skill.tools.join(', ') || 'nenhuma'}.`);
+  if (skill.readOnly) lines.push('Neste modo toda escrita e todo comando precisam da aprovação do usuário.');
+  lines.push('As instruções abaixo prevalecem sobre as regras gerais em caso de conflito.', '', skill.prompt);
+  return lines;
+}
+
+module.exports = { buildSystemPrompt, projectTree, skillSection };

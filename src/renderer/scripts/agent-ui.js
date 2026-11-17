@@ -104,6 +104,13 @@ function previewDiff(step) {
     ? { path: step.meta.path, before: step.meta.before ?? '', after: step.meta.after ?? '' } : null);
 }
 
+/** Mensagem do usuário enviada durante a execução ("Enviar agora"). */
+function steerElement(seg) {
+  return h('div', { class: 'ag-steer', 'data-steer-id': seg.id || null },
+    h('div', { class: 'ag-steer-bubble', text: seg.text || '' }),
+    h('span', { class: 'ag-steer-badge' }, icon('corner-down-right', 11), h('span', { text: 'enviada durante a execução' })));
+}
+
 /* ------------------------------------------------------------ aprovação */
 
 function approvalElement(step, ctx) {
@@ -412,6 +419,14 @@ export class TurnView {
           this.ctx.onText?.(block.el, this.ctx.live);
         }
         blockIndex++;
+      } else if (seg.t === 'steer') {
+        // Mensagem "Enviar agora" incorporada neste ponto da execução.
+        if (!this.blocks[blockIndex]) {
+          const block = { kind: 'steer', el: steerElement(seg) };
+          this.blocks.push(block);
+          this.el.insertBefore(block.el, this.tail);
+        }
+        blockIndex++;
       } else {
         let block = this.blocks[blockIndex];
         if (!block) {
@@ -458,6 +473,13 @@ export class TurnView {
     }
     const err = errorElement(t, this.ctx);
     if (err) parts.push(err);
+    // Modo Plan: ao terminar, oferece mandar o plano para o modo Agente.
+    if (t.skill === 'plan' && t.done && !t.error && !this.ctx.live && this.ctx.runPlan) {
+      parts.push(h('div', { class: 'ag-plan-actions' },
+        h('button', { type: 'button', class: 'ag-btn ag-btn-primary ag-run-plan', onclick: () => this.ctx.runPlan(t) },
+          icon('play', 12), h('span', { text: 'Executar plano' })),
+        h('span', { class: 'ag-dim', text: 'Abre o plano no composer, no modo Agente, para você revisar e enviar.' })));
+    }
     this.tail.replaceChildren(...parts);
   }
 

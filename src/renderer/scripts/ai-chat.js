@@ -15,8 +15,10 @@ import {
   DEFAULT_TITLE, MAX_MESSAGES, makeTitle, composerKeyAction, sendHint, relativeTime, addConversation, baseName,
   AGENT_MODES, AGENT_MODE_INFO, normalizeAgentMode, createAgentTurn, applyAgentEvent, settleSteps,
   encodeAgentContent, decodeAgentContent, stripAgentMarker, joinRoot, relativePath,
+  FALLBACK_SKILLS, resolveSkill, skillLabel, payloadMessage, formatBytes, truncate, isVisionError, agentTurnText,
 } from './ai-chat-utils.js';
 import { TurnView } from './agent-ui.js';
+import { attachFile, attachFromMain } from './ai-attachments.js';
 
 const State = window.AgzosState;
 const IS_MAC = /Mac/i.test(navigator.platform || '');
@@ -37,7 +39,14 @@ let selectedModel = '';
 let lastError = null; // { text, retry }
 let menuState = null; // { el, anchor, onClose }
 const contextOptions = { file: true, selection: true, terminal: false };
-let agentEnabled = null; // null = automático (Agente quando há pasta aberta)
+let skills = FALLBACK_SKILLS.slice(); // modos (skills) disponíveis — recarregados ao abrir o seletor
+let queue = []; // mensagens esperando o fim da execução: { id, content, attachments }
+let draftAttachments = []; // anexos do composer (descritores)
+let attachBusy = 0;
+const steerPending = new Map(); // id → item enviado com "Enviar agora" ainda não incorporado
+let sendAfterStop = null; // modo Chat: "Enviar agora" interrompe e manda este item
+let readOnlyView = null; // { key, root, conversation } — conversa de outra pasta aberta só para leitura
+let openAfterLoad = null; // conversa a abrir quando o histórico da pasta recém-aberta carregar
 const turnViews = new WeakMap(); // mensagem → TurnView
 const decodedTurns = new WeakMap(); // mensagem do histórico → turno decodificado
 
@@ -92,10 +101,16 @@ function agentApi() {
 function agentMode() {
   return normalizeAgentMode(State.settings.aiAgent?.mode);
 }
-/** Agente ligado no composer? Padrão: sim quando há pasta aberta. */
+/** Modo (skill) ativo no composer. Padrão: Agente com pasta aberta, Chat sem pasta. */
+function currentSkill() {
+  const chosen = aiSettings().skill || null;
+  const skill = resolveSkill(skills, chosen, !!State.workspaceRoot);
+  if (!agentApi() && skill.kind === 'agent') return resolveSkill(skills, 'chat', false);
+  return skill;
+}
+/** Agente ligado no composer? (modo com ferramentas) */
 function isAgentOn() {
-  if (!agentApi()) return false;
-  return agentEnabled == null ? !!State.workspaceRoot : agentEnabled;
+  return !!agentApi() && currentSkill().kind === 'agent';
 }
 
 /* ------------------------------------------------------------------ */
@@ -152,14 +167,20 @@ function buildComposer() {
     type: 'button', class: 'ai-context-chip', 'data-context': key, 'aria-pressed': 'false',
   }, icon(iconName, 12), h('span', { class: 'ai-chip-label', text: label }));
   return h('div', { class: 'ai-composer' },
+    h('div', { id: 'ai-queue', class: 'ai-queue', role: 'list', 'aria-label': 'Mensagens na fila', hidden: true }),
     buildAgentBar(),
     h('div', { class: 'ai-composer-box' },
+      h('div', { id: 'ai-attachments', class: 'ai-attachments', role: 'list', 'aria-label': 'Anexos', hidden: true }),
       h('textarea', {
         id: 'ai-input', rows: '1', spellcheck: 'true',
         placeholder: 'Pergunte sobre o código ou peça uma mudança…', 'aria-label': 'Mensagem para o Agzos IA',
         'aria-describedby': 'ai-hint',
       }),
       h('div', { class: 'ai-composer-foot' },
+        h('button', {
+          type: 'button', id: 'ai-attach', class: 'ai-icon-btn ai-attach-btn', 'aria-label': 'Anexar arquivos (imagens, texto, PDF)',
+          title: 'Anexar arquivos — também dá para colar imagem (Ctrl+V) ou arrastar',
+        }, icon('paperclip', 14)),
         h('div', { class: 'ai-chips', role: 'group', 'aria-label': 'Contexto enviado à IA' },
           chip('file', 'file-text', 'Arquivo'),
           chip('selection', 'text-cursor', 'Seleção'),
@@ -170,13 +191,10 @@ function buildComposer() {
 }
 
 function buildAgentBar() {
-  const seg = (value, iconName, label, title) => h('button', {
-    type: 'button', class: 'ai-seg-btn', role: 'radio', 'data-agent': value, 'aria-checked': 'false', title,
-  }, icon(iconName, 12), h('span', { text: label }));
   return h('div', { id: 'ai-agent-bar', class: 'ai-agent-bar' },
-    h('div', { class: 'ai-seg', role: 'radiogroup', 'aria-label': 'Modo de resposta' },
-      seg('agent', 'bot', 'Agente', 'Agente: lê, edita e roda comandos no projeto aberto'),
-      seg('chat', 'message-circle', 'Chat', 'Chat: só responde, não mexe nos arquivos')),
+    h('button', {
+      type: 'button', id: 'ai-skill-btn', class: 'ai-skill-btn', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    }, h('span', { class: 'ai-skill-icon' }), h('span', { class: 'ai-skill-label' }), icon('chevron-down', 11)),
     h('button', {
       type: 'button', id: 'ai-agent-mode', class: 'ai-mode-btn', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
     }, h('span', { class: 'ai-mode-icon' }), h('span', { class: 'ai-mode-label' }), icon('chevron-down', 11)));
@@ -187,7 +205,13 @@ function buildHistory() {
     h('div', { class: 'ai-history-head' },
       h('span', { class: 'ai-history-title', text: 'Conversas' }),
       iconButton('ai-history-close', 'x', 'Fechar conversas')),
-    h('ul', { id: 'ai-history-list', class: 'ai-history-list' }));
+    h('div', { class: 'ai-history-search' },
+      icon('search', 13),
+      h('input', {
+        id: 'ai-history-query', type: 'search', placeholder: 'Buscar por título ou conteúdo…', 'aria-label': 'Buscar conversas',
+        autocomplete: 'off', spellcheck: 'false',
+      })),
+    h('div', { id: 'ai-history-list', class: 'ai-history-list' }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -360,6 +384,15 @@ function agentTurnOf(message) {
   return turn;
 }
 
+/** Selo pequeno com o modo (skill) que gerou a resposta. */
+function modeBadge(id) {
+  if (!id) return null;
+  const skill = skills.find((s) => s.id === id);
+  return h('div', { class: 'ai-msg-head' },
+    h('span', { class: 'ai-mode-badge', 'data-skill': id, title: `Modo ${skillLabel(skills, id)}` },
+      icon(skill?.icon || (id === 'chat' ? 'message-circle' : 'bot'), 10), h('span', { text: skillLabel(skills, id) })));
+}
+
 function agentMessageElement(message, turn) {
   const live = request?.message === message;
   let view = turnViews.get(message);
@@ -368,21 +401,40 @@ function agentMessageElement(message, turn) {
     turnViews.set(message, view);
   }
   const el = h('div', { class: `ai-msg ai-assistant ai-agent-msg${live ? ' is-streaming' : ''}`, 'aria-busy': live ? 'true' : null },
-    h('div', { class: 'ai-avatar', 'aria-hidden': 'true' }, mark('ai-avatar-mark')), view.el);
+    h('div', { class: 'ai-avatar', 'aria-hidden': 'true' }, mark('ai-avatar-mark')),
+    h('div', { class: 'ai-msg-main' }, modeBadge(message.skill || turn.skill || 'agent'), view.el));
   if (live) request.el = el;
   return el;
 }
 
+function attachmentChip(att, { removable = false } = {}) {
+  const kindIcon = att.kind === 'image' ? 'image' : att.kind === 'pdf' ? 'file-text' : 'file-code';
+  const label = `${att.name} (${formatBytes(att.size)})${att.note ? ` — ${att.note}` : ''}`;
+  return h('div', { class: `ai-att${att.kind === 'image' ? ' is-image' : ''}`, role: 'listitem', 'data-id': att.id, title: label },
+    att.thumb ? h('img', { class: 'ai-att-thumb', src: att.thumb, alt: '' }) : h('span', { class: 'ai-att-icon' }, icon(kindIcon, 14)),
+    h('span', { class: 'ai-att-text' },
+      h('span', { class: 'ai-att-name', text: att.name }),
+      h('span', { class: 'ai-att-size', text: att.truncated ? `${formatBytes(att.size)} · cortado` : formatBytes(att.size) })),
+    removable ? h('button', {
+      type: 'button', class: 'ai-att-remove', 'data-id': att.id, 'aria-label': `Remover anexo ${att.name}`, title: 'Remover',
+    }, icon('x', 11)) : null);
+}
+
 function messageElement(message) {
   if (message.role === 'user') {
-    return h('div', { class: 'ai-msg ai-user' }, h('div', { class: 'ai-bubble', text: message.content }));
+    const atts = Array.isArray(message.attachments) && message.attachments.length
+      ? h('div', { class: 'ai-msg-atts', role: 'list', 'aria-label': 'Anexos' }, message.attachments.map((a) => attachmentChip(a)))
+      : null;
+    return h('div', { class: `ai-msg ai-user${atts ? ' has-atts' : ''}` },
+      atts, message.content ? h('div', { class: 'ai-bubble', text: message.content }) : null);
   }
   const turn = agentTurnOf(message);
   if (turn) return agentMessageElement(message, turn);
   const streaming = request?.message === message;
   const prose = h('div', { class: 'ai-prose' });
   const el = h('div', { class: `ai-msg ai-assistant${streaming ? ' is-streaming' : ''}`, 'aria-busy': streaming ? 'true' : null },
-    h('div', { class: 'ai-avatar', 'aria-hidden': 'true' }, mark('ai-avatar-mark')), prose);
+    h('div', { class: 'ai-avatar', 'aria-hidden': 'true' }, mark('ai-avatar-mark')),
+    h('div', { class: 'ai-msg-main' }, modeBadge(message.skill), prose));
   renderAssistantBody(prose, message, streaming);
   if (streaming) request.el = el; else highlightCode(prose);
   return el;
@@ -411,9 +463,26 @@ function errorElement() {
     lastError.retry ? h('button', { type: 'button', class: 'ai-retry' }, icon('rotate-ccw', 12), h('span', { text: 'Tentar de novo' })) : null);
 }
 
+function readOnlyBanner() {
+  const { root: folder, conversation } = readOnlyView;
+  return h('div', { class: 'ai-readonly', role: 'note' },
+    icon('clock-3', 14),
+    h('span', { class: 'ai-readonly-text' },
+      h('strong', { text: conversation.title || DEFAULT_TITLE }),
+      h('span', { text: folder ? ` — conversa de ${baseName(folder)} (pasta não aberta), somente leitura.` : ' — somente leitura.' })),
+    folder ? h('button', { type: 'button', class: 'ai-readonly-open', 'data-root': folder }, icon('folder-open', 12), h('span', { text: 'Abrir pasta' })) : null,
+    h('button', { type: 'button', class: 'ai-readonly-close' }, icon('x', 12), h('span', { text: 'Voltar' })));
+}
+
 function renderMessages() {
   if (!panel) return;
   const list = $('#ai-messages');
+  if (readOnlyView) {
+    list.replaceChildren(readOnlyBanner(), h('div', { class: 'ai-thread is-readonly' }, readOnlyView.conversation.messages.map(messageElement)));
+    list.classList.remove('is-empty');
+    list.scrollTop = 0;
+    return;
+  }
   const items = messages();
   const children = [items.length ? h('div', { class: 'ai-thread' }, items.map(messageElement)) : welcomeElement()];
   if (lastError) children.push(errorElement());
@@ -445,7 +514,13 @@ function queueRender() {
 
 function persist() {
   const conversations = store.conversations.map((c) => ({
-    ...c, messages: c.messages.map(({ role, content }) => ({ role, content })),
+    ...c,
+    messages: c.messages.map(({ role, content, attachments, model, skill }) => ({
+      role, content,
+      ...(Array.isArray(attachments) && attachments.length ? { attachments } : {}),
+      ...(model ? { model } : {}),
+      ...(skill ? { skill } : {}),
+    })),
   }));
   const snapshot = { conversations, activeId: store.activeId };
   return window.agzos.chat.saveHistory(root, snapshot).catch(() => {
@@ -462,6 +537,9 @@ async function loadHistory() {
   root = nextRoot;
   store = { conversations: [], activeId: null };
   lastError = null;
+  readOnlyView = null;
+  queue = [];
+  renderQueue();
   closeHistory();
   syncAgentBar();
   renderMessages();
@@ -472,6 +550,8 @@ async function loadHistory() {
       conversations: Array.isArray(loaded?.conversations) ? loaded.conversations : [],
       activeId: loaded?.activeId ?? null,
     };
+    if (openAfterLoad && store.conversations.some((c) => c.id === openAfterLoad)) store.activeId = openAfterLoad;
+    openAfterLoad = null;
     renderMessages();
   } catch {
     if (version === loadVersion) { lastError = { text: 'Não foi possível carregar o histórico.' }; renderMessages(); }
@@ -480,10 +560,14 @@ async function loadHistory() {
   }
 }
 
+/**
+ * Nova conversa. Funciona também durante uma execução: o pedido em andamento segue
+ * na conversa dele (request.conversationId) e termina lá.
+ */
 function newConversation({ focus = true } = {}) {
-  if (request) return;
   const current = activeConversation();
   lastError = null;
+  readOnlyView = null;
   if (current && !current.messages.length) {
     renderMessages();
   } else {
@@ -499,9 +583,10 @@ function newConversation({ focus = true } = {}) {
 }
 
 function switchConversation(id) {
-  if (request || !store.conversations.some((c) => c.id === id)) return;
+  if (!store.conversations.some((c) => c.id === id)) return;
   store = { ...store, activeId: id };
   lastError = null;
+  readOnlyView = null;
   closeHistory();
   renderMessages();
   persist();
@@ -509,7 +594,7 @@ function switchConversation(id) {
 }
 
 function deleteConversation(id) {
-  if (request) return;
+  if (request?.conversationId === id) { toast('Espere a resposta terminar para apagar esta conversa.', 'info'); return; }
   const conversations = store.conversations.filter((c) => c.id !== id);
   const activeId = store.activeId === id ? (conversations[0]?.id ?? null) : store.activeId;
   store = { conversations, activeId };
@@ -518,30 +603,153 @@ function deleteConversation(id) {
   persist();
 }
 
-function renderHistoryList() {
+let historyQueryTimer = null;
+let historyVersion = 0;
+
+/** Lista de todas as conversas (todas as pastas), pasta atual em destaque. */
+async function renderHistoryList() {
   const list = $('#ai-history-list');
-  const items = store.conversations.filter((c) => c.messages.length || c.id === store.activeId);
-  if (!items.length) {
-    list.replaceChildren(h('li', { class: 'ai-history-empty', text: 'Nenhuma conversa neste workspace ainda.' }));
-    return;
+  const query = $('#ai-history-query').value.trim();
+  const version = ++historyVersion;
+  let groups = [];
+  try {
+    groups = await window.agzos.chat.allHistory({ currentRoot: root, query });
+  } catch {
+    groups = [];
   }
+  if (version !== historyVersion) return;
+  // A pasta atual vem do estado em memória (mais novo que o disco durante a escrita).
+  const local = store.conversations
+    .filter((c) => c.messages.length || c.id === store.activeId)
+    .filter((c) => !query || matchesQuery(c, query));
+  const others = groups.filter((g) => !g.current);
   const now = Date.now();
-  list.replaceChildren(...items.map((c) => h('li', { class: `ai-history-item${c.id === store.activeId ? ' is-active' : ''}` },
-    h('button', { type: 'button', class: 'ai-history-open', 'data-id': c.id, 'aria-current': c.id === store.activeId ? 'true' : null },
-      h('span', { class: 'ai-history-name', text: c.title || DEFAULT_TITLE }),
-      h('span', { class: 'ai-history-time', text: relativeTime(c.updatedAt, now) })),
-    h('button', { type: 'button', class: 'ai-history-delete ai-icon-btn', 'data-id': c.id, 'aria-label': `Apagar conversa "${c.title}"`, title: 'Apagar conversa' },
-      icon('trash', 13)))));
+  const item = (c, { key = null, current = false, folder = null } = {}) => h('div', {
+    class: `ai-history-item${current && c.id === store.activeId && !readOnlyView ? ' is-active' : ''}`, role: 'listitem',
+    'data-id': c.id, 'data-key': key || '',
+  },
+  h('button', {
+    type: 'button', class: 'ai-history-open', 'data-id': c.id, 'data-key': key || '', 'data-root': folder || '',
+    'aria-current': current && c.id === store.activeId ? 'true' : null,
+  },
+  h('span', { class: 'ai-history-name', text: c.title || DEFAULT_TITLE }),
+  c.snippet ? h('span', { class: 'ai-history-snippet', text: c.snippet }) : null,
+  h('span', { class: 'ai-history-time', text: relativeTime(c.updatedAt, now) })),
+  h('span', { class: 'ai-history-actions' },
+    h('button', { type: 'button', class: 'ai-history-rename ai-icon-btn', 'data-id': c.id, 'data-key': key || '', 'aria-label': `Renomear conversa "${c.title}"`, title: 'Renomear' }, icon('pencil', 12)),
+    h('button', { type: 'button', class: 'ai-history-export ai-icon-btn', 'data-id': c.id, 'data-key': key || '', 'aria-label': `Exportar conversa "${c.title}"`, title: 'Exportar' }, icon('download', 12)),
+    h('button', { type: 'button', class: 'ai-history-delete ai-icon-btn', 'data-id': c.id, 'data-key': key || '', 'aria-label': `Apagar conversa "${c.title}"`, title: 'Apagar conversa' }, icon('trash', 12))));
+  const sections = [];
+  sections.push(h('section', { class: 'ai-history-group is-current', 'aria-label': 'Esta pasta' },
+    h('div', { class: 'ai-history-group-title' }, icon('folder-open', 12), h('span', { text: root ? `Esta pasta · ${baseName(root)}` : 'Sem pasta aberta' })),
+    local.length
+      ? h('div', { class: 'ai-history-items', role: 'list' }, local.map((c) => item(c, { current: true })))
+      : h('div', { class: 'ai-history-empty', text: query ? 'Nada encontrado nesta pasta.' : 'Nenhuma conversa neste workspace ainda.' })));
+  for (const group of others) {
+    sections.push(h('section', { class: 'ai-history-group', 'aria-label': group.name, title: group.root || '' },
+      h('div', { class: 'ai-history-group-title' }, icon('folder', 12), h('span', { text: group.name })),
+      h('div', { class: 'ai-history-items', role: 'list' }, group.conversations.map((c) => item(c, { key: group.key, folder: group.root })))));
+  }
+  list.replaceChildren(...sections);
 }
 
-function openHistory() {
-  if (request) return;
+function matchesQuery(conversation, query) {
+  const fold = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const q = fold(query);
+  return fold(conversation.title).includes(q) || conversation.messages.some((m) => fold(stripAgentMarker(m.content)).includes(q));
+}
+
+async function openHistory() {
   closeMenu();
-  renderHistoryList();
   $('#ai-history').hidden = false;
   $('#ai-history-btn').setAttribute('aria-expanded', 'true');
-  ($('.ai-history-item.is-active .ai-history-open') || $('.ai-history-open') || $('#ai-history-close')).focus();
+  await renderHistoryList();
+  ($('.ai-history-item.is-active .ai-history-open') || $('#ai-history-query')).focus();
 }
+
+/** Abre uma conversa de outra pasta: somente leitura, com opção de abrir a pasta. */
+async function openOtherConversation(key, id) {
+  let data = null;
+  try { data = await window.agzos.chat.getConversation(key, id); } catch { data = null; }
+  if (!data?.conversation) { toast('Não foi possível abrir a conversa.', 'error'); return; }
+  readOnlyView = { key, root: data.root, conversation: data.conversation };
+  closeHistory();
+  renderMessages();
+}
+
+async function renameFromHistory(key, id) {
+  const current = !key;
+  const conversation = current ? store.conversations.find((c) => c.id === id) : null;
+  const row = panel.querySelector(`.ai-history-item[data-id="${CSS.escape(id)}"][data-key="${CSS.escape(key || '')}"]`);
+  const nameEl = row?.querySelector('.ai-history-name');
+  if (!row || !nameEl) return;
+  const input = h('input', { class: 'ai-history-rename-input', type: 'text', value: nameEl.textContent, 'aria-label': 'Novo nome da conversa', maxlength: '60' });
+  row.querySelector('.ai-history-open').replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = async (save) => {
+    if (done) return;
+    done = true;
+    const title = input.value.replace(/\s+/g, ' ').trim();
+    if (save && title) {
+      if (current && conversation) { conversation.title = title.slice(0, 60); persist(); }
+      else if (!current) await window.agzos.chat.renameConversation(key, id, title).catch(() => toast('Não foi possível renomear.', 'error'));
+    }
+    renderHistoryList();
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); commit(true); }
+    else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commit(false); }
+  });
+  input.addEventListener('blur', () => commit(true));
+}
+
+function confirmDelete(key, id) {
+  const row = panel.querySelector(`.ai-history-item[data-id="${CSS.escape(id)}"][data-key="${CSS.escape(key || '')}"]`);
+  if (!row || row.querySelector('.ai-history-confirm')) return;
+  const box = h('div', { class: 'ai-history-confirm', role: 'alertdialog', 'aria-label': 'Confirmar exclusão' },
+    h('span', { text: 'Apagar esta conversa?' }),
+    h('button', { type: 'button', class: 'ai-history-confirm-yes' }, h('span', { text: 'Apagar' })),
+    h('button', { type: 'button', class: 'ai-history-confirm-no' }, h('span', { text: 'Cancelar' })));
+  row.append(box);
+  box.querySelector('.ai-history-confirm-no').addEventListener('click', () => box.remove());
+  box.querySelector('.ai-history-confirm-yes').addEventListener('click', async () => {
+    if (!key) deleteConversation(id);
+    else {
+      await window.agzos.chat.deleteConversation(key, id).catch(() => toast('Não foi possível apagar.', 'error'));
+      if (readOnlyView?.key === key && readOnlyView.conversation.id === id) { readOnlyView = null; renderMessages(); }
+    }
+    renderHistoryList();
+  });
+  box.querySelector('.ai-history-confirm-yes').focus();
+}
+
+/** Exportar (Markdown/PDF). Conversa da pasta atual é gravada antes. */
+async function exportConversation(key, id, format) {
+  try {
+    let fileKey = key;
+    if (!fileKey) {
+      await persist();
+      const groups = await window.agzos.chat.allHistory({ currentRoot: root });
+      fileKey = groups.find((g) => g.current)?.key;
+    }
+    if (!fileKey) { toast('Nada para exportar ainda.', 'info'); return; }
+    const saved = await window.agzos.chat.exportConversation(fileKey, id, format);
+    if (saved) toast(`Conversa exportada: ${baseName(saved)}`, 'success');
+  } catch (error) {
+    toast(`Não foi possível exportar: ${error?.message || error}`, 'error');
+  }
+}
+
+function exportMenu(anchor, key, id) {
+  openMenu(anchor, [
+    { heading: 'Exportar conversa' },
+    { label: 'Exportar como Markdown', icon: 'file-text', action: () => exportConversation(key, id, 'md') },
+    { label: 'Exportar como PDF', icon: 'file-down', action: () => exportConversation(key, id, 'pdf') },
+  ], { align: 'end' });
+}
+
 function closeHistory({ restoreFocus = false } = {}) {
   if (!panel || $('#ai-history').hidden) return;
   $('#ai-history').hidden = true;
@@ -637,6 +845,20 @@ function openMoreMenu() {
       { separator: true },
     );
   }
+  const conversation = activeConversation();
+  if (conversation?.messages.length && !readOnlyView) {
+    items.push(
+      { label: 'Exportar como Markdown', icon: 'file-text', action: () => exportConversation(null, conversation.id, 'md') },
+      { label: 'Exportar como PDF', icon: 'file-down', action: () => exportConversation(null, conversation.id, 'pdf') },
+      { separator: true },
+    );
+  } else if (readOnlyView) {
+    items.push(
+      { label: 'Exportar como Markdown', icon: 'file-text', action: () => exportConversation(readOnlyView.key, readOnlyView.conversation.id, 'md') },
+      { label: 'Exportar como PDF', icon: 'file-down', action: () => exportConversation(readOnlyView.key, readOnlyView.conversation.id, 'pdf') },
+      { separator: true },
+    );
+  }
   items.push({ label: 'Configurações da IA', icon: 'settings', action: openAiSettings });
   if (dock?.hide) items.push({ label: 'Fechar painel', icon: 'x', action: () => dock.hide() });
   openMenu($('#ai-more-btn'), items, { align: 'end' });
@@ -710,15 +932,29 @@ async function refreshModels() {
 /* Envio / streaming                                                   */
 /* ------------------------------------------------------------------ */
 
-function setStreaming(active) {
+/**
+ * Botão do composer: durante a execução, com o composer vazio é "Parar"; com texto
+ * (ou anexos) é "Pôr na fila". Fora da execução, "Enviar".
+ */
+function updateSendButton() {
+  if (!panel) return;
   const send = $('#ai-send');
-  send.dataset.state = active ? 'stop' : 'send';
-  send.setAttribute('aria-label', active ? 'Parar resposta' : 'Enviar mensagem');
-  send.title = send.getAttribute('aria-label');
-  send.replaceChildren(icon(active ? 'square' : 'arrow-up', active ? 12 : 15));
-  for (const id of ['#ai-new-chat', '#ai-history-btn', '#ai-model-pill']) $(id).disabled = active;
-  panel.querySelectorAll('.ai-seg-btn').forEach((b) => { b.disabled = active; });
+  const hasDraft = !!$('#ai-input').value.trim() || draftAttachments.length > 0;
+  const state = request ? (hasDraft ? 'queue' : 'stop') : 'send';
+  if (send.dataset.state === state) return;
+  send.dataset.state = state;
+  const label = state === 'stop' ? 'Parar resposta' : state === 'queue' ? 'Pôr na fila (envia quando a execução terminar)' : 'Enviar mensagem';
+  send.setAttribute('aria-label', label);
+  send.title = label;
+  send.replaceChildren(icon(state === 'stop' ? 'square' : state === 'queue' ? 'list-plus' : 'arrow-up', state === 'stop' ? 12 : 15));
+}
+
+function setStreaming(active) {
+  // Nova conversa e histórico continuam ativos durante a execução (o pedido segue
+  // na conversa dele); só o perfil/modelo fica travado.
+  $('#ai-model-pill').disabled = active;
   panel.classList.toggle('is-streaming', active);
+  updateSendButton();
 }
 
 function finish(id, error) {
@@ -729,7 +965,7 @@ function finish(id, error) {
     message.content += ' _(interrompida)_';
   } else if (error) {
     if (!message.content && conversation) conversation.messages = conversation.messages.filter((m) => m !== message);
-    lastError = { text: error, retry: true };
+    lastError = { text: isVisionError(error) ? `${error}` : error, retry: !isVisionError(error) };
   }
   if (conversation) conversation.updatedAt = Date.now();
   request = null;
@@ -737,6 +973,31 @@ function finish(id, error) {
   if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
   renderMessages();
   persist();
+  afterRun({ ok: !error, interrupted: error === 'Interrompido' });
+}
+
+/**
+ * Fim de uma execução: "Enviar agora" pendente no modo Chat vai primeiro; senão, se
+ * terminou bem, a fila anda (uma mensagem por vez, na ordem). Erro/parada pausa a fila.
+ */
+function afterRun({ ok }) {
+  if (sendAfterStop) {
+    const item = sendAfterStop;
+    sendAfterStop = null;
+    setTimeout(() => sendItem(item), 0);
+    return;
+  }
+  if (ok && queue.length) {
+    const [next, ...rest] = queue;
+    queue = rest;
+    renderQueue();
+    setTimeout(() => sendItem(next), 0);
+  }
+}
+
+function sendItem(item) {
+  if (request) { queue.unshift(item); renderQueue(); return; }
+  sendToChat(item.content, { attachments: item.attachments });
 }
 
 function retryLast() {
@@ -745,17 +1006,30 @@ function retryLast() {
   if (!conversation) return;
   const index = conversation.messages.map((m) => m.role).lastIndexOf('user');
   if (index < 0) return;
-  const { content } = conversation.messages[index];
+  const { content, attachments } = conversation.messages[index];
   conversation.messages = conversation.messages.slice(0, index);
   lastError = null;
-  sendToChat(content);
+  sendToChat(content, { attachments });
+}
+
+/** Perfil marcado sem visão + imagem anexada → avisa e não envia. */
+function visionBlocked(attachments) {
+  if (selectedProfile?.vision !== false) return false;
+  if (!attachments?.some((a) => a.kind === 'image')) return false;
+  lastError = { text: `O perfil "${selectedProfile.label}" está marcado como sem visão: o modelo não aceita imagens. Troque de modelo/perfil ou remova a imagem.` };
+  renderMessages();
+  return true;
 }
 
 export function sendToChat(text, opts = {}) {
   const content = String(text || '').trim();
-  if (!content || request || loadingHistory || !selectedProfile || !panel) return;
+  const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+  if ((!content && !attachments.length) || request || loadingHistory || !selectedProfile || !panel) return;
+  if (visionBlocked(attachments)) return;
+  if (readOnlyView) { readOnlyView = null; }
   // Ações do editor (Explicar/Refatorar…) e o fallback seguem pelo chat.
   if (!opts.forceChat && !opts.includeSelection && isAgentOn()) { runAgent(content, opts); return; }
+  const skill = opts.forceChat ? resolveSkill(skills, 'chat', false) : currentSkill();
   lastError = null;
   closeHistory();
   let conversation = activeConversation();
@@ -763,22 +1037,24 @@ export function sendToChat(text, opts = {}) {
     conversation = { id: crypto.randomUUID(), title: DEFAULT_TITLE, updatedAt: Date.now(), messages: [] };
     store = addConversation(store, conversation);
   }
-  if (!conversation.messages.some((m) => m.role === 'user')) conversation.title = makeTitle(content);
-  conversation.messages.push({ role: 'user', content });
+  if (!conversation.messages.some((m) => m.role === 'user')) conversation.title = makeTitle(content || attachments[0]?.name);
+  conversation.messages.push({ role: 'user', content, ...(attachments.length ? { attachments } : {}) });
   conversation.messages = conversation.messages.slice(-(MAX_MESSAGES - 1));
   conversation.updatedAt = Date.now();
-  const payload = conversation.messages.map(({ role, content: body }) => ({ role, content: stripAgentMarker(body) }));
+  const payload = conversation.messages.map((m) => payloadMessage(m, stripAgentMarker));
   const contextMessage = makeContextMessage(opts.includeSelection);
   if (contextMessage) payload.unshift({ role: 'system', content: contextMessage });
-  const answer = { role: 'assistant', content: '' };
+  const model = selectedModel || selectedProfile.model;
+  const answer = { role: 'assistant', content: '', model, skill: skill.id };
   conversation.messages.push(answer);
   const id = crypto.randomUUID();
   request = { id, message: answer, el: null, conversationId: conversation.id };
   setStreaming(true);
   renderMessages();
   persist();
-  window.agzos.ai.chat(id, { profileId: selectedProfile.id, model: selectedModel || selectedProfile.model, messages: payload })
-    .catch(() => finish(id, 'Não foi possível iniciar a conversa.'));
+  window.agzos.ai.chat(id, {
+    profileId: selectedProfile.id, model, messages: payload, skill: skill.id, root: State.workspaceRoot || null,
+  }).catch(() => finish(id, 'Não foi possível iniciar a conversa.'));
 }
 
 export function focusChat() {
@@ -799,7 +1075,11 @@ export function focusChat() {
 function cancelRequest() {
   if (!request) return Promise.resolve();
   const { id, agent } = request;
-  if (!agent) return window.agzos.ai.cancel(id);
+  if (!agent) {
+    // Se o main não confirmar (pedido já sumiu lá), fecha aqui para não travar o painel.
+    setTimeout(() => { if (request?.id === id) finish(id, 'Interrompido'); }, 2500);
+    return Promise.resolve(window.agzos.ai.cancel(id)).catch(() => {});
+  }
   agent.turn.cancelled = true;
   // Se o motor não confirmar o fim, fecha o turno aqui mesmo.
   setTimeout(() => { if (request?.id === id) finishAgent(id); }, 2500);
@@ -829,10 +1109,26 @@ function agentContext(message, live) {
       card.setAttribute('aria-live', 'assertive');
     },
     onText: (el, isLive) => { if (!isLive) highlightCode(el); },
+    runPlan: (turn) => runPlan(turn),
   };
 }
 
+/** "Executar plano": muda para o modo Agente e põe o plano no composer para revisar e enviar. */
+function runPlan(turn) {
+  const plan = agentTurnText(turn).trim();
+  if (!plan) return;
+  setSkill('agent');
+  const input = $('#ai-input');
+  input.value = `Execute este plano, passo a passo, marcando o que concluir:\n\n${plan}`;
+  autoGrow();
+  updateSendButton();
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
 function runAgent(content, opts = {}) {
+  const attachments = Array.isArray(opts.attachments) ? opts.attachments : [];
+  const skill = currentSkill();
   lastError = null;
   closeHistory();
   let conversation = activeConversation();
@@ -841,17 +1137,18 @@ function runAgent(content, opts = {}) {
     store = addConversation(store, conversation);
   }
   if (!opts.resend) {
-    if (!conversation.messages.some((m) => m.role === 'user')) conversation.title = makeTitle(content);
-    conversation.messages.push({ role: 'user', content });
+    if (!conversation.messages.some((m) => m.role === 'user')) conversation.title = makeTitle(content || attachments[0]?.name);
+    conversation.messages.push({ role: 'user', content, ...(attachments.length ? { attachments } : {}) });
   }
   conversation.messages = conversation.messages.slice(-(MAX_MESSAGES - 1));
   conversation.updatedAt = Date.now();
-  const payload = conversation.messages.map(({ role, content: body }) => ({ role, content: stripAgentMarker(body) }));
+  const payload = conversation.messages.map((m) => payloadMessage(m, stripAgentMarker));
   const contextMessage = makeContextMessage(false);
   if (contextMessage) payload.unshift({ role: 'system', content: contextMessage });
   const mode = agentMode();
-  const turn = createAgentTurn(mode);
-  const answer = { role: 'assistant', content: '', agent: turn };
+  const turn = createAgentTurn(mode, skill.id);
+  const model = selectedModel || selectedProfile.model;
+  const answer = { role: 'assistant', content: '', agent: turn, model, skill: skill.id };
   conversation.messages.push(answer);
   const id = crypto.randomUUID();
   request = { id, message: answer, el: null, conversationId: conversation.id, agent: { turn, view: null } };
@@ -865,7 +1162,7 @@ function runAgent(content, opts = {}) {
   }
   Promise.resolve()
     .then(() => agentApi().run(id, {
-      profileId: selectedProfile.id, model: selectedModel || selectedProfile.model, messages: payload, mode,
+      profileId: selectedProfile.id, model, messages: payload, mode, skill: skill.id,
       root: State.workspaceRoot, conversationId: conversation.id,
     }))
     .catch((error) => onAgentEvent(id, { type: 'error', message: error?.message || 'Não foi possível iniciar o agente.' }));
@@ -889,6 +1186,7 @@ function onFileChanged(filePath) {
 function onAgentEvent(id, evt) {
   if (evt?.type === 'file_changed') onFileChanged(evt.path);
   if (!request?.agent || request.id !== id) return;
+  if (evt?.type === 'user_steer') steerPending.delete(evt.id);
   const { kind } = applyAgentEvent(request.agent.turn, evt);
   if (kind === 'done' || kind === 'error') { finishAgent(id); return; }
   if (kind) queueRender();
@@ -910,6 +1208,13 @@ function finishAgent(id) {
   renderMessages();
   persist();
   if (turn.done?.changes?.length) refreshWorkspaceViews();
+  // "Enviar agora" aceito mas não incorporado (ex.: limite de passos) volta para a fila.
+  if (steerPending.size) {
+    queue = [...steerPending.values(), ...queue];
+    steerPending.clear();
+    renderQueue();
+  }
+  afterRun({ ok: !turn.error && !turn.cancelled });
 }
 
 function approveStep(message, callId, decision) {
@@ -967,10 +1272,18 @@ function chatFallback(message) {
   const userIndex = conversation.messages.slice(0, index < 0 ? undefined : index).map((m) => m.role).lastIndexOf('user');
   if (userIndex < 0) return;
   const { content } = conversation.messages[userIndex];
+  const { attachments } = conversation.messages[userIndex];
   conversation.messages = conversation.messages.slice(0, userIndex);
-  agentEnabled = false;
-  syncAgentBar();
-  sendToChat(content, { forceChat: true });
+  setSkill('chat');
+  sendToChat(content, { forceChat: true, attachments });
+}
+
+/** Abrir a pasta de uma conversa de outra pasta (o diálogo nativo libera no guard). */
+async function openReadOnlyFolder(folder) {
+  openAfterLoad = readOnlyView?.conversation?.id || null;
+  const { openWorkspace } = await import('./file-tree.js');
+  try { await openWorkspace(folder); } catch { /* cai no diálogo abaixo */ }
+  if (State.workspaceRoot !== folder) await openFolderForAgent();
 }
 
 async function openFolderForAgent() {
@@ -983,24 +1296,76 @@ async function openFolderForAgent() {
 function syncAgentBar() {
   if (!panel) return;
   const bar = $('#ai-agent-bar');
-  const available = !!agentApi();
-  bar.hidden = !available;
+  bar.hidden = false;
+  const skill = currentSkill();
   const on = isAgentOn();
   panel.classList.toggle('is-agent', on);
-  panel.querySelectorAll('.ai-seg-btn').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.agent === 'agent') === on)));
+  panel.dataset.skill = skill.id;
+  const skillBtn = $('#ai-skill-btn');
+  skillBtn.dataset.skill = skill.id;
+  skillBtn.querySelector('.ai-skill-icon').replaceChildren(icon(skill.icon || 'sparkles', 12));
+  skillBtn.querySelector('.ai-skill-label').textContent = skill.label;
+  skillBtn.title = `Modo: ${skill.label}${skill.description ? ` — ${skill.description}` : ''}`;
+  skillBtn.setAttribute('aria-label', `Modo de resposta: ${skill.label}. Trocar modo`);
   const mode = agentMode();
   const info = AGENT_MODE_INFO[mode];
   const btn = $('#ai-agent-mode');
-  btn.hidden = !on;
+  // Autonomia vale para os modos que editam (Plan só lê: não mostra).
+  btn.hidden = !on || (Array.isArray(skill.tools) && !skill.tools.some((t) => !['list_dir', 'read_file', 'search', 'read_terminal', 'get_problems'].includes(t)));
   btn.dataset.mode = mode;
   btn.querySelector('.ai-mode-icon').replaceChildren(icon(info.icon, 12));
   btn.querySelector('.ai-mode-label').textContent = info.label;
-  btn.title = `${info.title}: ${info.desc}`;
+  btn.title = `${info.title}: ${info.desc}${skill.readOnly ? ' (neste modo, toda escrita pede OK)' : ''}`;
   btn.setAttribute('aria-label', `Autonomia do agente: ${info.title}. ${info.desc}`);
   const input = $('#ai-input');
+  const placeholders = {
+    plan: 'Descreva o que quer planejar…',
+    debugger: 'Cole o erro ou descreva o que está falhando…',
+    'site-builder': 'Que site ou página vamos criar?',
+    security: 'O que auditar? (ex.: "audite o projeto todo")',
+  };
   input.placeholder = on
-    ? (State.workspaceRoot ? 'Peça uma mudança, um bug para corrigir ou algo para criar…' : 'Abra uma pasta para o agente trabalhar…')
+    ? (State.workspaceRoot ? (placeholders[skill.id] || 'Peça uma mudança, um bug para corrigir ou algo para criar…') : 'Abra uma pasta para o agente trabalhar…')
     : 'Pergunte sobre o código ou peça uma mudança…';
+}
+
+/** Recarrega as skills (embutidas, do usuário e do projeto). Falha → mantém as atuais. */
+async function refreshSkills() {
+  const api = agentApi();
+  if (!api?.skills) { skills = FALLBACK_SKILLS.slice(); syncAgentBar(); return skills; }
+  try {
+    const data = await api.skills({ root: State.workspaceRoot || null });
+    if (Array.isArray(data?.skills) && data.skills.length) skills = data.skills;
+  } catch { /* segue com as já carregadas */ }
+  syncAgentBar();
+  return skills;
+}
+
+/** Troca o modo (skill) do composer e lembra a escolha. */
+function setSkill(id) {
+  const skill = skills.find((s) => s.id === id) || FALLBACK_SKILLS.find((s) => s.id === id);
+  if (!skill) return;
+  State.settings.aiPanel = { ...(State.settings.aiPanel || {}), skill: skill.id };
+  Promise.resolve(window.agzos.settings?.save?.(State.settings)).catch(() => {});
+  syncAgentBar();
+}
+
+async function openSkillMenu() {
+  const anchor = $('#ai-skill-btn');
+  if (menuState?.anchor === anchor) { closeMenu({ restoreFocus: true }); return; }
+  await refreshSkills();
+  const current = currentSkill();
+  const sourceTag = { project: ' · projeto', user: ' · seu' };
+  const items = [{ heading: 'Modo' }];
+  for (const skill of skills) {
+    if (skill.kind === 'agent' && !agentApi()) continue;
+    items.push({
+      label: `${skill.label}${sourceTag[skill.source] || ''}`, detail: skill.description || '', icon: skill.icon || 'sparkles',
+      checked: skill.id === current.id, action: () => setSkill(skill.id),
+    });
+  }
+  items.push({ separator: true }, { label: 'Gerenciar skills…', icon: 'settings', action: openAiSettings });
+  openMenu(anchor, items, { placement: 'above' });
 }
 
 export function setAgentMode(mode) {
@@ -1011,12 +1376,6 @@ export function setAgentMode(mode) {
   Promise.resolve(saved).catch(() => toast('Não foi possível salvar o modo do agente.', 'error'));
   syncAgentBar();
   window.dispatchEvent(new CustomEvent('agzos:agent-mode', { detail: { mode: next } }));
-}
-
-function setAgentEnabled(on) {
-  if (request) return;
-  agentEnabled = !!on;
-  syncAgentBar();
 }
 
 function openAgentModeMenu() {
@@ -1061,14 +1420,170 @@ function autoGrow() {
   input.style.overflowY = input.scrollHeight > line * maxLines + pad ? 'auto' : 'hidden';
 }
 
-function submitComposer() {
+/** Enter/botão: envia; durante a execução põe na fila; com o composer vazio, o botão para. */
+function submitComposer({ fromButton = false } = {}) {
   if (loadingHistory) return;
-  if (request) { cancelRequest(); return; }
   const input = $('#ai-input');
-  if (!input.value.trim()) return;
-  sendToChat(input.value);
+  const content = input.value.trim();
+  const attachments = draftAttachments.slice();
+  if (attachBusy) { toast('Espere os anexos terminarem de carregar.', 'info'); return; }
+  if (request) {
+    if (!content && !attachments.length) { if (fromButton) cancelRequest(); return; }
+    enqueue({ content, attachments });
+  } else {
+    if (!content && !attachments.length) return;
+    if (!selectedProfile) return;
+    if (visionBlocked(attachments)) return;
+    sendToChat(content, { attachments });
+  }
   input.value = '';
+  draftAttachments = [];
+  renderDraftAttachments();
   autoGrow();
+  updateSendButton();
+}
+
+/* ----------------------------------------------------------- fila */
+
+function enqueue(item) {
+  queue.push({ id: crypto.randomUUID(), content: item.content, attachments: item.attachments || [] });
+  renderQueue();
+}
+
+function renderQueue() {
+  if (!panel) return;
+  const box = $('#ai-queue');
+  box.hidden = !queue.length;
+  box.replaceChildren(...queue.map((item, index) => h('div', { class: 'ai-queue-item', role: 'listitem', 'data-id': item.id },
+    h('span', { class: 'ai-queue-pos', 'aria-hidden': 'true', text: String(index + 1) }),
+    h('button', {
+      type: 'button', class: 'ai-queue-text', 'data-id': item.id, title: `Editar: ${item.content}`,
+      'aria-label': `Mensagem na fila: ${item.content || 'anexos'}. Clique para editar`,
+    },
+    h('span', { text: truncate(item.content, 90) || '(só anexos)' }),
+    item.attachments.length ? h('span', { class: 'ai-queue-atts' }, icon('paperclip', 10), h('span', { text: String(item.attachments.length) })) : null),
+    h('button', {
+      type: 'button', class: 'ai-queue-now ai-icon-btn', 'data-id': item.id,
+      'aria-label': 'Enviar agora', title: request ? 'Enviar agora (entra na execução atual sem cancelar)' : 'Enviar agora',
+    }, icon('send-horizontal', 13)),
+    h('button', { type: 'button', class: 'ai-queue-remove ai-icon-btn', 'data-id': item.id, 'aria-label': 'Remover da fila', title: 'Remover da fila' },
+      icon('x', 12)))));
+}
+
+function takeQueued(id) {
+  const item = queue.find((q) => q.id === id);
+  if (item) { queue = queue.filter((q) => q !== item); renderQueue(); }
+  return item;
+}
+
+/**
+ * "Enviar agora": sem execução, envia já. Com o agente rodando, entra na execução
+ * (steer) sem cancelar. No modo Chat, interrompe o streaming (mantém o texto parcial)
+ * e envia em seguida.
+ */
+async function sendNow(id) {
+  const item = takeQueued(id);
+  if (!item) return;
+  if (!request) { sendItem(item); return; }
+  if (request.agent) {
+    const api = agentApi();
+    let accepted = false;
+    try { accepted = !!(await api?.steer?.(request.id, { id: item.id, content: item.content, attachments: item.attachments })); } catch { accepted = false; }
+    if (accepted) { steerPending.set(item.id, item); return; }
+    // Execução já acabando: vira o próximo pedido.
+    queue.unshift(item);
+    renderQueue();
+    return;
+  }
+  sendAfterStop = item;
+  cancelRequest();
+}
+
+function editQueued(id) {
+  const item = takeQueued(id);
+  if (!item) return;
+  const input = $('#ai-input');
+  input.value = input.value.trim() ? `${input.value}\n${item.content}` : item.content;
+  draftAttachments = [...draftAttachments, ...item.attachments];
+  renderDraftAttachments();
+  autoGrow();
+  updateSendButton();
+  input.focus();
+}
+
+/* ----------------------------------------------------------- anexos */
+
+function renderDraftAttachments() {
+  if (!panel) return;
+  const box = $('#ai-attachments');
+  const busy = attachBusy ? [h('div', { class: 'ai-att is-loading', role: 'listitem' }, h('span', { class: 'ag-spin', 'aria-hidden': 'true' }), h('span', { class: 'ai-att-name', text: 'Anexando…' }))] : [];
+  box.hidden = !draftAttachments.length && !attachBusy;
+  box.replaceChildren(...draftAttachments.map((a) => attachmentChip(a, { removable: true })), ...busy);
+}
+
+async function addAttachments(jobs) {
+  if (!jobs.length) return;
+  attachBusy++;
+  renderDraftAttachments();
+  try {
+    const results = (await Promise.all(jobs.map((job) => job().catch((error) => [{ ok: false, error: error?.message || String(error) }])))).flat();
+    for (const r of results) {
+      if (r.ok) { if (!draftAttachments.some((a) => a.id === r.attachment.id)) draftAttachments.push(r.attachment); }
+      else toast(r.name ? `${r.name}: ${r.error}` : r.error, 'error');
+    }
+  } finally {
+    attachBusy--;
+    renderDraftAttachments();
+    updateSendButton();
+  }
+}
+
+function pickAttachments() {
+  addAttachments([() => attachFromMain()]);
+}
+
+function onPaste(event) {
+  const files = [...(event.clipboardData?.items || [])].filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter(Boolean);
+  if (!files.length) return;
+  event.preventDefault();
+  addAttachments(files.map((file) => () => attachFile(file).then((r) => [r])));
+}
+
+function onDrop(event) {
+  const dt = event.dataTransfer;
+  if (!dt) return;
+  const explorerPath = dt.getData('application/x-agzos-path');
+  const files = [...(dt.files || [])];
+  if (!explorerPath && !files.length) return;
+  event.preventDefault();
+  panel.classList.remove('is-dropping');
+  if (explorerPath) addAttachments([() => attachFromMain([explorerPath])]);
+  else addAttachments(files.map((file) => () => attachFile(file).then((r) => [r])));
+  $('#ai-input').focus();
+}
+
+/* ----------------------------------------------------------- ferramentas que leem o editor */
+
+function answerAgentQuery(what, args = {}) {
+  if (what === 'terminal') {
+    const lines = Math.min(1000, Math.max(10, Number(args.lines) || 200));
+    return getRecentOutput(lines * 200).split('\n').slice(-lines).join('\n');
+  }
+  if (what === 'problems') {
+    const monaco = getMonaco?.();
+    if (!monaco?.editor?.getModelMarkers) return [];
+    const sev = { 8: 'erro', 4: 'aviso', 2: 'info', 1: 'dica' };
+    return monaco.editor.getModelMarkers({})
+      .filter((m) => m.resource?.scheme === 'file')
+      .map((m) => ({
+        path: m.resource.fsPath || decodeURIComponent(m.resource.path), line: m.startLineNumber, column: m.startColumn,
+        severity: sev[m.severity] || 'info', message: m.message, source: m.source || '',
+      }))
+      .filter((m) => !args.path || m.path === args.path)
+      .sort((a, b) => (a.severity === 'erro' ? 0 : 1) - (b.severity === 'erro' ? 0 : 1))
+      .slice(0, 300);
+  }
+  return null;
 }
 
 function defaultContext() {
@@ -1116,12 +1631,55 @@ function bindEvents() {
   const input = $('#ai-input');
   input.addEventListener('input', autoGrow);
   input.addEventListener('focus', () => { hookEditor(); updateContextChips(); });
+  input.addEventListener('input', updateSendButton);
+  input.addEventListener('paste', onPaste);
   input.addEventListener('keydown', (event) => {
+    const empty = !input.value.trim() && !draftAttachments.length;
+    // Ctrl+Enter com o composer vazio e fila: envia agora a primeira.
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && empty && queue.length) {
+      event.preventDefault();
+      sendNow(queue[0].id);
+      return;
+    }
+    // Esc com o composer vazio cancela a execução.
+    if (event.key === 'Escape' && empty && request) {
+      event.preventDefault();
+      event.stopPropagation();
+      cancelRequest();
+      return;
+    }
     const action = composerKeyAction(event, aiSettings().sendKey);
     // 'newline' (Shift+Enter) e null seguem o comportamento padrão do textarea.
-    if (action === 'send') { event.preventDefault(); if (!request) submitComposer(); }
+    if (action === 'send') { event.preventDefault(); submitComposer(); }
   });
-  $('#ai-send').addEventListener('click', submitComposer);
+  $('#ai-send').addEventListener('click', () => submitComposer({ fromButton: true }));
+  $('#ai-attach').addEventListener('click', pickAttachments);
+  $('#ai-attachments').addEventListener('click', (event) => {
+    const remove = event.target.closest('.ai-att-remove');
+    if (!remove) return;
+    draftAttachments = draftAttachments.filter((a) => a.id !== remove.dataset.id);
+    renderDraftAttachments();
+    updateSendButton();
+    input.focus();
+  });
+  $('#ai-queue').addEventListener('click', (event) => {
+    const now = event.target.closest('.ai-queue-now');
+    if (now) { sendNow(now.dataset.id); return; }
+    const remove = event.target.closest('.ai-queue-remove');
+    if (remove) { takeQueued(remove.dataset.id); return; }
+    const text = event.target.closest('.ai-queue-text');
+    if (text) editQueued(text.dataset.id);
+  });
+  const composer = panel.querySelector('.ai-composer');
+  composer.addEventListener('dragover', (event) => {
+    const types = [...(event.dataTransfer?.types || [])];
+    if (!types.includes('Files') && !types.includes('application/x-agzos-path')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    panel.classList.add('is-dropping');
+  });
+  composer.addEventListener('dragleave', (event) => { if (!composer.contains(event.relatedTarget)) panel.classList.remove('is-dropping'); });
+  composer.addEventListener('drop', onDrop);
   $('#ai-configure').addEventListener('click', openWizard);
   $('#ai-new-chat').addEventListener('click', () => newConversation());
   $('#ai-history-btn').addEventListener('click', () => ($('#ai-history').hidden ? openHistory() : closeHistory({ restoreFocus: true })));
@@ -1129,19 +1687,24 @@ function bindEvents() {
   $('#ai-model-pill').addEventListener('click', openModelMenu);
   $('#ai-more-btn').addEventListener('click', openMoreMenu);
   $('#ai-agent-mode').addEventListener('click', openAgentModeMenu);
-  panel.querySelectorAll('.ai-seg-btn').forEach((b) => b.addEventListener('click', () => setAgentEnabled(b.dataset.agent === 'agent')));
-  $('.ai-seg').addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-    event.preventDefault();
-    setAgentEnabled(!isAgentOn());
-    $(`.ai-seg-btn[aria-checked="true"]`)?.focus();
-  });
+  $('#ai-skill-btn').addEventListener('click', openSkillMenu);
 
   $('#ai-history').addEventListener('click', (event) => {
+    if (event.target.closest('.ai-history-confirm')) return;
     const del = event.target.closest('.ai-history-delete');
-    if (del) { deleteConversation(del.dataset.id); return; }
+    if (del) { confirmDelete(del.dataset.key || null, del.dataset.id); return; }
+    const rename = event.target.closest('.ai-history-rename');
+    if (rename) { renameFromHistory(rename.dataset.key || null, rename.dataset.id); return; }
+    const exp = event.target.closest('.ai-history-export');
+    if (exp) { exportMenu(exp, exp.dataset.key || null, exp.dataset.id); return; }
     const open = event.target.closest('.ai-history-open');
-    if (open) switchConversation(open.dataset.id);
+    if (!open) return;
+    if (open.dataset.key) openOtherConversation(open.dataset.key, open.dataset.id);
+    else switchConversation(open.dataset.id);
+  });
+  $('#ai-history-query').addEventListener('input', () => {
+    clearTimeout(historyQueryTimer);
+    historyQueryTimer = setTimeout(renderHistoryList, 150);
   });
   $('#ai-history').addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeHistory({ restoreFocus: true }); }
@@ -1163,6 +1726,9 @@ function bindEvents() {
     const suggestion = event.target.closest('.ai-suggestion');
     if (suggestion) { sendToChat(suggestion.dataset.prompt); return; }
     if (event.target.closest('.ai-retry')) { retryLast(); return; }
+    if (event.target.closest('.ai-readonly-close')) { readOnlyView = null; renderMessages(); return; }
+    const openFolderBtn = event.target.closest('.ai-readonly-open');
+    if (openFolderBtn) { openReadOnlyFolder(openFolderBtn.dataset.root); return; }
     const link = event.target.closest('a[href]');
     if (link) {
       event.preventDefault();
@@ -1178,7 +1744,8 @@ function bindEvents() {
   window.agzos.ai.onDone((id) => finish(id));
   window.agzos.ai.onError((id, error) => finish(id, error));
   agentApi()?.onEvent?.((id, evt) => onAgentEvent(id, evt));
-  window.addEventListener('agzos:workspace-changed', loadHistory);
+  agentApi()?.onQuery?.((what, args) => answerAgentQuery(what, args));
+  window.addEventListener('agzos:workspace-changed', () => { loadHistory(); refreshSkills(); });
   window.addEventListener('agzos:agent-mode', syncAgentBar);
   window.addEventListener('agzos:ai-profiles-changed', refreshProfiles);
   window.addEventListener('agzos:ai-panel-settings', applyAiPanelSettings);
@@ -1201,5 +1768,6 @@ export function setupAI() {
   syncAgentBar();
   observeSize();
   refreshProfiles();
+  refreshSkills();
   loadHistory();
 }

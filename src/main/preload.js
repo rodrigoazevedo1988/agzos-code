@@ -96,6 +96,10 @@ contextBridge.exposeInMainWorld('agzos', {
     detectOllama: () => ipcRenderer.invoke('ai:detectOllama'),
     chat: (requestId, payload) => ipcRenderer.invoke('ai:chat', requestId, payload),
     cancel: (requestId) => ipcRenderer.invoke('ai:cancel', requestId),
+    // Anexos: save({ name, bytes }) → { ok, attachment | error }; read(paths?) → [{ name, bytes | error }]
+    // (sem caminhos abre o diálogo nativo; caminhos do Explorer passam pelo guard).
+    saveAttachment: (file) => ipcRenderer.invoke('ai:attach:save', file),
+    readAttachments: (paths) => ipcRenderer.invoke('ai:attach:read', paths),
     onChunk: (cb) => {
       const handler = (_event, id, text) => cb(id, text);
       ipcRenderer.on('ai:chunk', handler);
@@ -120,10 +124,26 @@ contextBridge.exposeInMainWorld('agzos', {
     cancel: (requestId) => ipcRenderer.invoke('agent:cancel', requestId),
     undo: (checkpointId) => ipcRenderer.invoke('agent:undo', checkpointId),
     setMode: (mode) => ipcRenderer.invoke('agent:setMode', mode),
+    // "Enviar agora": { id?, content, attachments? } → true se entra na execução em andamento.
+    steer: (requestId, payload) => ipcRenderer.invoke('agent:steer', requestId, payload),
+    // Skills (modos): lista { skills, warnings, userDir, projectDir }; nova skill → caminho do arquivo.
+    skills: (payload) => ipcRenderer.invoke('agent:skills', payload),
+    newSkill: () => ipcRenderer.invoke('agent:skills:new'),
+    openSkillsFolder: () => ipcRenderer.invoke('agent:skills:openFolder'),
     onEvent: (cb) => {
       const handler = (_event, id, evt) => cb(id, evt);
       ipcRenderer.on('agent:event', handler);
       return () => ipcRenderer.removeListener('agent:event', handler);
+    },
+    // Ferramentas read_terminal/get_problems: o main pergunta, o renderer responde (cb pode ser async).
+    onQuery: (cb) => {
+      const handler = async (_event, id, what, args) => {
+        let result = null;
+        try { result = await cb(what, args); } catch { result = null; }
+        ipcRenderer.invoke('agent:query:reply', id, result).catch(() => {});
+      };
+      ipcRenderer.on('agent:query', handler);
+      return () => ipcRenderer.removeListener('agent:query', handler);
     },
   },
 
@@ -204,6 +224,13 @@ contextBridge.exposeInMainWorld('agzos', {
     // Histórico por workspace: { conversations: [{ id, title, updatedAt, messages }], activeId }
     loadHistory: (root) => ipcRenderer.invoke('chat:history:load', root),
     saveHistory: (root, history) => ipcRenderer.invoke('chat:history:save', root, history),
+    // Índice global (todas as pastas) e operações por chave do arquivo (hash da pasta).
+    allHistory: (options) => ipcRenderer.invoke('chat:history:all', options),
+    getConversation: (key, id) => ipcRenderer.invoke('chat:history:get', key, id),
+    renameConversation: (key, id, title) => ipcRenderer.invoke('chat:history:rename', key, id, title),
+    deleteConversation: (key, id) => ipcRenderer.invoke('chat:history:delete', key, id),
+    // Exportar: format 'md' | 'pdf' → caminho salvo ou null (cancelado).
+    exportConversation: (key, id, format) => ipcRenderer.invoke('chat:export', key, id, format),
   },
 
   update: {

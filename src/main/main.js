@@ -302,10 +302,16 @@ require('./ipc/secrets').register(ipcMain, { store: secretStore });
 // Git + GitHub: contas (tokens só no main) e operações git do sistema.
 const githubAccounts = require('./ipc/github').register(ipcMain, { guard, settingsStore, store: secretStore, app });
 require('./ipc/git').register(ipcMain, { guard, accounts: githubAccounts });
-const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
+// Anexos do Agzos IA (imagens, texto, PDF) em userData/chat-attachments.
+const { createAttachmentStore } = require('./ai/attachments');
+const chatAttachments = createAttachmentStore({ dir: path.join(app.getPath('userData'), 'chat-attachments') });
+const aiSessions = require('./ipc/ai').register(ipcMain, {
+  settingsStore, store: secretStore, attachments: chatAttachments, guard, dialog,
+  getMainWindow: () => mainWindow, userDataDir: app.getPath('userData'),
+});
 // Agente (tools no workspace): chave da IA só no main; raiz via guard.
 const agentSessions = require('./ipc/agent').register(ipcMain, {
-  settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData'),
+  settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData'), attachments: chatAttachments, shell,
   getWindowRoot: (sender) => workspaces.rootFor(sender.id),
 });
 // Módulos nativos: um processo utilitário compartilhado, criado sob demanda.
@@ -314,7 +320,10 @@ const modulesWorker = createWorkerHost({ script: path.join(__dirname, 'modules/w
 const modulesDeps = { guard, settingsStore, userDataDir: app.getPath('userData'), workerHost: modulesWorker };
 require('./ipc/broom').register(ipcMain, modulesDeps);
 require('./ipc/envvault').register(ipcMain, modulesDeps);
-require('./ipc/chat-history').register(ipcMain, deps);
+require('./ipc/chat-history').register(ipcMain, {
+  ...deps, BrowserWindow, attachments: chatAttachments,
+  getRecentFolders: () => settingsStore.load().recentFolders || [],
+});
 require('./ipc/app-info').register(ipcMain, deps);
 const updater = require('./updater').createUpdater({
   app,
