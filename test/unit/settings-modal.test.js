@@ -37,3 +37,12 @@ test('settings-modal contempla as 9 categorias e filtro @modified', () => {
   assert.ok(content.includes('@modified'), 'deve suportar filtro de configurações modificadas @modified');
   assert.ok(content.includes('btn-toggle-settings-json'), 'deve suportar alternância para modo JSON');
 });
+
+test('settings-modal: "Confirmar antes de sair" (window.confirmBeforeQuit) em Aparência, padrão true', () => {
+  const content = fs.readFileSync(path.join(__dirname, '../../src/renderer/scripts/settings-modal.js'), 'utf-8');
+  const m = /key: 'window\.confirmBeforeQuit',[\s\S]*?categories: \[([^\]]*)\][\s\S]*?type: '(\w+)'/.exec(content);
+  assert.ok(m, 'item window.confirmBeforeQuit no SETTINGS_DEF');
+  assert.match(m[1], /'appearance'/);
+  assert.equal(m[2], 'boolean');
+  assert.match(content, /window: \{\s*confirmBeforeQuit: true,?\s*\}/, 'DEFAULTS.window.confirmBeforeQuit');
+});

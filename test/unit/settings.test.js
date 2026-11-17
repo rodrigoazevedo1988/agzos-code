@@ -227,3 +227,17 @@ test('modules: settings:save preserva modules ao salvar outra seção', () => {
   assert.equal(saved2.modules.envVault.revealTimeoutSec, 10);
   assert.equal(saved2.modules.broom.enabled, true);
 });
+
+test('window.confirmBeforeQuit: padrão true; inválido volta ao padrão; false mantido', () => {
+  const { normalizeWindow } = require('../../src/main/lib/settings');
+  assert.deepEqual(DEFAULT_SETTINGS.window, { confirmBeforeQuit: true });
+  assert.equal(loadSettings(tmpFile()).window.confirmBeforeQuit, true);
+  const p = tmpFile();
+  fs.writeFileSync(p, JSON.stringify({ window: { confirmBeforeQuit: 'sim' } }));
+  assert.equal(loadSettings(p).window.confirmBeforeQuit, true);
+  fs.writeFileSync(p, JSON.stringify({ window: { confirmBeforeQuit: false } }));
+  assert.equal(loadSettings(p).window.confirmBeforeQuit, false);
+  fs.writeFileSync(p, JSON.stringify({ window: 'lixo' }));
+  assert.deepEqual(loadSettings(p).window, { confirmBeforeQuit: true });
+  assert.deepEqual(normalizeWindow(undefined), { confirmBeforeQuit: true });
+});

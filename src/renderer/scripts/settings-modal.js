@@ -55,6 +55,9 @@ const DEFAULTS = {
     sidebarPosition: 'left',
     statusBarVisible: true,
   },
+  window: {
+    confirmBeforeQuit: true,
+  },
   terminal: {
     fontSize: 13,
     scrollback: 1000,
@@ -214,6 +217,13 @@ const SETTINGS_DEF = [
       const statusEl = document.getElementById('status-perf');
       if (statusEl) statusEl.textContent = perfLabel(val);
     },
+  },
+  {
+    key: 'window.confirmBeforeQuit',
+    title: 'Janela: Confirmar ao Sair',
+    desc: 'Pergunta antes de sair do app (Ctrl+Q / Arquivo › Sair). Fechar uma janela não pergunta; com arquivos não salvos, sempre pergunta.',
+    categories: ['appearance'],
+    type: 'boolean',
   },
   {
     key: 'editor.tabSize',

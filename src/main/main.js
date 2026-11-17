@@ -155,8 +155,17 @@ function createMainWindow() {
 /*  Menu nativo (atalhos)                                                      */
 /* -------------------------------------------------------------------------- */
 function buildAppMenu() {
+  // Sair passa pela confirmação (requestQuit), inclusive Cmd+Q no macOS.
+  const quitItem = { label: `Sair do ${APP_NAME}`, accelerator: 'CmdOrCtrl+Q', click: () => quitWithConfirm() };
   return Menu.buildFromTemplate([
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac ? [{
+      label: APP_NAME,
+      submenu: [
+        { role: 'about' }, { type: 'separator' }, { role: 'services' }, { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' },
+        quitItem,
+      ],
+    }] : []),
     {
       label: 'Arquivo',
       submenu: [
@@ -183,7 +192,7 @@ function buildAppMenu() {
           click: () => sendToTarget('menu:open-settings'),
         },
         { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' },
+        isMac ? { role: 'close' } : quitItem,
       ],
     },
     {
@@ -284,10 +293,42 @@ const workspaces = require('./ipc/workspace').register(ipcMain, {
   },
   clearRecentFolders: () => settingsStore.save({ ...settingsStore.load(), recentFolders: [] }),
 });
+// Ctrl+Q / Arquivo › Sair: confirma antes (lib/quit-confirm.js). Fechar uma janela não pergunta.
+const { confirmQuit } = require('./lib/quit-confirm');
+const DIRTY_SCRIPT = `(() => { const f = window.AgzosState && window.AgzosState.files; if (!f) return 0;
+  let n = 0; for (const x of f.values()) if (x && x.dirty) n++; return n; })()`;
+async function countDirtyFiles() {
+  const wins = BrowserWindow.getAllWindows().filter((w) => w !== splashWindow && !w.isDestroyed());
+  const counts = await Promise.all(wins.map((w) => Promise.race([
+    w.webContents.executeJavaScript(DIRTY_SCRIPT, true).catch(() => 0),
+    new Promise((r) => setTimeout(() => r(0), 1500)),
+  ])));
+  return counts.reduce((a, n) => a + (Number(n) || 0), 0);
+}
+let quitPrompt = null; // uma pergunta por vez (Ctrl+Q repetido não empilha diálogos)
+function requestQuit(parent) {
+  if (quitPrompt) return quitPrompt.then(() => false);
+  quitPrompt = confirmQuit({
+    // Lido na hora da chamada: os e2e substituem dialog.showMessageBox.
+    dialog: { showMessageBox: (win, opts) => (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)) },
+    parent: parent || targetWindow(),
+    getSettings: () => settingsStore.load(),
+    disableConfirm: () => {
+      const s = settingsStore.load();
+      settingsStore.save({ ...s, window: { ...(s.window || {}), confirmBeforeQuit: false } });
+    },
+    countDirty: countDirtyFiles,
+  }).finally(() => { quitPrompt = null; });
+  return quitPrompt;
+}
+async function quitWithConfirm(parent) {
+  if (await requestQuit(parent)) app.quit();
+}
 require('./ipc/window').register(ipcMain, {
   createWindow: () => createMainWindow(),
   fromWebContents: (wc) => BrowserWindow.fromWebContents(wc),
   quit: () => app.quit(),
+  confirmQuit: (win) => requestQuit(win),
 });
 // Só em testes E2E: libera uma pasta temporária sem passar pelo diálogo nativo.
 // Sem id: em todas as janelas abertas (compatível com os testes de 1 janela);

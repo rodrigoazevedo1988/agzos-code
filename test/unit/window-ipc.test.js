@@ -103,3 +103,22 @@ test('agent getRoot: sem payload.root usa a pasta da janela (não a última glob
     fs.rmSync(b, { recursive: true, force: true });
   }
 });
+
+test('app:quit pergunta antes (confirmQuit) e só sai se confirmado', async () => {
+  const { register } = require('../../src/main/ipc/window');
+  const { handlers, ipcMain } = fakeIpc();
+  const calls = [];
+  let answer = false;
+  const win = { id: 'w7' };
+  register(ipcMain, {
+    createWindow: () => {},
+    fromWebContents: (wc) => (wc.id === 7 ? win : null),
+    quit: () => calls.push('quit'),
+    confirmQuit: async (parent) => { calls.push(['ask', parent]); return answer; },
+  });
+  assert.equal(await handlers['app:quit']({ sender: fakeSender(7) }), false);
+  assert.deepEqual(calls, [['ask', win]]);
+  answer = true;
+  assert.equal(await handlers['app:quit']({ sender: fakeSender(7) }), true);
+  assert.deepEqual(calls.slice(1), [['ask', win], 'quit']);
+});
