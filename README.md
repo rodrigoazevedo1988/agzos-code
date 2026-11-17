@@ -26,11 +26,11 @@
 
 **Agzos Code** é um editor de código desktop construído com [Electron](https://www.electronjs.org/) e [Monaco Editor](https://microsoft.github.io/monaco-editor/), o componente de edição também usado pelo VS Code. A base é um aplicativo próprio, sem fork do Code-OSS e sem suporte à API de extensões do VS Code ([ADR-0001](docs/decisoes/ADR-0001-base-do-editor.md)).
 
-Versão atual: **1.1.0** — editor completo com barra de menus e várias janelas, IA agêntica com modos e skills, Módulos Agzos nativos (Vassoura de Produção e Cofre .env), visualizadores de PDF/Office/mídia, Git/GitHub, SSH, terminal multi-sessão e atualização automática.
+Versão atual: **1.2.0** — editor completo com barra de menus e várias janelas, **pasta remota via SSH**, IA agêntica com modos, skills e compactação, Módulos Agzos nativos (Vassoura, Cofre .env, Snippets, Git Slider, Formatador, Erros na Linha, Marca-texto, Árvore, Snap, Ao Vivo…), visualizadores de PDF/Office/mídia, Git/GitHub, terminal multi-sessão e atualização automática.
 
 **Diferencial intencional:** desenhado para o ecossistema Agzos (IA, ferramentas internas, identidade visual) e com privacidade por padrão (telemetria desligada, segredos no cofre do sistema).
 
-## 🎯 Funcionalidades (v1.1.0)
+## 🎯 Funcionalidades (v1.2.0)
 
 ### Editor
 - **Monaco** com IntelliSense de TS/JS/JSON/CSS/HTML (workers), multi-cursor, minimap, bracket pair colorization, formatar (`Alt+Shift+F`), quebra de linha (`Alt+Z`), localizar/substituir, ir para linha.
@@ -54,6 +54,14 @@ Versão atual: **1.1.0** — editor completo com barra de menus e várias janela
 - Hub em `Ctrl+Shift+X`.
 - **Vassoura de Produção:** remove `console.*`, comentários, imports não usados e código morto, com preview em diff, Desfazer e contador na barra de status.
 - **Cofre .env:** valores mascarados, comparação com `.env.example`, detecção de segredos e **bloqueio de commit com segredo**, com hook pre-commit opcional.
+- **Snippets:** 22 componentes Agzos (HTML + Tailwind) com variáveis da marca; clique ou arraste para o editor (vira JSX em `.jsx/.tsx`).
+- **Git Slider + histórico local:** linha do tempo do arquivo (`Ctrl+Alt+H`) com commits e versões locais, diff e restaurar.
+- **Erros na Linha, Erros Claros, Marca-texto e Formatador** (estilo Prettier, sem executar código do projeto).
+- **Árvore** (estrutura de pastas para README), **Snap** (imagem do código) e **Ao Vivo** (servidor local que recarrega o navegador).
+
+### Pasta remota via SSH
+- Abra uma pasta de um servidor (alias do `~/.ssh/config` ou `usuario@host`): explorer, editor, busca, terminal, Git e agente rodam no servidor.
+- Chave do servidor conferida no `known_hosts`; senha só no cofre do sistema e só com "Lembrar".
 
 ### Agzos IA
 - **Painel acoplável** à esquerda, direita (padrão) ou embaixo, redimensionável; trocar de posição não perde a conversa nem o streaming.
@@ -67,6 +75,7 @@ Versão atual: **1.1.0** — editor completo com barra de menus e várias janela
 - **Fila de mensagens** durante a execução, com "Enviar agora" sem cancelar o que está rodando.
 - **Anexos:** imagens (visão), arquivos de texto/código e PDF; colar print com `Ctrl+V`.
 - **Histórico** de todas as conversas, com busca, e **exportar** em Markdown ou PDF.
+- **Compactar conversa** (`/compactar` ou automático) e **limite de passos** configurável com botão Continuar.
 - **Personalização:** fonte, densidade, avatar, tecla de envio, contexto padrão.
 
 ### Git e GitHub
@@ -105,13 +114,13 @@ Detalhes em [docs/plano/ROADMAP.md](docs/plano/ROADMAP.md) e no [CHANGELOG](CHAN
 
 ## 🚀 Quick start
 
-### Downloads — v1.1.0
+### Downloads — v1.2.0
 
-- [Windows — instalador](https://code.rsolutionsbr.com/release/Agzos%20Code%20Setup%201.1.0.exe)
-- [Windows — portátil](https://code.rsolutionsbr.com/release/Agzos%20Code%201.1.0.exe)
-- [Linux — AppImage](https://code.rsolutionsbr.com/release/Agzos%20Code-1.1.0.AppImage)
-- [Linux — .deb](https://code.rsolutionsbr.com/release/agzos-code_1.1.0_amd64.deb)
-- [Linux — .rpm](https://code.rsolutionsbr.com/release/agzos-code-1.1.0.x86_64.rpm)
+- [Windows — instalador](https://code.rsolutionsbr.com/release/Agzos%20Code%20Setup%201.2.0.exe)
+- [Windows — portátil](https://code.rsolutionsbr.com/release/Agzos%20Code%201.2.0.exe)
+- [Linux — AppImage](https://code.rsolutionsbr.com/release/Agzos%20Code-1.2.0.AppImage)
+- [Linux — .deb](https://code.rsolutionsbr.com/release/agzos-code_1.2.0_amd64.deb)
+- [Linux — .rpm](https://code.rsolutionsbr.com/release/agzos-code-1.2.0.x86_64.rpm)
 
 Builds de macOS dependem de um host macOS e não acompanham esta release. Enquanto o app não estiver assinado/notarizado, o macOS informa novas versões para download manual.
 
