@@ -275,7 +275,7 @@ const { createWindowGuards } = require('./lib/window-guards');
 const windowGuards = createWindowGuards();
 const { guardFor } = windowGuards;
 ipcMain.on('window:fileToken', (evt) => { evt.returnValue = windowGuards.tokenFor(evt.sender); });
-require('./ipc/fs').register(ipcMain, { guardFor, shell });
+require('./ipc/fs').register(ipcMain, { guardFor, shell, getFilesExclude: () => settingsStore?.load?.().files?.exclude });
 require('./ipc/dialog').register(ipcMain, { ...deps, guardFor });
 require('./ipc/term').register(ipcMain, { guardFor });
 require('./ipc/ssh').register(ipcMain, { guardFor });

@@ -331,6 +331,13 @@ const SETTINGS_DEF = [
     ],
   },
   {
+    key: 'files.exclude',
+    title: 'Arquivos: Ocultar no Explorer',
+    desc: 'Nomes de arquivos e pastas que não aparecem no Explorer nem no Quick Open, separados por vírgula. Arquivos com ponto (.gitignore, .env, .github…) aparecem, exceto os desta lista.',
+    categories: ['commonlyUsed', 'editor'],
+    type: 'list',
+  },
+  {
     key: 'editor.renderWhitespace',
     title: 'Editor: Exibir Caracteres em Branco',
     desc: 'Define como espaços e tabulações são renderizados.',

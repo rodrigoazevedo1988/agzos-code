@@ -3,6 +3,7 @@
  * Sem dependência do Electron: recebe o caminho por parâmetro.
  */
 
+const { DEFAULT_FILES_EXCLUDE, normalizeFilesExclude } = require('./files-exclude');
 const fs = require('fs');
 const path = require('path');
 
@@ -37,6 +38,8 @@ const DEFAULT_SETTINGS = {
   aiSkills: { trusted: [] },
   // Contas GitHub (só metadados; tokens no cofre em github.<id>). Dono: ipc/github.js.
   github: { accounts: [], defaultAccountId: null, repoAccounts: {} },
+  // Nomes ocultos no Explorer/Quick Open (como files.exclude do VS Code).
+  files: { exclude: [...DEFAULT_FILES_EXCLUDE] },
   editor: {
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace',
     tabSize: 2,
@@ -423,6 +426,7 @@ function loadSettings(filePath) {
   merged.aiSkills = normalizeAiSkills(parsed.aiSkills);
   merged.modules = normalizeModules(parsed.modules);
   merged.window = normalizeWindow(parsed.window);
+  merged.files = { ...(isPlainObject(parsed.files) ? parsed.files : {}), exclude: normalizeFilesExclude(parsed.files?.exclude) };
   return merged;
 }
 
