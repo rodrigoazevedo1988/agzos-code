@@ -35,8 +35,9 @@ function readHosts(home) {
   }).filter((h) => isSafeAlias(h.host));
 }
 
-function register(ipcMain, { manager, home = () => os.homedir() }) {
+function register(ipcMain, { manager, home = () => os.homedir(), createWindow = null }) {
   const pending = new Map(); // id → { ownerId, resolve }
+  const pendingOpen = new Map(); // webContents.id da janela nova → URI a abrir
   const tracked = new Set();
 
   function track(sender) {
@@ -137,6 +138,25 @@ function register(ipcMain, { manager, home = () => os.homedir() }) {
     } catch (err) {
       return fail(err);
     }
+  });
+
+  // "Abrir em nova janela": a janela nova pede a URI no boot e conecta por conta própria
+  // (uma conexão por janela; diálogos aparecem nela).
+  ipcMain.handle('remote:openInNewWindow', (_evt, uri) => {
+    const r = parseRemoteUri(uri);
+    if (!r || typeof createWindow !== 'function') return false;
+    const win = createWindow();
+    const id = win?.webContents?.id;
+    if (id === undefined) return false;
+    pendingOpen.set(id, toRemoteUri(r.authority, r.path));
+    return true;
+  });
+
+  ipcMain.handle('remote:takePending', (evt) => {
+    const id = evt?.sender?.id;
+    const uri = pendingOpen.get(id) || null;
+    pendingOpen.delete(id);
+    return uri;
   });
 
   return { promptsFor };

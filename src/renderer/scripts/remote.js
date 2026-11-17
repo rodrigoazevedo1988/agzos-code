@@ -5,10 +5,15 @@
  *   "Lembrar no cofre do sistema" e confirmação de host key desconhecida.
  * - Host key divergente: aviso de possível ataque, só com "Fechar" (sem continuar).
  * - Faixa no topo quando a conexão cai: reconexão automática e botão "Reconectar".
+ * - "Abrir pasta remota via SSH": host → navegador de pastas (SFTP) → abrir aqui ou
+ *   em nova janela. Título e status bar mostram `SSH: <host>`.
+ * - Arquivos remotos abertos: mudança externa conferida por stat a cada 5 s.
  */
 
 import { toast } from './toast.js';
 import { openGitDialog } from './git-dialog.js';
+import { showPicker } from './command-palette.js';
+import { isRemotePath, remoteAuthority, remoteFolderLabel } from './remote-paths.js';
 
 const api = () => window.agzos?.remote;
 const State = window.AgzosState;
@@ -145,10 +150,153 @@ function renderState(st) {
   }
 }
 
+/* --------------------------------------------------------------------------
+   Abrir pasta remota
+   -------------------------------------------------------------------------- */
+const TARGET_HINT = 'usuario@host ou usuario@host:porta';
+const connected = new Map(); // authority → { label, home, homeUri }
+
+async function loadHosts() {
+  try {
+    const res = await window.agzos?.ssh?.hosts();
+    return Array.isArray(res?.hosts) ? res.hosts : [];
+  } catch {
+    return [];
+  }
+}
+
+async function promptTarget() {
+  return openGitDialog({
+    id: 'remote-target-dialog',
+    title: 'Abrir pasta remota via SSH',
+    icon: 'server',
+    description: 'Conecta por SSH/SFTP (chaves do ~/.ssh e agente SSH primeiro; senha se o host pedir).',
+    submitLabel: 'Conectar',
+    fields: [{ name: 'target', type: 'text', label: 'Destino', placeholder: 'usuario@host:22', required: true, autofocus: true, hint: TARGET_HINT }],
+    onSubmit: async ({ target }) => {
+      const t = await window.agzos?.ssh?.parseTarget(String(target || ''));
+      if (!t) throw new Error(`Formato inválido. Use ${TARGET_HINT}.`);
+      return String(target).trim();
+    },
+  });
+}
+
+/** Seletor de host → conecta → navegador de pastas. */
+export async function openRemoteFolderFlow() {
+  const hosts = await loadHosts();
+  const items = hosts.map((h) => ({
+    id: `remote-host:${h.host}`,
+    label: h.host,
+    description: h.hostName ? `${h.user ? `${h.user}@` : ''}${h.hostName}${h.port ? `:${h.port}` : ''}` : '',
+    icon: 'server',
+    run: () => connectAndBrowse(h.host),
+  }));
+  items.push({
+    id: 'remote-host:typed', label: 'Digitar destino…', description: TARGET_HINT, icon: 'plug',
+    run: async () => { const t = await promptTarget(); if (t) await connectAndBrowse(t); },
+  });
+  showPicker({ title: 'Escolha o host da pasta remota', items });
+}
+
+async function connectAndBrowse(target) {
+  toast(`Conectando a ${target}…`, 'info', 2000);
+  const res = await connectRemote(target);
+  if (!res) return;
+  connected.set(res.authority, res);
+  await browse(res.authority, res.home);
+}
+
+async function browse(authority, dir) {
+  const res = await api()?.browse(authority, dir);
+  if (!res?.ok) { toast(res?.error || 'Não foi possível listar a pasta remota.', 'error', 6000); return; }
+  const items = [
+    { id: 'remote-open-here', label: `Abrir esta pasta: ${res.path}`, description: 'Nesta janela', icon: 'folder-open', run: () => openRemoteFolder(res.uri) },
+    { id: 'remote-open-new', label: 'Abrir em nova janela', description: res.path, icon: 'app-window', run: () => api()?.openInNewWindow(res.uri) },
+  ];
+  if (res.parent) items.push({ id: 'remote-up', label: '..', description: 'Pasta acima', icon: 'arrow-up', run: () => browse(authority, res.parent) });
+  for (const d of res.dirs) {
+    items.push({ id: `remote-dir:${d.name}`, label: d.name, description: '', icon: 'folder-closed', run: () => browse(authority, d.path) });
+  }
+  showPicker({ title: `SSH: ${connected.get(authority)?.label || authority} — ${res.path}`, items });
+}
+
+/** Garante a conexão desta janela com o host de uma URI ssh:// (recentes, nova janela). */
+export async function ensureConnectedFor(uri) {
+  const authority = remoteAuthority(uri);
+  if (!authority) return false;
+  const list = (await api()?.list()) || [];
+  if (list.some((c) => c.authority === authority && c.state === 'connected')) return true;
+  const res = await connectRemote(authority);
+  if (res) connected.set(res.authority, res);
+  return !!res;
+}
+
+export async function openRemoteFolder(uri) {
+  const m = await import('./file-tree.js');
+  await m.openWorkspace(uri);
+  const cp = await import('./command-palette.js');
+  cp.invalidateQuickOpenCache?.();
+}
+
+/* --------------------------------------------------------------------------
+   Título, status bar e mudança externa (stat a cada 5 s)
+   -------------------------------------------------------------------------- */
+function syncChrome() {
+  const root = State.workspaceRoot;
+  const remote = isRemotePath(root);
+  document.body.classList.toggle('remote-workspace', remote);
+  if (remote) {
+    const label = remoteFolderLabel(root, connected);
+    const base = document.title.replace(/ — SSH: .*? — Agzos Code$/, ' — Agzos Code');
+    document.title = base.endsWith(' — Agzos Code') ? base.replace(/ — Agzos Code$/, ` — SSH: ${label.host} — Agzos Code`) : `${label.folder} — SSH: ${label.host} — Agzos Code`;
+  }
+  window.dispatchEvent(new CustomEvent('agzos:remote-workspace', { detail: { root, remote } }));
+}
+
+const POLL_MS = 5000;
+const baselines = new Map(); // caminho → mtime visto no host
+
+async function statOf(p) {
+  try { return await window.agzos.fs.stat(p); } catch { return null; }
+}
+
+async function pollExternalChanges() {
+  const paths = [...State.files.keys()].filter(isRemotePath);
+  for (const key of [...baselines.keys()]) if (!State.files.has(key)) baselines.delete(key);
+  for (const p of paths) {
+    const st = await statOf(p);
+    if (!st) continue;
+    const prev = baselines.get(p);
+    baselines.set(p, st.mtime);
+    if (prev === undefined || prev === st.mtime) continue;
+    const ed = await import('./editor.js');
+    await ed.handleExternalChange(p);
+  }
+}
+
 export function setupRemote() {
   const r = api();
   if (!r) return;
   r.onPrompt(handlePrompt);
   r.onState(renderState);
-  window.AgzosRemote = { connect: connectRemote, state: () => State.remote || null };
+  window.addEventListener('agzos:workspace-changed', syncChrome);
+  window.addEventListener('agzos:active-file-changed', () => { if (isRemotePath(State.workspaceRoot)) syncChrome(); });
+  // Depois de salvar, o mtime novo do host vira a base (não é mudança externa).
+  window.addEventListener('agzos:file-saved', async (e) => {
+    const p = e.detail?.path;
+    if (!isRemotePath(p)) return;
+    const st = await statOf(p);
+    if (st) baselines.set(p, st.mtime);
+  });
+  setInterval(() => { pollExternalChanges().catch(() => {}); }, POLL_MS);
+  window.AgzosRemote = {
+    connect: connectRemote,
+    openFolder: openRemoteFolder,
+    openFlow: openRemoteFolderFlow,
+    pollNow: pollExternalChanges,
+  };
+  // Janela aberta por "Abrir em nova janela": conecta aqui e abre a pasta.
+  r.takePending?.().then(async (uri) => {
+    if (uri && await ensureConnectedFor(uri)) await openRemoteFolder(uri);
+  }).catch(() => {});
 }

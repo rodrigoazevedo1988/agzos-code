@@ -616,7 +616,8 @@ async function newFolderInRoot() {
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
 
-function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }
+// Pasta remota (ssh://…) usa sempre '/'.
+function sep() { return String(State.workspaceRoot || '').startsWith('ssh://') || !navigator.userAgent.includes('Windows') ? '/' : '\\'; }
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);

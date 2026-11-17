@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('agzos', {
     delete: (p) => ipcRenderer.invoke('fs:delete', p),
     rename: (a, b) => ipcRenderer.invoke('fs:rename', a, b),
     homeDir: () => ipcRenderer.invoke('fs:homeDir'),
+    // Busca no host da pasta remota → { hits: [{ file, line, text }] } ({ unsupported } em pasta local).
+    searchText: (root, query, opts) => ipcRenderer.invoke('fs:searchText', root, query, opts),
     openPath: (p) => ipcRenderer.invoke('fs:openPath', p),
     reveal: (p) => ipcRenderer.invoke('fs:reveal', p),
     // Recebe um File de um drop real; o caminho sai do webUtils (o renderer não o forja).
@@ -88,6 +90,8 @@ contextBridge.exposeInMainWorld('agzos', {
     disconnect: (authority) => ipcRenderer.invoke('remote:disconnect', authority),
     list: () => ipcRenderer.invoke('remote:list'),
     browse: (authority, dir) => ipcRenderer.invoke('remote:browse', authority, dir),
+    openInNewWindow: (uri) => ipcRenderer.invoke('remote:openInNewWindow', uri),
+    takePending: () => ipcRenderer.invoke('remote:takePending'),
     onState: (cb) => {
       const handler = (_e, st) => cb(st);
       ipcRenderer.on('remote:state', handler);

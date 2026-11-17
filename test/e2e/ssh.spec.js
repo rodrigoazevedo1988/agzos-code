@@ -62,18 +62,19 @@ test('SSH: botão remoto, seletor, conectar, adicionar host e abrir config', asy
     expect(await page.evaluate(() => document.querySelector('#statusbar .status-left').firstElementChild.id)).toBe('status-remote-host');
     await expect(btn).not.toHaveClass(/connected/);
 
-    // Seletor: hosts do config + Include, curingas fora, "Em breve" desabilitado.
+    // Seletor: hosts do config + Include, curingas fora; pasta remota habilitada (1.2.0).
     await openPicker(page);
     const items = page.locator('#cmd-list li');
     const ids = await items.evaluateAll((els) => els.map((e) => e.dataset.pickId));
     expect(ids).toEqual(['host:extra', 'host:prod', 'connect', 'add', 'config', 'folder']);
     await expect(page.locator('li[data-pick-id="host:prod"]')).toContainText(`deploy@127.0.0.1:${port}`);
     const folder = page.locator('li[data-pick-id="folder"]');
-    await expect(folder).toHaveClass(/disabled/);
-    await expect(folder).toHaveAttribute('aria-disabled', 'true');
-    await expect(folder).toContainText('Em breve (1.2.0)');
+    await expect(folder).not.toHaveClass(/disabled/);
+    await expect(folder).not.toContainText('Em breve');
+    // Abre o seletor de host da pasta remota (o fluxo completo está em remote.spec.js).
     await folder.click();
-    await expect(page.locator('#cmd-overlay')).toBeVisible(); // não executa nem fecha
+    await expect(page.locator('#cmd-input')).toHaveAttribute('placeholder', 'Escolha o host da pasta remota');
+    await expect(page.locator('li[data-pick-id="remote-host:prod"]')).toBeVisible();
     await page.keyboard.press('Escape');
 
     // Conectar a um host…: valida e abre terminal SSH com args em array.

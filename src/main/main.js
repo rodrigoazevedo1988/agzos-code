@@ -369,7 +369,8 @@ const remoteManager = createRemoteManager({
     if (wc && !wc.isDestroyed()) wc.send('remote:state', st);
   },
 });
-require('./ipc/remote').register(ipcMain, { manager: remoteManager });
+require('./workspace/provider-for').setRemoteManager(remoteManager);
+require('./ipc/remote').register(ipcMain, { manager: remoteManager, createWindow: () => createMainWindow() });
 // Git + GitHub: contas (tokens só no main) e operações git do sistema.
 const githubAccounts = require('./ipc/github').register(ipcMain, { guardFor, settingsStore, store: secretStore, app });
 require('./ipc/git').register(ipcMain, { guardFor, accounts: githubAccounts });
@@ -411,7 +412,11 @@ ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
-  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({ guardForHost: windowGuards.guardForToken }));
+  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({
+    guardForHost: windowGuards.guardForToken,
+    // Pasta remota: stream SFTP pela conexão da janela dona do token.
+    providerForHost: (host, p) => require('./workspace/provider-for').providerFor(p, windowGuards.ownerForToken(host)),
+  }));
 
   // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
   const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);
