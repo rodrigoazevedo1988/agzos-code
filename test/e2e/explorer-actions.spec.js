@@ -83,3 +83,21 @@ test('pasta linkada (symlink/junction) com vídeos expande no Explorer', async (
     fs.rmSync(ws, { recursive: true, force: true });
   }
 });
+
+test('erro ao ler pasta aparece em aviso (não fica em silêncio)', async () => {
+  const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-err-')));
+  fs.mkdirSync(path.join(ws, 'videos'));
+  fs.writeFileSync(path.join(ws, 'videos', 'a.mp4'), 'x');
+  const { app, page } = await launchApp({ settings: { welcomeSeen: true, onboardingCompleted: true } });
+  try {
+    await app.evaluate((_e, d) => global.__agzosAllowRoot(d), ws);
+    await page.evaluate(async (d) => { const m = await import('./scripts/file-tree.js'); await m.openWorkspace(d); }, ws);
+    await expect(page.locator('.tree-row', { hasText: 'videos' })).toBeVisible();
+    fs.rmSync(path.join(ws, 'videos'), { recursive: true, force: true });
+    await page.locator('.tree-row', { hasText: 'videos' }).first().click();
+    await expect(page.locator('.toast.error')).toContainText('Não foi possível abrir a pasta videos');
+  } finally {
+    await app.close();
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});

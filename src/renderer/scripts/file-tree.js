@@ -107,9 +107,17 @@ function buildNode(node, depth) {
 
   // Ícone estilizado conforme tema selecionado
   const currentTheme = State.settings?.iconTheme || 'lucide-color';
-  const icon = node.isDirectory
-    ? renderFolderIcon(node.expanded, node.name, currentTheme)
-    : renderFileIcon(node.name, currentTheme);
+  let icon;
+  try {
+    icon = node.isDirectory
+      ? renderFolderIcon(node.expanded, node.name, currentTheme)
+      : renderFileIcon(node.name, currentTheme);
+  } catch (err) {
+    // Um ícone com problema não pode impedir a pasta de abrir.
+    console.error('[explorer] ícone', node.name, err);
+    icon = document.createElement('span');
+    icon.className = 'tree-icon';
+  }
   row.appendChild(icon);
 
   // Nome do arquivo ou pasta
@@ -212,9 +220,11 @@ async function toggleDir(node) {
   if (!node.children) {
     node.loading = true;
     try {
-      await loadChildren(node);
+      await withTimeout(loadChildren(node), LOAD_TIMEOUT_MS, 'a pasta demorou para responder');
     } catch (err) {
-      toast(`Erro ao ler diretório: ${err.message}`, 'error');
+      node.children = null;
+      console.error('[explorer] erro ao ler pasta', node.path, err);
+      toast(`Não foi possível abrir a pasta ${node.name}: ${err.message}`, 'error', 6000);
       return;
     } finally {
       node.loading = false;
@@ -223,7 +233,26 @@ async function toggleDir(node) {
   if (treeRoot !== root) return;
   node.expanded = true;
   State.expandedDirs.add(node.path);
-  render();
+  try {
+    render();
+  } catch (err) {
+    // Antes o erro de desenho sumia em silêncio e o clique parecia não fazer nada.
+    node.expanded = false;
+    State.expandedDirs.delete(node.path);
+    console.error('[explorer] erro ao exibir pasta', node.path, err);
+    toast(`Erro ao exibir a pasta ${node.name}: ${err.message}`, 'error', 6000);
+    try { render(); } catch { /* mantém a árvore anterior */ }
+  }
+}
+
+const LOAD_TIMEOUT_MS = 15000;
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /* --------------------------------------------------------------------------
