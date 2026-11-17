@@ -288,6 +288,20 @@ const SETTINGS_DEF = [
     apply: (val) => applyEditorSettings({ lineNumbers: val }),
   },
   {
+    key: 'aiAgent.maxSteps',
+    title: 'Agzos IA: Limite de Passos do Agente',
+    desc: 'Quantas ações (ler, buscar, editar, rodar comando) o agente pode fazer por pedido antes de parar e oferecer "Continuar".',
+    categories: ['ai'],
+    type: 'select',
+    options: [
+      { value: 25, label: '25 passos' },
+      { value: 50, label: '50 passos' },
+      { value: 100, label: '100 passos (padrão)' },
+      { value: 200, label: '200 passos' },
+      { value: 500, label: '500 passos' },
+    ],
+  },
+  {
     key: 'editor.renderWhitespace',
     title: 'Editor: Exibir Caracteres em Branco',
     desc: 'Define como espaços e tabulações são renderizados.',

@@ -317,6 +317,7 @@ export function applyAgentEvent(turn, evt) {
         checkpointId: evt.checkpointId || null,
         changes: Array.isArray(evt.changes) ? evt.changes : [],
         steps: Number(evt.steps) || Object.keys(turn.steps).length,
+        ...(evt.stopped ? { stopped: String(evt.stopped) } : {}),
       };
       settleSteps(turn);
       return { kind: 'done' };

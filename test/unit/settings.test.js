@@ -265,3 +265,13 @@ test('aiSkills.trusted: normaliza registros de confiança e settings:save não a
   assert.equal(saved.theme, 'monokai');
   assert.deepEqual(saved.aiSkills.trusted, [good]);
 });
+
+test('aiAgent.maxSteps: padrão 100, aceita só 25/50/100/200/500 (string vinda do select vira número)', () => {
+  const { normalizeAiAgent } = require('../../src/main/lib/settings');
+  const n = (v) => normalizeAiAgent({ maxSteps: v }).maxSteps;
+  assert.equal(n(undefined), 100);
+  assert.equal(n(200), 200);
+  assert.equal(n('500'), 500);
+  assert.equal(n(7), 100);
+  assert.equal(n('abc'), 100);
+});

@@ -473,6 +473,13 @@ export class TurnView {
     }
     const err = errorElement(t, this.ctx);
     if (err) parts.push(err);
+    // Limite de passos: oferece continuar de onde parou.
+    if (t.done?.stopped === 'step_limit' && !this.ctx.live && !t.undone && this.ctx.continueRun) {
+      parts.push(h('div', { class: 'ag-plan-actions ag-continue-actions' },
+        h('button', { type: 'button', class: 'ag-btn ag-btn-primary ag-continue', onclick: () => this.ctx.continueRun(t) },
+          icon('play', 12), h('span', { text: 'Continuar' })),
+        h('span', { class: 'ag-dim', text: 'Segue a tarefa de onde parou. O limite de passos fica em Configurações → Agzos IA.' })));
+    }
     // Modo Plan: ao terminar, oferece mandar o plano para o modo Agente.
     if (t.skill === 'plan' && t.done && !t.error && !this.ctx.live && this.ctx.runPlan) {
       parts.push(h('div', { class: 'ag-plan-actions' },

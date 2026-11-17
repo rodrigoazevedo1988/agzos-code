@@ -184,7 +184,7 @@ async function runAgent({
     const done = { type: 'done', checkpointId, changes, steps };
     if (stopped) {
       done.stopped = stopped;
-      emit({ type: 'text', delta: `\n\n_Limite de ${maxSteps} passos atingido; parei aqui._` });
+      emit({ type: 'text', delta: `\n\n_Limite de ${maxSteps} passos atingido; parei aqui. Use **Continuar** para seguir de onde parei._` });
     }
     emit(done);
     return done;

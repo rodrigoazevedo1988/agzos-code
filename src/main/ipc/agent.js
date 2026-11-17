@@ -116,6 +116,7 @@ function register(ipcMain, {
         getRoot: (payload) => getRoot(payload, sender),
         getProvider,
         getMode: () => settingsStore.load().aiAgent?.mode,
+        getMaxSteps: () => settingsStore.load().aiAgent?.maxSteps,
         getExtraTools: () => [...createRendererTools((what, args) => queryRenderer(sender, what, args)), ...getModuleTools(settingsStore.load())],
         getSkill: (id, root) => pickSkill(skillsFor(root).skills, id, { trusted: trustedSkills(), kind: 'agent' }),
         ...(attachments ? { buildContent: (text, list) => attachments.buildContent(text, list) } : {}),

@@ -1113,7 +1113,15 @@ function agentContext(message, live) {
     },
     onText: (el, isLive) => { if (!isLive) highlightCode(el); },
     runPlan: (turn) => runPlan(turn),
+    continueRun: () => continueRun(),
   };
+}
+
+/** "Continuar" depois do limite de passos: novo pedido que retoma a tarefa. */
+const CONTINUE_PROMPT = 'Continue a tarefa de onde parou. Não refaça o que já foi feito; confira o estado atual dos arquivos antes de seguir.';
+function continueRun() {
+  if (request) return;
+  runAgent(CONTINUE_PROMPT);
 }
 
 /** "Executar plano": muda para o modo Agente e põe o plano no composer para revisar e enviar. */

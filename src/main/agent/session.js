@@ -23,7 +23,7 @@ const winEnv = require('../lib/win-env');
 function createAgentSessions({
   getRoot, getProvider, getMode = () => 'edit', checkpoints, send,
   platform = process.platform, getEnv = () => winEnv.freshEnv({ platform }),
-  runCommand, shell, maxSteps, getExtraTools = () => [],
+  runCommand, shell, maxSteps, getMaxSteps = () => undefined, getExtraTools = () => [],
   buildContent = (text) => text,
   getSkill = () => null,
 }) {
@@ -96,7 +96,7 @@ function createAgentSessions({
           readOnly: !!skill?.readOnly,
           sessionAllow: allowSetFor(conversationKey),
           steering,
-          ...(maxSteps ? { maxSteps } : {}),
+          ...((Number(getMaxSteps()) || maxSteps) ? { maxSteps: Number(getMaxSteps()) || maxSteps } : {}),
         });
       } finally {
         if (active.get(requestId) === session) active.delete(requestId);

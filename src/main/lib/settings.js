@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS = {
     defaultContext: { file: true, selection: true, terminal: false },
   },
   // Agente: modo de autonomia ask | edit | auto. Dono: ipc/agent.js (agent:setMode).
-  aiAgent: { mode: 'edit' },
+  aiAgent: { mode: 'edit', maxSteps: 100 },
   // Skills de projeto confiadas pelo usuário: [{ root, path, sha256 }] (só o main grava).
   aiSkills: { trusted: [] },
   // Contas GitHub (só metadados; tokens no cofre em github.<id>). Dono: ipc/github.js.
@@ -138,10 +138,18 @@ function normalizeAiPanel(value, legacyContext) {
   };
 }
 
-/** `aiAgent.mode` inválido volta a 'edit'. */
+/** Limites de passos do agente por pedido. */
+const AGENT_STEP_LIMITS = [25, 50, 100, 200, 500];
+
+/** `aiAgent.mode` inválido volta a 'edit'; `maxSteps` fora da lista volta a 100. */
 function normalizeAiAgent(value) {
   const v = isPlainObject(value) ? value : {};
-  return { ...v, mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode };
+  const steps = Number(v.maxSteps);
+  return {
+    ...v,
+    mode: ['ask', 'edit', 'auto'].includes(v.mode) ? v.mode : DEFAULT_SETTINGS.aiAgent.mode,
+    maxSteps: AGENT_STEP_LIMITS.includes(steps) ? steps : DEFAULT_SETTINGS.aiAgent.maxSteps,
+  };
 }
 
 const MAX_TRUSTED_SKILLS = 500;
