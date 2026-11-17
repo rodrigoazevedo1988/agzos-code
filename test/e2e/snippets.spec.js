@@ -302,3 +302,51 @@ test('snippets: importar JSON pela API atualiza a view', async () => {
     await app.close();
   }
 });
+
+test('snippets: agente lista, salva e insere snippet (agente fake)', async () => {
+  const { startFakeOpenAI } = require('./fake-openai');
+  const dir = tmp('agzos-snip-agent-');
+  fs.writeFileSync(path.join(dir, 'page.html'), '<body>\n  <main></main>\n</body>\n');
+  const fake = await startFakeOpenAI({
+    delayMs: 5,
+    script: [
+      { toolCalls: [{ name: 'list_snippets', arguments: { category: 'CTA' } }] },
+      { toolCalls: [{ name: 'save_snippet', arguments: { name: 'Selo do agente', category: 'Selos', language: 'tailwind', body: '<span class="text-[{{cor_primaria}}]">{{nome_marca}}</span>' } }] },
+      { toolCalls: [{ name: 'insert_snippet', arguments: { id: 'cta-faixa', path: 'page.html', line: 2 } }] },
+      { text: 'Pronto.' },
+    ],
+  });
+  const { app, page } = await launchApp({ settings: { ...base, aiAgent: { mode: 'edit' } } });
+  try {
+    await openFolder(app, page, dir);
+    const view = await openSnippets(page);
+    await page.evaluate(async (url) => {
+      await window.agzos.ai.saveProfile({ preset: 'custom', label: 'Fake', baseUrl: `${url}/v1`, model: 'fake-1' });
+      window.dispatchEvent(new CustomEvent('agzos:ai-profiles-changed'));
+      window.AgzosAiDock.show();
+    }, fake.baseUrl);
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'agent');
+    await page.locator('#ai-input').fill('Use um snippet de CTA');
+    await page.locator('#ai-input').press('Enter');
+    const step = (tool) => page.locator(`.ag-step[data-tool="${tool}"]`);
+    await expect(step('list_snippets')).toHaveAttribute('data-status', 'ok', { timeout: 15000 });
+    await expect(step('save_snippet')).toHaveAttribute('data-status', 'ok', { timeout: 15000 });
+    await expect(step('insert_snippet')).toHaveAttribute('data-status', 'ok', { timeout: 15000 });
+
+    // A ferramenta foi oferecida ao modelo e a lista voltou só com metadados.
+    const req = fake.requests.find((r) => r.body?.messages?.some((m) => m.role === 'tool'));
+    expect(req.body.tools.map((t) => t.function.name)).toEqual(expect.arrayContaining(['list_snippets', 'insert_snippet', 'save_snippet']));
+    const listed = JSON.parse(req.body.messages.find((m) => m.role === 'tool').content.replace(/^[^{]*/, ''));
+    expect(listed.snippets.map((s) => s.id).sort()).toEqual(['cta-faixa', 'cta-final', 'cta-orcamento']);
+
+    // Snippet salvo aparece na view (aviso snippets:changed) e o arquivo recebeu o CTA.
+    await expect(view.locator('.sn-card', { hasText: 'Selo do agente' })).toHaveCount(1);
+    const text = fs.readFileSync(path.join(dir, 'page.html'), 'utf8');
+    expect(text.startsWith('<body>\n  <section class="bg-[#D10A11] text-white"')).toBe(true);
+    expect(text).toContain('  <main></main>\n</body>\n');
+  } finally {
+    await app.close();
+    await fake.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

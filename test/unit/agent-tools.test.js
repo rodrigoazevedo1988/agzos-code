@@ -251,9 +251,10 @@ test('extra: kind inválido vira command; prepare assíncrono é aceito', async 
 test('getModuleTools ignora módulo desabilitado e stub null', () => {
   const { getModuleTools } = require('../../src/main/modules/agent-tools');
   const { DEFAULT_SETTINGS } = require('../../src/main/lib/settings');
-  // registro real: clean_code e env_check, cada um só com o módulo habilitado
+  // registro real: clean_code, env_check e as de snippets, cada uma só com o módulo habilitado
   const realNames = (s) => getModuleTools(s).map((t) => t.definition.name);
-  assert.deepEqual(realNames(DEFAULT_SETTINGS).sort(), ['clean_code', 'env_check']);
+  assert.deepEqual(realNames(DEFAULT_SETTINGS).sort(), ['clean_code', 'env_check', 'insert_snippet', 'list_snippets', 'save_snippet']);
+  assert.ok(!realNames({ modules: { snippets: { enabled: false } } }).includes('insert_snippet'));
   assert.ok(!realNames({ modules: { envVault: { enabled: false } } }).includes('env_check'));
   assert.ok(!realNames({ modules: { broom: { enabled: false } } }).includes('clean_code'));
   const a = extraTool({ definition: { name: 'a_tool', description: 'a', input_schema: {} } });

@@ -9,6 +9,7 @@ const { normalizeModules } = require('../lib/settings');
 const MODULE_TOOLS = [
   { module: 'broom', load: () => require('./broom/agent-tool') },
   { module: 'envVault', load: () => require('./envvault/agent-tool') },
+  { module: 'snippets', load: () => require('./snippets/agent-tool') },
 ];
 
 /** Ferramentas extras dos módulos habilitados em `settings.modules`. */
