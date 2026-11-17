@@ -227,3 +227,21 @@ test('agent:skills libera a pasta de skills só na janela que pediu', async () =
   assert.equal(reg.guardFor(a).isAllowed(skillsDir), true);
   assert.equal(reg.guardFor(b).isAllowed(skillsDir), false);
 });
+
+test('fs:readDir avisa onDirRead (observador da janela); falha do observador não quebra a leitura', async () => {
+  const reg = createWindowGuards();
+  const { handlers, ipcMain } = fakeIpc();
+  const seen = [];
+  require('../../src/main/ipc/fs').register(ipcMain, {
+    guardFor: reg.guardFor, shell: {},
+    onDirRead: (sender, dir) => { seen.push([sender.id, dir]); throw new Error('boom'); },
+  });
+  const dir = tmp('agzos-ipc-rd-', { 'a.txt': 'A' });
+  const a = wc(1);
+  reg.guardFor(a).allow(dir);
+  const list = await handlers['fs:readDir']({ sender: a }, dir);
+  assert.equal(list.length, 1);
+  assert.deepEqual(seen, [[1, dir]]);
+  await assert.rejects(handlers['fs:readDir']({ sender: wc(2) }, dir), /Acesso negado/);
+  assert.equal(seen.length, 1);
+});

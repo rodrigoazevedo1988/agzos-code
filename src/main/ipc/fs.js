@@ -58,7 +58,11 @@ async function looksBinaryRemote(prov, p) {
 
 const LOCAL_ONLY = 'Indisponível em pasta remota.';
 
-function register(ipcMain, { guard, guardFor, shell }) {
+/**
+ * onDirRead(sender, dir): chamado após ler uma pasta local — o observador da janela passa a
+ * vigiá-la (Linux observa só pastas já lidas; ver lib/workspace-watcher.js). Nunca quebra a leitura.
+ */
+function register(ipcMain, { guard, guardFor, shell, onDirRead }) {
   // Guard da janela que pediu (várias janelas: lib/window-guards.js).
   const guardOf = guardResolver({ guard, guardFor });
   ipcMain.handle('fs:readDir', async (evt, dirPath) => {
@@ -69,6 +73,7 @@ function register(ipcMain, { guard, guardFor, shell }) {
       return list.filter((e) => !e.name.startsWith('.') || e.name === '.gitignore');
     }
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
+    try { onDirRead?.(evt?.sender, dirPath); } catch { /* observador é opcional */ }
     return Promise.all(entries
       .filter((e) => !e.name.startsWith('.') || e.name === '.gitignore')
       .map((e) => describeEntry(dirPath, e)));

@@ -275,7 +275,9 @@ const { createWindowGuards } = require('./lib/window-guards');
 const windowGuards = createWindowGuards();
 const { guardFor } = windowGuards;
 ipcMain.on('window:fileToken', (evt) => { evt.returnValue = windowGuards.tokenFor(evt.sender); });
-require('./ipc/fs').register(ipcMain, { guardFor, shell });
+// onDirRead: a pasta lida entra no observador da janela (workspaces é definido logo abaixo;
+// fs:readDir só chega depois da inicialização).
+require('./ipc/fs').register(ipcMain, { guardFor, shell, onDirRead: (sender, dir) => workspaces.watchDir(sender, dir) });
 require('./ipc/dialog').register(ipcMain, { ...deps, guardFor });
 require('./ipc/term').register(ipcMain, { guardFor });
 require('./ipc/ssh').register(ipcMain, { guardFor });
