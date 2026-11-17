@@ -5,7 +5,7 @@
  * O renderer NUNCA tem acesso direto a `require`, `process` ou `fs`.
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('agzos', {
   // App info
@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('agzos', {
   fs: {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
     findFiles: (p, maxResults) => ipcRenderer.invoke('fs:findFiles', p, maxResults),
-    readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
+    readFile: (p, opts) => ipcRenderer.invoke('fs:readFile', p, opts),
     writeFile: (p, c) => ipcRenderer.invoke('fs:writeFile', p, c),
     mkdir: (p) => ipcRenderer.invoke('fs:mkdir', p),
     exists: (p) => ipcRenderer.invoke('fs:exists', p),
@@ -26,6 +26,14 @@ contextBridge.exposeInMainWorld('agzos', {
     delete: (p) => ipcRenderer.invoke('fs:delete', p),
     rename: (a, b) => ipcRenderer.invoke('fs:rename', a, b),
     homeDir: () => ipcRenderer.invoke('fs:homeDir'),
+    openPath: (p) => ipcRenderer.invoke('fs:openPath', p),
+    reveal: (p) => ipcRenderer.invoke('fs:reveal', p),
+    // Recebe um File de um drop real; o caminho sai do webUtils (o renderer não o forja).
+    allowDropped: (file) => {
+      let p = '';
+      try { p = webUtils.getPathForFile(file); } catch { p = ''; }
+      return p ? ipcRenderer.invoke('fs:allowDropped', p) : Promise.resolve(null);
+    },
   },
 
   // Diálogos
