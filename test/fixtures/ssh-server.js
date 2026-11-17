@@ -4,6 +4,8 @@
  * - Chave de host gerada na hora (ed25519) — `hostKey` (privada) e `hostPublic` (blob).
  * - Usuários: { nome: { password?, publicKeys?: [ 'ssh-ed25519 AAAA…' ] } }.
  * - SFTP sobre o sistema de arquivos real, restrito à pasta `root` (fora dela → negado).
+ *   REALPATH resolve symlinks e READLINK lê o alvo (testes de link para fora da raiz
+ *   do projeto: use um projeto numa subpasta de `root`).
  *   Os caminhos são os reais (/tmp/…/proj), para o exec enxergar os mesmos arquivos.
  * - exec: `/bin/sh -c <comando>` com cwd = root e HOME = root; cada comando fica em
  *   `execLog` (os testes conferem aspas e ausência de token).
@@ -93,11 +95,22 @@ function createSshServer({
       return abs;
     };
 
+    // Como o sftp-server: resolve symlinks; caminho inexistente → NO_SUCH_FILE.
     sftp.on('REALPATH', (reqid, p) => {
       const abs = p === '.' || p === '' ? realRoot : inside(p);
       if (!abs) return sftp.status(reqid, STATUS_CODE.PERMISSION_DENIED);
-      const norm = path.posix.normalize(abs);
-      sftp.name(reqid, [{ filename: norm, longname: norm, attrs: {} }]);
+      let real;
+      try { real = fs.realpathSync(abs); } catch (err) { return sftp.status(reqid, statusFor(err)); }
+      if (real !== realRoot && !real.startsWith(realRoot + path.sep)) return sftp.status(reqid, STATUS_CODE.PERMISSION_DENIED);
+      sftp.name(reqid, [{ filename: real, longname: real, attrs: {} }]);
+    });
+    sftp.on('READLINK', (reqid, p) => {
+      const abs = guard(reqid, p);
+      if (!abs) return;
+      try {
+        const target = fs.readlinkSync(abs);
+        sftp.name(reqid, [{ filename: target, longname: target, attrs: {} }]);
+      } catch (err) { sftp.status(reqid, statusFor(err)); }
     });
     const doStat = (reqid, p, fn) => {
       const abs = guard(reqid, p);

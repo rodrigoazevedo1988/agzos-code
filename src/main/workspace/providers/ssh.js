@@ -5,6 +5,15 @@
  *
  * Arquivos via SFTP (sem shell). exec/spawnShell montam a linha de comando só
  * com remote/sh.js (aspas POSIX em tudo).
+ *
+ * Contenção de symlinks (ponto único para fs IPC, agente, histórico, Árvore, Ao
+ * Vivo, visualizadores): com `getRoots` (raízes liberadas na janela), toda
+ * operação de arquivo resolve o alvo com `sftp.realpath` (arquivo novo ou link
+ * quebrado: o pai / o alvo do link) e exige que ele fique dentro do realpath de
+ * uma raiz deste host (cacheado por conexão SFTP). Fora → EACCES "Acesso negado".
+ * Na escrita/remoção/rename o alvo é o caminho com os links seguidos, então um
+ * link que aponta para fora é recusado. Sem raiz deste host na janela, não há
+ * contenção (o guard da janela já nega tudo; workspace:open usa statRaw).
  */
 
 const path = require('path');
@@ -23,7 +32,15 @@ function sftpError(err, p) {
   return e;
 }
 
-function createSshProvider({ manager, ownerId, authority }) {
+function accessDenied(uri) {
+  return Object.assign(new Error(`Acesso negado: ${uri} aponta para fora da pasta remota aberta`), {
+    code: 'EACCES', outsideRoot: true, path: uri,
+  });
+}
+
+const withinPosix = (root, p) => root === '/' || p === root || p.startsWith(`${root}/`);
+
+function createSshProvider({ manager, ownerId, authority, getRoots = null }) {
   const toPath = (uri) => {
     const r = parseRemoteUri(uri);
     if (!r || r.authority !== authority) throw new Error(`Caminho remoto inválido: ${uri}`);
@@ -31,12 +48,68 @@ function createSshProvider({ manager, ownerId, authority }) {
   };
   const toUri = (p) => toRemoteUri(authority, p);
   const sftp = () => manager.sftp(ownerId, authority);
+  const raw = (s, method, p, ...args) => new Promise((resolve, reject) => {
+    s[method](p, ...args, (err, res) => (err ? reject(sftpError(err, toUri(p))) : resolve(res)));
+  });
+
+  // ---- contenção (ver o cabeçalho)
+  const rootReal = new WeakMap(); // sftp → Map(caminho da raiz → Promise<realpath>)
+  function rootPaths() {
+    if (typeof getRoots !== 'function') return null;
+    const out = [];
+    for (const u of getRoots() || []) {
+      const r = parseRemoteUri(u);
+      if (r && r.authority === authority) out.push(r.path);
+    }
+    return out.length ? out : null;
+  }
+  /** Caminho real no host: segue links; inexistente → pai real + nome; link quebrado → alvo. */
+  async function realOf(s, p, depth = 0) {
+    if (depth > 40) throw Object.assign(new Error(`Links demais: ${p}`), { code: 'ELOOP' });
+    try { return await raw(s, 'realpath', p); } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+    let lst = null;
+    try { lst = await raw(s, 'lstat', p); } catch (err) { if (err.code !== 'ENOENT') throw err; }
+    if (lst && typeof lst.isSymbolicLink === 'function' && lst.isSymbolicLink()) {
+      const target = await raw(s, 'readlink', p);
+      const abs = String(target).startsWith('/') ? String(target) : path.posix.join(path.posix.dirname(p), String(target));
+      return realOf(s, path.posix.normalize(abs), depth + 1);
+    }
+    const parent = path.posix.dirname(p);
+    if (parent === p) return p;
+    return path.posix.join(await realOf(s, parent, depth + 1), path.posix.basename(p));
+  }
+  function realRootOf(s, rootPath) {
+    let m = rootReal.get(s);
+    if (!m) { m = new Map(); rootReal.set(s, m); }
+    if (!m.has(rootPath)) {
+      const pr = realOf(s, rootPath);
+      pr.catch(() => m.delete(rootPath));
+      m.set(rootPath, pr);
+    }
+    return m.get(rootPath);
+  }
+  async function confine(s, p) {
+    const roots = rootPaths();
+    if (!roots) return;
+    let real;
+    try { real = await realOf(s, p); } catch (err) {
+      if (err.code === 'EACCES' || err.code === 'ELOOP') throw accessDenied(toUri(p));
+      throw err;
+    }
+    for (const r of roots) {
+      const rr = await realRootOf(s, r).catch(() => null);
+      if (rr && withinPosix(rr, real)) return;
+    }
+    throw accessDenied(toUri(p));
+  }
+
   const call = async (method, uri, ...args) => {
     const s = await sftp();
     const p = toPath(uri);
-    return new Promise((resolve, reject) => {
-      s[method](p, ...args, (err, res) => (err ? reject(sftpError(err, uri)) : resolve(res)));
-    });
+    await confine(s, p);
+    return raw(s, method, p, ...args);
   };
   const statOf = (attrs) => ({
     isDirectory: attrs.isDirectory(),
@@ -78,6 +151,7 @@ function createSshProvider({ manager, ownerId, authority }) {
 
     async createReadStream(uri, { start, end } = {}) {
       const s = await sftp();
+      await confine(s, toPath(uri));
       return s.createReadStream(toPath(uri), { start, end });
     },
 
@@ -88,6 +162,18 @@ function createSshProvider({ manager, ownerId, authority }) {
 
     async stat(uri) {
       return statOf(await call('stat', uri));
+    },
+
+    /** stat sem contenção: só para workspace:open (a pasta nova ainda não é raiz). */
+    async statRaw(uri) {
+      const s = await sftp();
+      return statOf(await raw(s, 'stat', toPath(uri)));
+    },
+
+    /** Caminho real (links seguidos) como URI. Sem contenção: quem chama confere. */
+    async realpath(uri) {
+      const s = await sftp();
+      return toUri(await realOf(s, toPath(uri)));
     },
 
     async exists(uri) {
@@ -114,25 +200,38 @@ function createSshProvider({ manager, ownerId, authority }) {
     },
 
     async remove(uri) {
-      if (toPath(uri) === '/') throw new Error('Não é permitido apagar a raiz do host.');
+      const p = toPath(uri);
+      if (p === '/') throw new Error('Não é permitido apagar a raiz do host.');
+      const s = await sftp();
       let st;
-      try { st = statOf(await call('lstat', uri)); } catch (err) {
+      try { st = statOf(await raw(s, 'lstat', p)); } catch (err) {
         if (err.code === 'ENOENT') return;
         throw err;
       }
-      if (st.isDirectory && !st.isSymbolicLink) {
-        const list = await call('readdir', uri);
-        for (const e of list) await provider.remove(toUri(path.posix.join(toPath(uri), e.filename)));
-        await call('rmdir', uri);
-      } else {
-        await call('unlink', uri);
-      }
+      // Alvo (com links seguidos) tem de estar dentro da raiz; link para fora é recusado.
+      await confine(s, p);
+      // Dentro da pasta: links são apagados sem seguir (unlink), pastas reais recursivas.
+      const removeInner = async (q, isDir) => {
+        if (isDir) {
+          for (const e of await raw(s, 'readdir', q)) {
+            const child = path.posix.join(q, e.filename);
+            const cst = statOf(e.attrs);
+            await removeInner(child, cst.isDirectory && !cst.isSymbolicLink);
+          }
+          await raw(s, 'rmdir', q);
+        } else {
+          await raw(s, 'unlink', q);
+        }
+      };
+      await removeInner(p, st.isDirectory && !st.isSymbolicLink);
     },
 
     async rename(a, b) {
       const s = await sftp();
       const pa = toPath(a);
       const pb = toPath(b);
+      await confine(s, pa);
+      await confine(s, pb);
       await new Promise((resolve, reject) => s.rename(pa, pb, (err) => (err ? reject(sftpError(err, a)) : resolve())));
     },
 

@@ -88,11 +88,12 @@ function within(root, target) {
 
 /**
  * Fonte sobre um provider de workspace (pasta remota ssh://). O servidor continua em
- * 127.0.0.1; só a leitura vai ao host. Sem realpath remoto: o guard da janela confere a URI.
+ * 127.0.0.1; só a leitura vai ao host. realpath é o do provider (symlinks do host
+ * resolvidos), e o provider ainda recusa qualquer leitura fora da raiz real.
  */
 function providerSource(prov) {
   return {
-    realpath: async (p) => p,
+    realpath: (p) => (typeof prov.realpath === 'function' ? prov.realpath(p) : Promise.resolve(p)),
     async stat(p) {
       try {
         const st = await prov.stat(p);

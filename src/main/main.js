@@ -370,6 +370,8 @@ const remoteManager = createRemoteManager({
   },
 });
 require('./workspace/provider-for').setRemoteManager(remoteManager);
+// Contenção de symlinks no host: o provider SSH confere o realpath contra as raízes da janela.
+require('./workspace/provider-for').setRootsResolver((id) => guardFor(id).roots());
 require('./ipc/remote').register(ipcMain, { manager: remoteManager, createWindow: () => createMainWindow() });
 // Git + GitHub: contas (tokens só no main) e operações git do sistema.
 const githubAccounts = require('./ipc/github').register(ipcMain, { guardFor, settingsStore, store: secretStore, app });

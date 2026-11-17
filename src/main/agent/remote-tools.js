@@ -91,7 +91,13 @@ function createRemoteToolbox({ root, provider, checkpoint, secrets = [], extraTo
     if (uri === rootUri) throw new ToolError(`Operação não permitida na raiz do projeto: ${p}`);
   }
 
-  const statOrNull = async (uri) => { try { return await provider.stat(uri); } catch { return null; } };
+  // Link no host que aponta para fora da raiz: o provider recusa (EACCES/outsideRoot).
+  const statOrNull = async (uri) => {
+    try { return await provider.stat(uri); } catch (err) {
+      if (err?.outsideRoot) throw new ToolError(`Acesso negado: ${rel(uri)} aponta para fora da pasta do projeto (symlink)`);
+      return null;
+    }
+  };
 
   /** Histórico local (origem `agente`): cópia do original lido no host. */
   async function historyBefore(uri) {
