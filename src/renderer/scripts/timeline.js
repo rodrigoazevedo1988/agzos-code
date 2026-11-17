@@ -406,7 +406,9 @@ export function setupTimeline() {
   window.addEventListener('agzos:file-saved', (e) => {
     const p = e.detail?.path;
     if (!p) return;
-    Promise.resolve(api()?.recordSave(p))
+    // Envia o texto salvo: reler o disco depois corre risco de pegar o próximo salvamento.
+    const content = typeof e.detail?.content === 'string' ? e.detail.content : undefined;
+    Promise.resolve(api()?.recordSave(p, content))
       .then(() => { if (current?.path === p && current.index === current.items.length) load(p); })
       .catch((err) => console.warn('[histórico] recordSave', err?.message));
   });

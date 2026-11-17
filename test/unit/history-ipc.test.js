@@ -44,6 +44,14 @@ test('recordSave guarda a versão salva; list e read devolvem', async () => {
   assert.ok(fs.existsSync(path.join(userData, 'local-history')));
 });
 
+test('recordSave usa o texto enviado pelo renderer, não o disco (dois salvamentos seguidos)', async () => {
+  fs.writeFileSync(p('b.txt'), '');
+  await call('recordSave', p('b.txt'), 'versão 1\r\nção');
+  const list = await call('list', p('b.txt'));
+  const r = await call('read', p('b.txt'), list[0].versionId);
+  assert.equal(r.content, 'versão 1\r\nção');
+});
+
 test('caminho fora da pasta da janela é negado', async () => {
   fs.writeFileSync(path.join(outside, 'x.txt'), 'x');
   await assert.rejects(call('recordSave', path.join(outside, 'x.txt')), /negado/i);

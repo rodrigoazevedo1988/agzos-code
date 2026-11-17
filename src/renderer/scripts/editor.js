@@ -403,7 +403,7 @@ export async function saveFile(filePath) {
     file.mtime = Date.now();
     if (conflicts.delete(filePath)) syncConflictBar();
     renderTabs();
-    window.dispatchEvent(new CustomEvent('agzos:file-saved', { detail: { path: filePath } }));
+    window.dispatchEvent(new CustomEvent('agzos:file-saved', { detail: { path: filePath, content } }));
     toast(`Salvo: ${basename(filePath)}`, 'success', 1800);
   } catch (e) {
     toast(`Erro ao salvar: ${e.message}`, 'error');

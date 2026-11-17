@@ -6,7 +6,7 @@
  *   timeline(path) → { items, git, truncated }     (commits + local, mais antiga primeiro;
  *                                                   ver modules/history/timeline.js)
  *   read(path, versionId) → { content }            (texto UTF-8; versionId local ou git)
- *   recordSave(path) → entry | null                (renderer chama após salvar)
+ *   recordSave(path, content?) → entry | null      (renderer chama após salvar, com o texto salvo)
  *   restore(path, versionId) → { checkpointId }    (escreve a versão; checkpoint + histórico)
  *   clear(path?) → { ok: true }
  *
@@ -90,10 +90,11 @@ function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = d
       return { content: (await versionContent(sender, abs, versionId)).toString('utf8') };
     },
 
-    recordSave: async (sender, p) => {
+    recordSave: async (sender, p, content) => {
       const abs = filePath(sender, p);
       if (!history.isEnabled()) return null;
-      const buf = await io.readFileFor(abs);
+      // O renderer manda o texto que acabou de salvar; sem ele (chamadas antigas), lê o disco.
+      const buf = typeof content === 'string' ? Buffer.from(content, 'utf8') : await io.readFileFor(abs);
       return history.recordBefore(abs, 'salvar', { content: buf });
     },
 
