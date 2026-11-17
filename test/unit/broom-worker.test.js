@@ -38,14 +38,16 @@ test('broom.analyzeMany analisa vários arquivos na ordem', async () => {
 });
 
 test('broom.analyzeMany é cancelável entre arquivos', async () => {
-  const big = 'console.log(1);\n'.repeat(4000);
-  const files = Array.from({ length: 400 }, (_, i) => ({ path: `/w/f${i}.js`, text: big }));
+  // Sem cancelamento, 2000 arquivos de 1000 linhas ocupariam o worker por dezenas de segundos.
+  const big = 'console.log(1);\n'.repeat(1000);
+  const files = Array.from({ length: 2000 }, (_, i) => ({ path: `/w/f${i}.js`, text: big }));
   const ac = new AbortController();
-  const t0 = Date.now();
   const p = host.call('broom.analyzeMany', { files, options: {} }, { signal: ac.signal });
-  setTimeout(() => ac.abort(), 100);
+  await new Promise((r) => setTimeout(r, 300));
+  const t0 = Date.now();
+  ac.abort();
   await assert.rejects(p, { name: 'AbortError' });
-  // O worker para de verdade: a próxima chamada responde logo (sem esperar os 400 arquivos).
+  // O worker para de verdade: a próxima chamada responde logo.
   const r = await host.call('broom.analyze', { path: '/w/a.js', text: 'x();\n', options: {} });
   assert.deepEqual(r.edits, []);
   assert.ok(Date.now() - t0 < 1000, `demorou ${Date.now() - t0} ms`);
