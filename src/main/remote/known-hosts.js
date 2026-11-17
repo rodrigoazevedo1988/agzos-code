@@ -7,8 +7,13 @@
  *  - marcadores: `@revoked` (chave nunca aceita) e `@cert-authority` (ignorado aqui).
  *
  * checkHostKey → 'match' | 'unknown' | 'mismatch'. Mismatch = o host tem chave
- * registrada do mesmo tipo e ela é outra (ou a chave está revogada): a conexão
- * é bloqueada sem opção de continuar.
+ * registrada (de qualquer tipo) e a apresentada não é nenhuma delas, ou a chave
+ * está revogada: a conexão é bloqueada sem opção de continuar. Como o OpenSSH,
+ * o handshake é restrito aos tipos já registrados para o host (knownKeyTypes +
+ * hostKeyAlgorithms); um servidor que só oferece outro tipo não vira "desconhecido".
+ *
+ * O nome do host é comparado em minúsculas (texto, curingas e hash |1|), como o
+ * OpenSSH grava e consulta.
  */
 
 const crypto = require('crypto');
@@ -59,7 +64,7 @@ function parseKnownHosts(text) {
 }
 
 function hostPattern(host, port) {
-  const h = String(host || '');
+  const h = String(host || '').toLowerCase();
   if (!h || /[\s,#]/.test(h) || h.startsWith('|') || h.startsWith('@')) throw new Error('Host inválido.');
   const p = Number(port) || 22;
   return p === 22 ? h : `[${h}]:${p}`;
@@ -86,25 +91,42 @@ function hostsMatch(hosts, name) {
   return positive;
 }
 
-function checkHostKey(entries, host, port, keyBlob) {
+/** Entradas normais (sem marcador) que valem para o host. */
+function entriesFor(entries, host, port) {
   const name = hostPattern(host, port);
-  const type = keyTypeOf(keyBlob);
-  let sameTypeOther = false;
-  let matched = false;
+  return (entries || []).filter((e) => !e.marker && hostsMatch(e.hosts, name));
+}
+
+function checkHostKey(entries, host, port, keyBlob) {
   for (const e of entries || []) {
-    if (e.marker === '@revoked') {
-      if (e.key.equals(keyBlob)) return 'mismatch';
-      continue;
-    }
-    if (e.marker) continue; // @cert-authority: não suportado aqui
-    if (!hostsMatch(e.hosts, name)) continue;
-    if (e.keyType !== type) continue;
-    if (e.key.equals(keyBlob)) matched = true;
-    else sameTypeOther = true;
+    if (e.marker === '@revoked' && e.key.equals(keyBlob)) return 'mismatch';
   }
-  if (matched) return 'match';
-  if (sameTypeOther) return 'mismatch';
-  return 'unknown';
+  const own = entriesFor(entries, host, port); // @cert-authority: não suportado aqui
+  if (own.some((e) => e.key.equals(keyBlob))) return 'match';
+  // Qualquer chave registrada para o host (mesmo de outro tipo) → divergente.
+  return own.length ? 'mismatch' : 'unknown';
+}
+
+/** Tipos de chave registrados para o host (sem repetir, na ordem do arquivo). */
+function knownKeyTypes(entries, host, port) {
+  return [...new Set(entriesFor(entries, host, port).map((e) => e.keyType))];
+}
+
+// Tipo da chave (known_hosts) → algoritmos de host key do ssh2.
+const HOST_KEY_ALGOS = {
+  'ssh-ed25519': ['ssh-ed25519'],
+  'ecdsa-sha2-nistp256': ['ecdsa-sha2-nistp256'],
+  'ecdsa-sha2-nistp384': ['ecdsa-sha2-nistp384'],
+  'ecdsa-sha2-nistp521': ['ecdsa-sha2-nistp521'],
+  'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
+  'ssh-dss': ['ssh-dss'],
+};
+
+/** → lista para `algorithms.serverHostKey` do ssh2, ou null (sem restrição). */
+function hostKeyAlgorithms(types) {
+  const out = [];
+  for (const t of types || []) for (const a of HOST_KEY_ALGOS[t] || []) if (!out.includes(a)) out.push(a);
+  return out.length ? out : null;
 }
 
 /** Fingerprint como o `ssh-keygen -l`: SHA256:<base64 sem '='>. */
@@ -119,4 +141,6 @@ function formatEntry(host, port, keyBlob) {
   return `${hostPattern(host, port)} ${type} ${keyBlob.toString('base64')}\n`;
 }
 
-module.exports = { parseKnownHosts, checkHostKey, fingerprint, formatEntry, keyTypeOf, hostPattern };
+module.exports = {
+  parseKnownHosts, checkHostKey, knownKeyTypes, hostKeyAlgorithms, fingerprint, formatEntry, keyTypeOf, hostPattern,
+};

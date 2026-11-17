@@ -7,7 +7,14 @@
  *  - conhecida e igual → segue;
  *  - desconhecida → askHostKey({ host, port, keyType, fingerprint }); "Confiar"
  *    acrescenta a linha ao known_hosts (pasta 0700, arquivo 0600);
- *  - divergente (ou revogada) → erro HOSTKEY_MISMATCH, sem pergunta e sem opção de seguir.
+ *  - divergente (ou revogada) → erro HOSTKEY_MISMATCH, sem pergunta e sem opção de seguir;
+ *  - host já registrado: o handshake só aceita os tipos de chave do known_hosts
+ *    (algorithms.serverHostKey, como o OpenSSH). Servidor sem nenhum deles →
+ *    HOSTKEY_MISMATCH (nunca "desconhecido").
+ *
+ * Tempo limite (READY_TIMEOUT_MS): timer próprio que pausa enquanto askSecret/
+ * askHostKey esperam o usuário (o readyTimeout do ssh2 fica desligado: ele corre
+ * até o fim da autenticação, inclusive durante os diálogos).
  */
 
 const fs = require('fs');
@@ -83,6 +90,45 @@ function safeUserName() {
   try { return os.userInfo().username; } catch { return 'root'; }
 }
 
+/**
+ * Timer que pode pausar (diálogos) e retomar com o tempo restante.
+ * pause()/resume() aninham; clear() cancela de vez.
+ */
+function createPausableTimer(ms, onTimeout, clock = { setTimeout, clearTimeout, now: Date.now }) {
+  let remaining = ms;
+  let startedAt = 0;
+  let handle = null;
+  let paused = 0;
+  let done = false;
+  const start = () => {
+    if (done || handle != null || !(ms > 0)) return;
+    startedAt = clock.now();
+    handle = clock.setTimeout(() => { handle = null; done = true; onTimeout(); }, Math.max(0, remaining));
+  };
+  start();
+  return {
+    pause() {
+      if (done) return;
+      paused++;
+      if (handle != null) {
+        clock.clearTimeout(handle);
+        handle = null;
+        remaining -= clock.now() - startedAt;
+      }
+    },
+    resume() {
+      if (done || paused === 0) return;
+      paused--;
+      if (paused === 0) start();
+    },
+    clear() {
+      done = true;
+      if (handle != null) clock.clearTimeout(handle);
+      handle = null;
+    },
+  };
+}
+
 function readKnownHosts(files) {
   const out = [];
   for (const f of files) {
@@ -128,17 +174,42 @@ function openConnection(resolved, {
   const userKnown = knownHostsFile || path.join(home, '.ssh', 'known_hosts');
   const files = knownHostsFiles || [userKnown, ...(platform === 'win32' ? [] : ['/etc/ssh/ssh_known_hosts'])];
   const order = authOrder({ platform, env, home, identityFiles: resolved.identityFiles || [] });
-  const handler = createAuthHandler({ resolved, order, askSecret, secretStore, ...(readFile ? { readFile } : {}) });
+  let knownTypes = [];
+  try { knownTypes = kh.knownKeyTypes(readKnownHosts(files), resolved.host, resolved.port); } catch { /* host inválido: o verifier bloqueia */ }
+  const serverHostKey = kh.hostKeyAlgorithms(knownTypes);
 
   return new Promise((resolve, reject) => {
     const client = new ClientImpl();
     let hostError = null;
     let settled = false;
+    let timer = null;
     const fail = (err) => {
       if (settled) return;
       settled = true;
+      timer?.clear();
       try { client.end(); } catch { /* já fechado */ }
+      if (err?.timedOut) { try { client.destroy?.(); } catch { /* já fechado */ } }
       reject(err);
+    };
+    // Diálogos pausam o tempo limite: o usuário pode levar o tempo que quiser.
+    const paused = (fn) => async (...args) => {
+      timer?.pause();
+      try { return await fn(...args); } finally { timer?.resume(); }
+    };
+    const handler = createAuthHandler({
+      resolved, order, askSecret: paused(askSecret), secretStore, ...(readFile ? { readFile } : {}),
+    });
+    const askHost = paused(askHostKey);
+    const mismatchError = (info) => {
+      const err = new RemoteError(
+        `ATENÇÃO: a chave do host ${resolved.label} (${resolved.host}:${resolved.port}) é diferente da registrada no known_hosts. `
+        + `Isso pode ser um ataque (alguém se passando pelo servidor). A conexão foi bloqueada. `
+        + (info ? `Fingerprint recebido: ${info.fingerprint}. ` : `O servidor não ofereceu nenhum dos tipos de chave registrados (${knownTypes.join(', ')}). `)
+        + 'Se a troca da chave é legítima, remova a linha antiga do ~/.ssh/known_hosts.',
+        'HOSTKEY_MISMATCH',
+      );
+      if (info) err.info = info;
+      return err;
     };
 
     const hostVerifier = (key, verify) => {
@@ -155,18 +226,12 @@ function openConnection(resolved, {
       };
       if (result === 'match') { verify(true); return; }
       if (result === 'mismatch') {
-        hostError = new RemoteError(
-          `ATENÇÃO: a chave do host ${resolved.label} (${resolved.host}:${resolved.port}) é diferente da registrada no known_hosts. `
-          + `Isso pode ser um ataque (alguém se passando pelo servidor). A conexão foi bloqueada. `
-          + `Fingerprint recebido: ${info.fingerprint}. Se a troca da chave é legítima, remova a linha antiga do ~/.ssh/known_hosts.`,
-          'HOSTKEY_MISMATCH',
-        );
-        hostError.info = info;
+        hostError = mismatchError(info);
         verify(false);
         return;
       }
       Promise.resolve()
-        .then(() => askHostKey(info))
+        .then(() => askHost(info))
         .then((ok) => {
           if (ok !== true) {
             hostError = new RemoteError(`Conexão cancelada: a chave do host ${resolved.label} não foi confirmada.`, 'HOSTKEY_REJECTED');
@@ -181,11 +246,13 @@ function openConnection(resolved, {
     client.once('ready', () => {
       if (settled) return;
       settled = true;
+      timer?.clear();
       handler.onReady();
       resolve({ client });
     });
     client.on('error', (err) => {
       if (hostError) return fail(hostError);
+      if (serverHostKey && err?.level === 'handshake' && /host key/i.test(err.message || '')) return fail(mismatchError(null));
       if (handler.cancelled()) return fail(new RemoteError('Conexão cancelada.', 'CANCELLED'));
       if (err && err.level === 'client-authentication') {
         return fail(new RemoteError(`Falha na autenticação em ${resolved.label}: agente, chaves e senha foram recusados.`, 'AUTH_FAILED'));
@@ -197,6 +264,11 @@ function openConnection(resolved, {
       fail(new RemoteError(`A conexão com ${resolved.label} foi encerrada.`, 'CONNECT_FAILED'));
     });
 
+    timer = createPausableTimer(readyTimeout, () => {
+      const err = new RemoteError(`Não foi possível conectar a ${resolved.label}: Timed out while waiting for handshake`, 'CONNECT_FAILED');
+      err.timedOut = true;
+      fail(err);
+    });
     try {
       client.connect({
         host: resolved.host,
@@ -206,8 +278,9 @@ function openConnection(resolved, {
         hostVerifier,
         keepaliveInterval,
         keepaliveCountMax: 3,
-        readyTimeout,
+        readyTimeout: 0, // timer próprio acima (pausa nos diálogos)
         tryKeyboard: true,
+        ...(serverHostKey ? { algorithms: { serverHostKey } } : {}),
       });
     } catch (err) {
       fail(new RemoteError(`Não foi possível conectar a ${resolved.label}: ${err.message}`, 'CONNECT_FAILED'));
@@ -215,4 +288,6 @@ function openConnection(resolved, {
   });
 }
 
-module.exports = { resolveTarget, openConnection, RemoteError, appendKnownHost, readKnownHosts, KEEPALIVE_MS };
+module.exports = {
+  resolveTarget, openConnection, createPausableTimer, RemoteError, appendKnownHost, readKnownHosts, KEEPALIVE_MS, READY_TIMEOUT_MS,
+};

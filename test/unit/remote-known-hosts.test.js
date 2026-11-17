@@ -47,8 +47,36 @@ test('checkHostKey: match, unknown e mismatch (porta padrão e [host]:porta)', (
   assert.equal(kh.checkHostKey(entries, 'example.com', 2222, keyB), 'match');
   assert.equal(kh.checkHostKey(entries, 'example.com', 2222, keyA), 'mismatch');
   assert.equal(kh.checkHostKey(entries, 'outro.com', 22, keyA), 'unknown');
-  // Outro tipo de chave para o mesmo host: desconhecida (como o OpenSSH).
-  assert.equal(kh.checkHostKey(entries, 'example.com', 22, rsa), 'unknown');
+  // Outro tipo de chave para um host já registrado: divergente (o MITM não vira "host desconhecido").
+  assert.equal(kh.checkHostKey(entries, 'example.com', 22, rsa), 'mismatch');
+  assert.equal(kh.checkHostKey(entries, 'outro.com', 22, rsa), 'unknown');
+});
+
+test('knownKeyTypes e hostKeyAlgorithms: restringem o handshake aos tipos registrados para o host', () => {
+  const entries = kh.parseKnownHosts([
+    line('example.com', keyA),
+    line('[example.com]:2222', rsa),
+    line(hashed('hash.io'), rsa),
+    `@revoked example.com ${kh.keyTypeOf(keyB)} ${keyB.toString('base64')}`,
+  ].join('\n'));
+  assert.deepEqual(kh.knownKeyTypes(entries, 'example.com', 22), ['ssh-ed25519']);
+  assert.deepEqual(kh.knownKeyTypes(entries, 'EXAMPLE.com', 2222), ['ssh-rsa']);
+  assert.deepEqual(kh.knownKeyTypes(entries, 'Hash.IO', 22), ['ssh-rsa']);
+  assert.deepEqual(kh.knownKeyTypes(entries, 'outro.com', 22), []);
+  assert.deepEqual(kh.hostKeyAlgorithms(['ssh-ed25519']), ['ssh-ed25519']);
+  assert.deepEqual(kh.hostKeyAlgorithms(['ssh-rsa']), ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']);
+  assert.deepEqual(kh.hostKeyAlgorithms(['ecdsa-sha2-nistp256', 'ssh-ed25519']), ['ecdsa-sha2-nistp256', 'ssh-ed25519']);
+  assert.equal(kh.hostKeyAlgorithms([]), null);
+  assert.equal(kh.hostKeyAlgorithms(['tipo-desconhecido']), null);
+});
+
+test('host com maiúsculas casa com entrada em minúsculas (texto e hash |1|)', () => {
+  const entries = kh.parseKnownHosts([line(hashed('example.com'), keyA), line(hashed('[srv.io]:2200'), keyA), line('plain.io', keyB)].join('\n'));
+  assert.equal(kh.checkHostKey(entries, 'Example.COM', 22, keyA), 'match');
+  assert.equal(kh.checkHostKey(entries, 'SRV.io', 2200, keyA), 'match');
+  assert.equal(kh.checkHostKey(entries, 'Plain.IO', 22, keyB), 'match');
+  assert.equal(kh.checkHostKey(entries, 'Example.COM', 22, keyB), 'mismatch');
+  assert.match(kh.formatEntry('Example.COM', 22, keyA), /^example\.com ssh-ed25519 /);
 });
 
 test('checkHostKey: hash |1| (inclusive com porta) e mismatch em hash', () => {

@@ -32,6 +32,7 @@ function createSshServer({
   root,
   users = {},
   hostKey = generateKey().private,
+  extraHostKeys = [],
   allowShell = true,
 } = {}) {
   if (!root) throw new Error('root obrigatório');
@@ -216,7 +217,7 @@ function createSshServer({
     });
   }
 
-  const server = new Server({ hostKeys: [hostKey] }, (client) => {
+  const server = new Server({ hostKeys: [hostKey, ...extraHostKeys] }, (client) => {
     clients.add(client);
     client.on('close', () => clients.delete(client));
     client.on('error', () => {});
