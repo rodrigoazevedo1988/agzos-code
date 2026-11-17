@@ -83,8 +83,13 @@ export function field(labelText, control) {
   label.className = 'tool-field';
   const span = document.createElement('span');
   span.textContent = labelText;
-  if (control.type === 'checkbox') label.append(control, span);
-  else label.append(span, control);
+  if (control.type === 'checkbox') {
+    label.append(control, span);
+  } else {
+    // Rótulo envolvendo <select> soma a opção ao nome acessível; aria-label fixa o nome.
+    control.setAttribute('aria-label', labelText);
+    label.append(span, control);
+  }
   return label;
 }
 

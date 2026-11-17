@@ -93,6 +93,7 @@ const DEFAULTS = {
       revealTimeoutSec: 10,
     },
     tree: { enabled: true },
+    snap: { enabled: true, watermark: true },
   },
 };
 
@@ -564,6 +565,26 @@ const SETTINGS_DEF = [
     desc: 'Gera a árvore de pastas em texto (menu de contexto de pasta, paleta e ferramenta project_tree do agente).',
     categories: ['modules'],
     section: 'Agzos Árvore',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+
+  // Módulos Agzos — Agzos Snap
+  {
+    key: 'modules.snap.enabled',
+    title: 'Agzos Snap: Habilitado',
+    desc: 'Gera imagens (PNG) do código selecionado com tema, fundo, moldura e números de linha.',
+    categories: ['modules'],
+    section: 'Agzos Snap',
+    type: 'boolean',
+    apply: notifyModules,
+  },
+  {
+    key: 'modules.snap.watermark',
+    title: 'Agzos Snap: Marca d\'água',
+    desc: 'Marca d\'água "Agzos Code" ligada por padrão nas imagens (pode ser desligada em cada captura).',
+    categories: ['modules'],
+    section: 'Agzos Snap',
     type: 'boolean',
     apply: notifyModules,
   },

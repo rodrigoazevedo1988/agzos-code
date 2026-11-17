@@ -9,3 +9,9 @@ test('modules.tree: padrão habilitado; enabled inválido volta ao padrão', () 
   assert.equal(normalizeModules({ tree: { enabled: false } }).tree.enabled, false);
   assert.equal(normalizeModules({ tree: 'x' }).tree.enabled, true);
 });
+
+test('modules.snap: padrão habilitado com marca d\'água; campos inválidos voltam ao padrão', () => {
+  assert.deepEqual(DEFAULT_SETTINGS.modules.snap, { enabled: true, watermark: true });
+  assert.deepEqual(normalizeModules({ snap: { enabled: 1, watermark: 'x' } }).snap, { enabled: true, watermark: true });
+  assert.deepEqual(normalizeModules({ snap: { enabled: false, watermark: false } }).snap, { enabled: false, watermark: false });
+});

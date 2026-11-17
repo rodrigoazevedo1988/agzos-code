@@ -382,6 +382,14 @@ const modulesDeps = {
 require('./ipc/broom').register(ipcMain, modulesDeps);
 require('./ipc/envvault').register(ipcMain, modulesDeps);
 require('./ipc/tree').register(ipcMain, modulesDeps);
+// Agzos Snap: janela oculta só para renderizar a imagem (modules/snap/capture.js).
+require('./ipc/snap').register(ipcMain, {
+  ...modulesDeps,
+  getWindowFor: deps.getWindowFor,
+  capture: require('./modules/snap/capture').createCapture({ BrowserWindow, screen: require('electron').screen }),
+  clipboard: require('electron').clipboard,
+  dialog: { showSaveDialog: (...args) => dialog.showSaveDialog(...args) },
+});
 require('./ipc/chat-history').register(ipcMain, {
   ...deps, BrowserWindow, attachments: chatAttachments,
   getRecentFolders: () => settingsStore.load().recentFolders || [],

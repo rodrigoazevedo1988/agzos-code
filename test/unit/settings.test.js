@@ -133,6 +133,7 @@ test('modules: defaults de modules', () => {
       revealTimeoutSec: 10,
     },
     tree: { enabled: true },
+    snap: { enabled: true, watermark: true },
   });
   const { normalizeModules } = require('../../src/main/lib/settings');
   assert.deepEqual(normalizeModules(undefined), DEFAULT_SETTINGS.modules);

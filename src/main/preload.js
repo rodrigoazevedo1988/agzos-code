@@ -194,6 +194,12 @@ contextBridge.exposeInMainWorld('agzos', {
     generate: (dir, opts) => ipcRenderer.invoke('tree:generate', dir, opts),
   },
 
+  // Agzos Snap (ipc/snap.js): html(payload) → { html } · exportImage(payload, 'save'|'copy').
+  snap: {
+    html: (payload) => ipcRenderer.invoke('snap:html', payload),
+    exportImage: (payload, action) => ipcRenderer.invoke('snap:export', payload, action),
+  },
+
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
   git: {
     available: () => ipcRenderer.invoke('git:available'),

@@ -85,6 +85,7 @@ const DEFAULT_SETTINGS = {
     },
     // Módulos de ferramentas (1.2.0). Normalização em normalizeToolModules.
     tree: { enabled: true },
+    snap: { enabled: true, watermark: true },
   },
 };
 
@@ -194,8 +195,10 @@ function normalizeToolModules(v) {
   const obj = (x) => (isPlainObject(x) ? x : {});
   const bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
   const tree = obj(v.tree);
+  const snap = obj(v.snap);
   return {
     tree: { ...tree, enabled: bool(tree.enabled, def.tree.enabled) },
+    snap: { ...snap, enabled: bool(snap.enabled, def.snap.enabled), watermark: bool(snap.watermark, def.snap.watermark) },
   };
 }
 

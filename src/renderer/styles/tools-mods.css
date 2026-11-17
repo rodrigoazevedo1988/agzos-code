@@ -13,6 +13,7 @@
 .tool-dialog-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
 .tool-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .tool-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); }
+.tool-field[hidden] { display: none; }
 .tool-field input[type="number"], .tool-field input[type="text"], .tool-field select {
   background: var(--bg, #0e0e0e); color: var(--fg); border: 1px solid var(--line-2, #3a3a3a);
   border-radius: 4px; padding: 3px 6px; font: inherit;
@@ -30,3 +31,15 @@
   line-height: 1.45; white-space: pre; user-select: text;
 }
 .tree-info { font-size: 11px; color: var(--fg-mute); }
+
+/* Agzos Snap */
+.snap-dialog { width: min(980px, 94vw); }
+.snap-options { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.snap-options .tool-field input[type="text"] { width: 160px; }
+.snap-options .tool-field input[type="color"] { width: 32px; height: 22px; padding: 0; border: 0; background: none; }
+.snap-preview {
+  flex: 1; min-height: 300px; height: 52vh; width: 100%; border: 1px solid var(--line, #2e2e2e); border-radius: 6px;
+  background: repeating-conic-gradient(#2a2a2a 0% 25%, #202020 0% 50%) 50% / 16px 16px;
+}
+.snap-info { font-size: 11px; color: var(--fg-mute); min-height: 14px; }
+.snap-measure { position: absolute; left: -100000px; top: 0; visibility: hidden; white-space: pre; }
