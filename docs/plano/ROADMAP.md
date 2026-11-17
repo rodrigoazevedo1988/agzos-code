@@ -100,6 +100,7 @@ Estimativa total até a v1.0: ~9–12 semanas.
 - [ ] Assinatura de código Windows/macOS (Fase 5 T4).
 - [ ] Cabeçalho da sidebar com botões por view (hoje mostra os do Explorer em Git/IA).
 - [ ] Cartão de aprovação do agente sem rolagem com o painel embaixo.
+- [ ] Itens "Em breve" da barra de menus e limitações de várias janelas: [BACKLOG](BACKLOG.md).
 
 **Próximas features**
 - **Git:** merge/rebase com resolução de conflitos, stash, blame.
