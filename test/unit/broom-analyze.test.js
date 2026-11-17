@@ -276,3 +276,120 @@ test('applyEdits: ordem decrescente e sobreposição mantém o maior', () => {
   assert.equal(applyEdits(text, [{ start: 0, end: 10, keepStart: 3, keepEnd: 6 }, { start: 4, end: 5 }]), '35');
   assert.equal(applyEdits(text, []), text);
 });
+
+// ------------------------------------------------- correções da revisão (1.1.0)
+const vm = require('node:vm');
+const os = require('node:os');
+
+/** Executa JS (sloppy) num contexto novo e devolve o valor de `expr`. */
+function runJs(code, expr) {
+  return JSON.stringify(vm.runInNewContext(`${code}\n;(${expr})`, {}));
+}
+
+/** Limpa e confere: faz parse e mantém o resultado de `expr` (JS). */
+function sameBehavior(src, expr, opts = only('deadCode')) {
+  const out = clean(src, { fileName: 'a.js', ...opts });
+  assert.equal(parseErrors(out, 'a.js'), 0, out);
+  assert.deepEqual(runJs(out, expr), runJs(src, expr), out);
+  return out;
+}
+
+test('deadCode: var após return é preservado (içamento)', () => {
+  const out = sameBehavior('function f() {\n  x = 5;\n  return x;\n  var x;\n}\n', '[f(), typeof x]');
+  assert.match(out, /var x;/);
+});
+
+test('deadCode: var usado por função içada após return é preservado', () => {
+  const src = 'function f() {\n  return h();\n  function h() { return v; }\n  var v = 1;\n}\n';
+  const out = clean(src, { fileName: 'a.js', ...only('deadCode') });
+  assert.match(out, /var v/);
+  assert.equal(runJs(out, 'f()'), undefined);
+});
+
+test('deadCode: var aninhado em bloco/laço morto é preservado', () => {
+  const src = 'function f() {\n  y = 2;\n  return y;\n  for (var i = 0; i < 1; i++) { var y; }\n  if (a) { var z; }\n}\n';
+  sameBehavior(src, '[f(), typeof y]');
+});
+
+test('deadCode: type/interface/enum/declare/namespace/class após return ficam (TS)', () => {
+  const src = 'function f(): X {\n  return 1;\n  type X = number;\n  interface I {}\n  enum E { A }\n  declare const d: number;\n  namespace N {}\n  class C {}\n  foo();\n}\n';
+  const out = clean(src, only('deadCode'));
+  assert.equal(out, 'function f(): X {\n  return 1;\n  type X = number;\n  interface I {}\n  enum E { A }\n  declare const d: number;\n  namespace N {}\n  class C {}\n}\n');
+});
+
+test('deadCode: let/const após return ficam (escopo de bloco/TDZ)', () => {
+  const src = 'function f() {\n  return () => x;\n  let x = 1;\n  const y = 2;\n}\n';
+  assert.equal(analyze(src, { fileName: 'a.ts', ...only('deadCode') }).edits.length, 0);
+});
+
+test('deadCode: if (0) com var/function dentro não é removido', () => {
+  sameBehavior('if (0) { var v = 2; }\nvar r = typeof v;\n', '[r, typeof v]');
+  sameBehavior('if (false) {\n  for (var k in o) {}\n}\nvar r = typeof k;\n', 'r');
+  assert.equal(analyze('if (0) { function g() {} }\n', { fileName: 'a.js', ...only('deadCode') }).edits.length, 0);
+  // Função aninhada com var próprio não impede a remoção.
+  assert.equal(clean('if (0) { const g = function () { var q; }; }\nfoo();\n', only('deadCode')), 'foo();\n');
+});
+
+test('deadCode: else com let/const/function mantém as chaves (sem colisão de escopo)', () => {
+  const src = 'let a = 1;\nif (0) {\n  b();\n} else {\n  let a = 2;\n  c(a);\n}\n';
+  const out = clean(src, only('deadCode'));
+  assert.equal(parseErrors(out, 'a.ts'), 0);
+  assert.match(out, /\{\s*let a = 2;\s*c\(a\);\s*\}/);
+  assert.equal(analyze(out, { fileName: 'a.ts', ...only('deadCode') }).edits.length, 0);
+});
+
+test('imports: fábrica JSX h (Stencil/Preact) mantida em .tsx', () => {
+  const src = "import { Component, h } from '@stencil/core';\n@Component({})\nexport class X {\n  render() { return <div />; }\n}\n";
+  assert.equal(analyze(src, { fileName: 'a.tsx', ...only('unusedImports') }).edits.length, 0);
+  for (const name of ['createElement', 'Fragment', 'jsx', 'jsxs', 'jsxDEV']) {
+    const s = `import { ${name} } from 'x';\nexport const el = <div />;\n`;
+    assert.equal(analyze(s, { fileName: 'a.jsx', ...only('unusedImports') }).edits.length, 0, name);
+  }
+  // Sem JSX, h não usado sai.
+  assert.equal(clean("import { h } from 'preact';\nexport const n = 1;\n", { fileName: 'a.tsx', ...only('unusedImports') }), 'export const n = 1;\n');
+});
+
+test('imports: pragmas @jsx/@jsxFrag em //, /* */ e /** */ mantêm o identificador', () => {
+  for (const pragma of ['// @jsx mk\n// @jsxFrag Fr\n', '/* @jsx mk */\n/* @jsxFrag Fr */\n', '/** @jsx mk @jsxFrag Fr */\n']) {
+    const src = `${pragma}import { mk, Fr, outro } from 'lib';\nexport const el = <><div /></>;\n`;
+    const out = clean(src, { fileName: 'a.jsx' });
+    assert.match(out, /import \{ mk, Fr \} from 'lib';/, out);
+  }
+});
+
+test('imports: jsxFactory/jsxFragmentFactory do tsconfig.json mais próximo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'broom-tsconfig-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'src', 'ui'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'tsconfig.base.json'), '{ "compilerOptions": { "jsxFragmentFactory": "Frag" } }');
+    fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{\n  // comentário\n  "extends": "./tsconfig.base.json",\n  "compilerOptions": { "jsx": "react", "jsxFactory": "preact.h", },\n}\n');
+    const file = path.join(dir, 'src', 'ui', 'a.tsx');
+    const src = "import * as preact from 'preact';\nimport { Frag } from 'preact';\nimport { nada } from 'x';\nexport const el = <><div /></>;\n";
+    const out = clean(src, { fileName: file, ...only('unusedImports') });
+    assert.equal(out, "import * as preact from 'preact';\nimport { Frag } from 'preact';\nexport const el = <><div /></>;\n");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('console: argumentos com efeito colateral não são removidos', () => {
+  const impure = ['i++', '--i', 'await save()', 'x = 1', 'x += 1', 'fn()', 'new Foo()', 'a?.b()', 'delete o.k',
+    'tag`x`', '`${f()}`', '...xs', '[g()]', '{ k: g() }', 'a || b()', 'c ? d() : e', '(x = 2)', 'class { static { f(); } }',
+    'yieldy, f()', 'import("x")', 'a.b.c()'];
+  for (const arg of impure) {
+    const src = `async function w() {\n  console.log(${arg});\n}\n`;
+    assert.equal(analyze(src, { fileName: 'a.js', ...only('console') }).edits.length, 0, arg);
+  }
+  const g = 'function* gen() {\n  console.log(yield 1);\n}\n';
+  assert.equal(analyze(g, { fileName: 'a.js', ...only('console') }).edits.length, 0);
+});
+
+test('console: argumentos livres de efeito continuam removíveis', () => {
+  const pure = ['1, "s", `t`, null, true, undefined', 'a, this, a.b, a?.b, a[0], a?.[k]', '`x ${a.b} y`',
+    '!a, -b, +c, typeof d, void 0', 'a + b * c, a && b, a ?? b, a ? b : c', '[a, 1], { a, b: 2, [k]: 3, m() {} }',
+    '() => f(), function () { g(); }', '/re/g, 10n', '(a as any), a!', 'import.meta'];
+  for (const arg of pure) {
+    const src = `console.log(${arg});\nfoo();\n`;
+    assert.equal(clean(src, { fileName: 'a.ts', ...only('console') }), 'foo();\n', arg);
+  }
+});
