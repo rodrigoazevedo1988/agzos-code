@@ -505,8 +505,32 @@ function ownedSession(evt, id) {
   return s;
 }
 
+/**
+ * Opções do pty. No Windows usa o ConPTY empacotado no node-pty (conpty.dll +
+ * OpenConsole.exe, o mesmo do Windows Terminal) em vez do conhost do sistema:
+ * o conhost de builds antigos do Windows entrega eventos de teclado que o
+ * PSReadLine 2.3+ (PowerShell 7) interpreta errado — ex.: a barra de espaço
+ * some. AGZOS_CONPTY_DLL=0 volta ao ConPTY do sistema.
+ */
+function ptyOptions({ cols, rows, cwd, env, platform = process.platform, envVars = process.env }) {
+  const opts = { name: 'xterm-256color', cols, rows, cwd, env, useConpty: true };
+  if (platform === 'win32' && envVars.AGZOS_CONPTY_DLL !== '0') opts.useConptyDll = true;
+  return opts;
+}
+
+function spawnPty(pty, shell, args, opts) {
+  try {
+    return pty.spawn(shell, args, opts);
+  } catch (err) {
+    if (!opts.useConptyDll) throw err;
+    // DLL ausente/bloqueada: cai no ConPTY do sistema.
+    console.warn('[term] ConPTY empacotado indisponível, usando o do sistema:', err.message);
+    return pty.spawn(shell, args, { ...opts, useConptyDll: false });
+  }
+}
+
 function createPtySession(pty, { id, shell, args, cwd, env, cols, rows, send }) {
-  const proc = pty.spawn(shell, args, { name: 'xterm-256color', cols, rows, cwd, env, useConpty: true });
+  const proc = spawnPty(pty, shell, args, ptyOptions({ cols, rows, cwd, env }));
   proc.onData((data) => send('term:data', id, data));
   proc.onExit(({ exitCode }) => {
     if (sessions.has(id)) sessions.delete(id);
@@ -703,6 +727,8 @@ module.exports = {
   listProfiles,
   SSH_ALLOWLIST,
   createLineDiscipline,
+  ptyOptions,
+  spawnPty,
   SHELL_ALLOWLIST,
   _sessions: sessions,
 };
