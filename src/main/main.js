@@ -277,7 +277,7 @@ const { guardFor } = windowGuards;
 ipcMain.on('window:fileToken', (evt) => { evt.returnValue = windowGuards.tokenFor(evt.sender); });
 require('./ipc/fs').register(ipcMain, { guardFor, shell });
 require('./ipc/dialog').register(ipcMain, { ...deps, guardFor });
-require('./ipc/term').register(ipcMain);
+require('./ipc/term').register(ipcMain, { guardFor });
 require('./ipc/ssh').register(ipcMain, { guardFor });
 require('./ipc/ports').register(ipcMain);
 const settingsStore = require('./ipc/settings').register(ipcMain, {

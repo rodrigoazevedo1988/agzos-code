@@ -174,6 +174,11 @@ async function repoInfo(cwd, opts) {
   try {
     const { stdout } = await runGit(cwd, ['rev-parse', '--show-toplevel', '--show-prefix'], opts);
     const [root, prefix = ''] = stdout.replace(/\r/g, '').split('\n');
+    // Pasta remota: a raiz volta como caminho POSIX do host → URI ssh:// da mesma authority.
+    if (typeof cwd === 'string' && cwd.startsWith('ssh://')) {
+      const { parseRemoteUri, toRemoteUri } = require('../workspace/remote-uri');
+      return { root: toRemoteUri(parseRemoteUri(cwd).authority, root.trim()), prefix: prefix.trim() };
+    }
     return { root: root.trim(), prefix: prefix.trim() };
   } catch (e) {
     if (e.kind === 'not-repo') return null;

@@ -206,3 +206,86 @@ test('pasta remota: senha pedida em diálogo e "Lembrar" grava no cofre', async 
     await server.close();
   }
 });
+
+test('pasta remota: terminal no host, git status/commit remoto e agente editando arquivo remoto', async () => {
+  test.setTimeout(120000);
+  const { startFakeOpenAI } = require('./fake-openai');
+  const { execFileSync } = require('child_process');
+  const { root, proj } = makeRemoteRoot();
+  execFileSync('git', ['init', '-q', '-b', 'main', proj]);
+  const server = await startServer(root);
+  const home = makeHome(server.port, { trust: server.hostPublic });
+  const fake = await startFakeOpenAI({
+    delayMs: 5,
+    script: [
+      { toolCalls: [{ name: 'edit_file', arguments: { path: 'src/app.js', old_string: 'const alvo = 1;', new_string: 'const alvo = 42;' } }] },
+      { toolCalls: [{ name: 'write_file', arguments: { path: 'novo/criado.txt', content: 'feito pelo agente\n' } }] },
+      { text: 'Pronto no host.' },
+    ],
+  });
+  const { app, page, errors } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true, aiAgent: { mode: 'auto' } },
+    env: {
+      HOME: home, SSH_AUTH_SOCK: '', AGZOS_REMOTE_RETRY_MS: '150',
+      GIT_AUTHOR_NAME: 'Teste', GIT_AUTHOR_EMAIL: 't@x.com', GIT_COMMITTER_NAME: 'Teste', GIT_COMMITTER_EMAIL: 't@x.com',
+    },
+  });
+  const rootUri = `ssh://fixture${proj}`;
+  try {
+    await page.evaluate(async (uri) => {
+      await window.AgzosRemote.connect('fixture');
+      await window.AgzosRemote.openFolder(uri);
+    }, rootUri);
+    await expect.poll(() => page.evaluate(() => window.AgzosState.workspaceRoot)).toBe(rootUri);
+
+    // Terminal: perfil "SSH: fixture" é o padrão e abre o shell no host, já na raiz.
+    const profiles = await page.evaluate(async () => (await import('./scripts/terminal.js')).getTerminalProfiles());
+    expect(profiles.defaultId).toBe('ssh-remote');
+    expect(profiles.profiles[0].label).toBe('SSH: fixture');
+    await page.evaluate(() => window.AgzosTerminal ? null : import('./scripts/terminal.js').then((m) => m.setupTerminalPanel()));
+    const sid = await page.evaluate(() => window.AgzosTerminal.create());
+    await expect.poll(async () => (await page.evaluate(() => window.AgzosTerminal.list())).find((t) => t.id === sid)?.termId || null).not.toBeNull();
+    const term = (await page.evaluate(() => window.AgzosTerminal.list())).find((t) => t.id === sid);
+    expect(term.profileId).toBe('ssh-remote');
+    await page.evaluate((id) => window.agzos.term.write(id, 'echo "eco-$((40+2))"; pwd\n'), term.termId);
+    await expect.poll(() => page.evaluate((id) => window.AgzosTerminal.buffer(id), sid), { timeout: 15000 }).toContain('eco-42');
+    expect(await page.evaluate((id) => window.AgzosTerminal.buffer(id), sid)).toContain(proj);
+    expect(server.execLog.some((c) => c.startsWith(`cd '${proj}' && exec "\${SHELL:-/bin/sh}" -l`))).toBe(true);
+
+    // Git remoto: status, stage e commit pelo exec do host.
+    const st = await page.evaluate((r) => window.agzos.git.status(r), rootUri);
+    expect(st.ok).toBe(true);
+    expect(st.data.root).toBe(rootUri);
+    expect(st.data.changes.map((f) => f.path)).toContain('src/app.js');
+    expect((await page.evaluate((r) => window.agzos.git.stage(r, []), rootUri)).ok).toBe(true);
+    const c = await page.evaluate((r) => window.agzos.git.commit(r, 'commit remoto'), rootUri);
+    expect(c.ok).toBe(true);
+    expect(execFileSync('git', ['-C', proj, 'log', '-1', '--format=%s']).toString().trim()).toBe('commit remoto');
+
+    // Agente (modo automático) edita e cria arquivos no host; desfazer restaura pelo provider.
+    await page.evaluate(async (url) => {
+      await window.agzos.ai.saveProfile({ preset: 'custom', label: 'Fake', baseUrl: `${url}/v1`, model: 'fake-1' });
+      window.dispatchEvent(new CustomEvent('agzos:ai-profiles-changed'));
+      window.AgzosAiDock.show();
+    }, fake.baseUrl);
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'agent');
+    await page.locator('#ai-input').fill('Troque o alvo para 42');
+    await page.locator('#ai-input').press('Enter');
+    await expect(page.locator('.ag-step[data-tool="edit_file"]')).toHaveAttribute('data-status', 'ok', { timeout: 15000 });
+    await expect(page.locator('.ag-step[data-tool="write_file"]')).toHaveAttribute('data-status', 'ok', { timeout: 15000 });
+    await expect(page.locator('#ai-send')).toHaveAttribute('data-state', 'send', { timeout: 15000 });
+    expect(fs.readFileSync(path.join(proj, 'src', 'app.js'), 'utf8')).toContain('const alvo = 42;');
+    expect(fs.readFileSync(path.join(proj, 'novo', 'criado.txt'), 'utf8')).toBe('feito pelo agente\n');
+    await expect(page.locator('.ag-summary .ag-file')).toHaveCount(2);
+    await page.locator('.ag-undo').click();
+    await page.locator('.ag-undo-confirm').click();
+    await expect(page.locator('.ag-summary')).toHaveClass(/is-undone/, { timeout: 15000 });
+    await expect.poll(() => fs.readFileSync(path.join(proj, 'src', 'app.js'), 'utf8')).toContain('const alvo = 1;');
+    expect(fs.existsSync(path.join(proj, 'novo'))).toBe(false);
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+    await fake.close();
+    await server.close();
+  }
+});

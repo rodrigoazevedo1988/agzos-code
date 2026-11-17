@@ -9,6 +9,8 @@ const path = require('path');
 const { normalizeModules } = require('../../lib/settings');
 const { createAnalysisCache, cacheKey, rulesHash } = require('./cache');
 const { applyEdits } = require('./apply');
+const { isRemote, providerFor } = require('../../workspace/provider-for');
+const remoteSearch = require('../../remote/search');
 
 const SUPPORTED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage']);
@@ -51,6 +53,15 @@ function createBroomEngine({ workerHost, cache = createAnalysisCache({ max: 200 
   const workerOptions = (o) => ({ rules: o.rules, keepConsole: o.keepConsole, keepComments: o.keepComments });
 
   async function readForAnalysis(abs) {
+    if (isRemote(abs)) {
+      // Pasta remota: lê pelo provider (SFTP) da janela do contexto; análise local no worker.
+      const prov = providerFor(abs);
+      const rs = await prov.stat(abs);
+      const st = { size: rs.size, mtimeMs: rs.mtime, isFile: () => rs.isFile };
+      if (!rs.isFile) throw new Error(`Não é um arquivo: ${abs}`);
+      if (rs.size > limits.maxBytes) return { st, text: null, tooLarge: true };
+      return { st, text: await prov.readFile(abs, 'utf8') };
+    }
     const st = await fs.promises.stat(abs);
     if (!st.isFile()) throw new Error(`Não é um arquivo: ${abs}`);
     if (st.size > limits.maxBytes) return { st, text: null, tooLarge: true };
@@ -89,6 +100,7 @@ function createBroomEngine({ workerHost, cache = createAnalysisCache({ max: 200 
    * → { files: [{ path, count, byRule }], truncated, cancelled }
    */
   async function scan(root, options, { signal, onProgress = () => {} } = {}) {
+    if (isRemote(root)) return scanRemote(root, options, { signal, onProgress });
     const found = [];
     let truncated = false;
     let cancelled = false;
@@ -138,6 +150,37 @@ function createBroomEngine({ workerHost, cache = createAnalysisCache({ max: 200 
     return { files: found, truncated, cancelled };
   }
 
+  /** Pasta remota: lista no host (rg --files/find) e analisa arquivo a arquivo (texto via SFTP). */
+  async function scanRemote(root, options, { signal, onProgress }) {
+    const prov = providerFor(root);
+    const found = [];
+    let cancelled = false;
+    const res = await prov.execRaw(remoteSearch.buildListScript(prov.pathOf(root), remoteSearch.LIST_LIMIT), { timeoutMs: 60_000, signal });
+    const rels = remoteSearch.parseFileList(res.stdout)
+      .filter((r) => isSupported(r) && !r.split('/').some((seg) => IGNORED_DIRS.has(seg)));
+    const truncated = rels.length > limits.maxFiles;
+    const files = rels.slice(0, limits.maxFiles).map((r) => prov.join(root, r));
+    try {
+      for (let i = 0; i < files.length; i++) {
+        if (signal?.aborted) throw abortError();
+        try {
+          const { result } = await analyzeFile(files[i], options, { signal });
+          if (result.edits?.length) {
+            const sm = summarize(result);
+            found.push({ path: files[i], count: sm.count, byRule: sm.byRule });
+          }
+        } catch (err) {
+          if (err?.name === 'AbortError') throw err;
+        }
+        onProgress({ done: i + 1, total: files.length, path: files[i] });
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') throw err;
+      cancelled = true;
+    }
+    return { files: found, truncated, cancelled };
+  }
+
   /** Calcula a limpeza de um arquivo sem gravar. → { text, after, edits, error? } */
   async function plan(abs, options, { editIds, signal } = {}) {
     const { text, result } = await analyzeFile(abs, options, { signal });
@@ -152,9 +195,11 @@ function createBroomEngine({ workerHost, cache = createAnalysisCache({ max: 200 
 
   /** Grava o resultado se o arquivo não mudou desde a leitura. */
   async function write(abs, before, after) {
-    const current = await fs.promises.readFile(abs, 'utf8');
+    const remote = isRemote(abs) ? providerFor(abs) : null;
+    const current = remote ? await remote.readFile(abs, 'utf8') : await fs.promises.readFile(abs, 'utf8');
     if (current !== before) throw new Error(`${path.basename(abs)} mudou durante a limpeza; tente de novo`);
-    await fs.promises.writeFile(abs, after, 'utf8');
+    if (remote) await remote.writeFile(abs, after);
+    else await fs.promises.writeFile(abs, after, 'utf8');
     cache.invalidate(abs);
   }
 

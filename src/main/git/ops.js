@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { runGit, GitError, NETWORK_TIMEOUT_MS, CLONE_TIMEOUT_MS } = require('./run');
+const { isRemote, joinAny, providerFor } = require('../workspace/provider-for');
 const { getStatus, repoRoot, parseLog, parseBranches, parseRemotes, LOG_FORMAT, BRANCH_FORMAT } = require('./status');
 
 const MAX_DIFF_BYTES = 2 * 1024 * 1024;
@@ -272,11 +273,18 @@ async function clone(url, parentDir, { name, onProgress, ...opts } = {}) {
   if (folder.includes('/') || folder.includes('\\') || folder === '..' || folder.startsWith('-')) {
     throw new GitError('Nome de pasta inválido.', { kind: 'invalid' });
   }
-  const dest = path.join(parentDir, folder);
-  if (fs.existsSync(dest) && fs.readdirSync(dest).length) {
+  const dest = joinAny(parentDir, folder);
+  if (isRemote(dest)) {
+    const prov = providerFor(dest);
+    if (await prov.exists(dest) && (await prov.readDir(dest)).length) {
+      throw new GitError(`A pasta ${folder} já existe e não está vazia.`, { kind: 'dest-exists' });
+    }
+  } else if (fs.existsSync(dest) && fs.readdirSync(dest).length) {
     throw new GitError(`A pasta ${folder} já existe e não está vazia.`, { kind: 'dest-exists' });
   }
-  await runGit(parentDir, ['clone', '--progress', '--', u, dest], {
+  // Remoto: o destino vai como caminho do host (o token não vai, ver git/run.js).
+  const destArg = isRemote(dest) ? providerFor(dest).pathOf(dest) : dest;
+  await runGit(parentDir, ['clone', '--progress', '--', u, destArg], {
     timeoutMs: CLONE_TIMEOUT_MS,
     ...opts,
     onStderr: onProgress ? (chunk) => { const p = parseProgress(chunk); if (p) onProgress(p); } : undefined,
@@ -305,6 +313,15 @@ async function diffFile(cwd, relPath, { staged = false, origPath, ...opts } = {}
   let modified = '';
   if (staged) {
     modified = await showBlob(`:${relPath}`);
+  } else if (isRemote(r)) {
+    // Pasta remota: lê o arquivo do working tree pelo provider (SFTP).
+    const abs = joinAny(r, relPath);
+    try {
+      const prov = providerFor(abs);
+      const st = await prov.stat(abs);
+      if (st.size > MAX_DIFF_BYTES) return { original: '', modified: '', binary: false, tooLarge: true };
+      modified = await prov.readFile(abs, 'utf-8');
+    } catch { modified = ''; }
   } else {
     const abs = path.join(r, relPath);
     try {

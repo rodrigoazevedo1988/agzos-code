@@ -29,6 +29,7 @@ const fs = require('fs');
 const { randomUUID } = require('crypto');
 const { getModuleTools } = require('../modules/agent-tools');
 const { guardResolver } = require('../lib/window-guards');
+const { providerFor, isRemote } = require('../workspace/provider-for');
 const {
   loadSkills, describeSkill, SKILL_TEMPLATE, pickSkill, trustRecord, isSkillTrusted,
 } = require('../agent/skills');
@@ -49,7 +50,8 @@ function register(ipcMain, {
   const senderId = (sender) => (sender && sender.id !== undefined ? sender.id : null);
 
   function skillsFor(root) {
-    return loadSkills({ userDir: skillsDir, projectRoot: root || null });
+    // Pasta remota: só skills do usuário (as do projeto ficariam no host).
+    return loadSkills({ userDir: skillsDir, projectRoot: root && !isRemote(root) ? root : null });
   }
   const trustedSkills = () => normalizeAiSkills(settingsStore.load().aiSkills).trusted;
 
@@ -82,6 +84,8 @@ function register(ipcMain, {
     }
     const g = guardOf(sender);
     for (const candidate of candidates) {
+      // Pasta remota (ssh://): o guard da janela já exige a raiz aberta (workspace:open conferiu a pasta).
+      if (isRemote(candidate)) { if (g.isAllowed(candidate)) return g.assertAllowed(candidate); continue; }
       if (path.isAbsolute(candidate) && g.isAllowed(candidate) && isDirectory(candidate)) return path.resolve(candidate);
     }
     return null;
@@ -116,7 +120,12 @@ function register(ipcMain, {
         getRoot: (payload) => getRoot(payload, sender),
         getProvider,
         getMode: () => settingsStore.load().aiAgent?.mode,
-        getExtraTools: () => [...createRendererTools((what, args) => queryRenderer(sender, what, args)), ...getModuleTools(settingsStore.load())],
+        // Pasta remota: só as ferramentas do renderer (as dos módulos leem o disco local).
+        getExtraTools: ({ remote = false } = {}) => [
+          ...createRendererTools((what, args) => queryRenderer(sender, what, args)),
+          ...(remote ? [] : getModuleTools(settingsStore.load())),
+        ],
+        providerFor: (root) => providerFor(root, sender),
         getSkill: (id, root) => pickSkill(skillsFor(root).skills, id, { trusted: trustedSkills(), kind: 'agent' }),
         ...(attachments ? { buildContent: (text, list) => attachments.buildContent(text, list) } : {}),
         checkpoints,
@@ -192,7 +201,7 @@ function register(ipcMain, {
     return skillsDir;
   });
   ipcMain.handle('agent:cancel', (event, requestId) => sessions.get(event.sender)?.cancel(requestId) ?? false);
-  ipcMain.handle('agent:undo', (event, checkpointId) => {
+  ipcMain.handle('agent:undo', async (event, checkpointId) => {
     const sender = event?.sender;
     // Checkpoint de outra janela: recusado. Sem dono conhecido (ex.: depois de reiniciar),
     // vale só o guard da janela que pediu.
@@ -201,7 +210,8 @@ function register(ipcMain, {
     }
     try {
       const g = guardOf(sender);
-      const result = checkpoints.undo(checkpointId, { assertPath: (p) => g.assertAllowed(p) });
+      // undoAsync: caminhos ssh:// voltam pelo provider desta janela.
+      const result = await checkpoints.undoAsync(checkpointId, { assertPath: (p) => g.assertAllowed(p), providerFor: (p) => providerFor(p, sender) });
       if (!result.errors.length || result.restored.length) checkpointOwners.delete(checkpointId);
       return result;
     } catch (err) { return { restored: [], errors: [{ path: null, message: err.message }] }; }

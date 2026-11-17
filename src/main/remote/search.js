@@ -30,15 +30,23 @@ function parseFileList(stdout) {
     .filter(Boolean);
 }
 
-/** Script de busca de texto literal (-F). Linha 1 indica a ferramenta usada. */
-function buildSearchScript(rootPath, query, max = SEARCH_LIMIT) {
+/**
+ * Script de busca. Padrão: texto literal (-F), diferenciando maiúsculas.
+ * opts: { ignoreCase, regex (ERE no grep / regex do rg), glob }. Linha 1 indica a ferramenta.
+ */
+function buildSearchScript(rootPath, query, max = SEARCH_LIMIT, { ignoreCase = false, regex = false, glob = null } = {}) {
   const n = Math.max(1, Math.min(Number(max) || SEARCH_LIMIT, 1000));
   const rgGlobs = EXCLUDED_DIRS.map((d) => `-g ${shQuote(`!${d}/`)}`).join(' ');
   const excl = EXCLUDED_DIRS.map((d) => `--exclude-dir=${shQuote(d)}`).join(' ');
   const q = shQuote(query);
+  const rgFlags = [regex ? '' : '-F', ignoreCase ? '-i' : ''].filter(Boolean).join(' ');
+  const grepFlags = [regex ? '-E' : '-F', ignoreCase ? '-i' : ''].filter(Boolean).join(' ');
+  const g = typeof glob === 'string' && glob.trim() ? glob.trim() : null;
+  const rgGlob = g ? ` -g ${shQuote(g)}` : '';
+  const grepGlob = g ? ` --include=${shQuote(g.split('/').pop())}` : '';
   return `cd ${shQuote(rootPath)} && if command -v rg >/dev/null 2>&1; then echo ${RG_MARK}; `
-    + `rg --json -F --max-filesize 5M --max-count 50 ${rgGlobs} -e ${q} . 2>/dev/null | head -n ${n * 4}; `
-    + `else echo ${GREP_MARK}; grep -rIn -F ${excl} -e ${q} . 2>/dev/null | head -n ${n}; fi`;
+    + `rg --json ${rgFlags} --max-filesize 5M --max-count 50 ${rgGlobs}${rgGlob} -e ${q} . 2>/dev/null | head -n ${n * 4}; `
+    + `else echo ${GREP_MARK}; grep -rIn ${grepFlags} ${excl}${grepGlob} -e ${q} . 2>/dev/null | head -n ${n}; fi`;
 }
 
 /** → [{ rel, line, text }] */
