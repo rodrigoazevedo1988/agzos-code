@@ -88,7 +88,11 @@ function register(ipcMain, {
     if (entry && entry.root !== root) { await stopFor(id); entry = null; }
     if (!entry) {
       const server = createServer({
-        root, isAllowed: (p) => guardOf(sender).isAllowed(p), startPort: options().startPort,
+        // Remoto: o caminho servido é o real (links resolvidos) e já foi conferido contra o
+        // realpath da raiz; o guard confere que a raiz continua liberada na janela.
+        root,
+        isAllowed: remote ? () => guardOf(sender).isAllowed(root) : (p) => guardOf(sender).isAllowed(p),
+        startPort: options().startPort,
         ...(remote ? { source: providerSource(prov) } : {}),
       });
       entry = { server, root, sender };

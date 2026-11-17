@@ -20,6 +20,7 @@ const { createSshProvider } = require('./providers/ssh');
 const { isRemote, parseRemoteUri, toRemoteUri, remoteJoin, remoteRelative, joinAny } = require('./remote-uri');
 
 let manager = null;
+let rootsResolver = null; // (ownerId) → raízes liberadas na janela (guard.roots())
 const ownerContext = new AsyncLocalStorage();
 const cache = new Map(); // `${ownerId}|${authority}` → provider
 
@@ -30,6 +31,15 @@ function setRemoteManager(m) {
 
 function getRemoteManager() {
   return manager;
+}
+
+/**
+ * Raízes da janela para a contenção de symlinks do provider SSH (configurado no
+ * main com guardFor(id).roots()). Sem resolver, o provider não contém.
+ */
+function setRootsResolver(fn) {
+  rootsResolver = typeof fn === 'function' ? fn : null;
+  cache.clear();
 }
 
 function ownerIdOf(sender) {
@@ -59,12 +69,16 @@ function providerFor(pathOrUri, sender) {
   const key = `${ownerId}|${r.authority}`;
   let p = cache.get(key);
   if (!p) {
-    p = createSshProvider({ manager, ownerId, authority: r.authority });
+    const resolver = rootsResolver;
+    p = createSshProvider({
+      manager, ownerId, authority: r.authority,
+      getRoots: resolver ? () => { try { return resolver(ownerId) || []; } catch { return []; } } : null,
+    });
     cache.set(key, p);
   }
   return p;
 }
 
 module.exports = {
-  providerFor, runAsOwner, currentOwner, setRemoteManager, getRemoteManager, isRemote, parseRemoteUri, toRemoteUri, remoteJoin, remoteRelative, joinAny,
+  providerFor, runAsOwner, currentOwner, setRemoteManager, getRemoteManager, setRootsResolver, isRemote, parseRemoteUri, toRemoteUri, remoteJoin, remoteRelative, joinAny,
 };

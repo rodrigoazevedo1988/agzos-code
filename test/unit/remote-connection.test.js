@@ -4,7 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { resolveTarget, openConnection } = require('../../src/main/remote/connection');
+const net = require('net');
+const { resolveTarget, openConnection, createPausableTimer } = require('../../src/main/remote/connection');
 const { createRemoteManager } = require('../../src/main/remote/manager');
 const kh = require('../../src/main/remote/known-hosts');
 const { createSshServer, generateKey } = require('../fixtures/ssh-server');
@@ -114,6 +115,110 @@ test('host key divergente bloqueia sem perguntar (nem senha nem confiança)', as
     (err) => err.code === 'HOSTKEY_MISMATCH' && /ataque/.test(err.message),
   );
   assert.equal(asked, 0);
+});
+
+test('chave do host de outro tipo que a registrada → HOSTKEY_MISMATCH (handshake restrito aos tipos conhecidos)', async () => {
+  const srvRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-remote-rsa-'));
+  const rsaKey = generateKey('rsa', { bits: 2048 }).private;
+  const srv = createSshServer({ root: srvRoot, hostKey: rsaKey, users: { deploy: { publicKeys: [userKey.public] } } });
+  const port = await srv.listen();
+  try {
+    const home = freshHome({ trusted: false, key: true });
+    // known_hosts tem ed25519 para o host; o servidor só apresenta ssh-rsa.
+    const ed = require('../fixtures/ssh-server').publicBlob(generateKey().private);
+    fs.writeFileSync(path.join(home, '.ssh', 'known_hosts'), kh.formatEntry('127.0.0.1', port, ed));
+    let asked = 0;
+    await assert.rejects(
+      openConnection(resolveTarget(`deploy@127.0.0.1:${port}`), baseOpts(home, {
+        askHostKey: async () => { asked++; return true; },
+        askSecret: async () => { asked++; return null; },
+      })),
+      (err) => err.code === 'HOSTKEY_MISMATCH' && /ataque/.test(err.message),
+    );
+    assert.equal(asked, 0);
+
+    // Servidor com ed25519 e rsa; só a rsa registrada → negocia rsa e conecta.
+    const both = createSshServer({ root: srvRoot, hostKey: rsaKey, extraHostKeys: [generateKey().private], users: { deploy: { publicKeys: [userKey.public] } } });
+    const port2 = await both.listen();
+    try {
+      const home2 = freshHome({ trusted: false, key: true });
+      fs.writeFileSync(path.join(home2, '.ssh', 'known_hosts'), kh.formatEntry('127.0.0.1', port2, srv.hostPublic));
+      const { client } = await openConnection(resolveTarget(`deploy@127.0.0.1:${port2}`), baseOpts(home2, {
+        askHostKey: async () => { throw new Error('não deveria perguntar'); },
+      }));
+      client.end();
+    } finally {
+      await both.close();
+    }
+  } finally {
+    await srv.close();
+  }
+});
+
+test('createPausableTimer: pausa durante o diálogo e retoma com o tempo que faltava', () => {
+  let now = 0;
+  const timers = new Map();
+  let seq = 0;
+  const clock = {
+    now: () => now,
+    setTimeout: (fn, ms) => { const id = ++seq; timers.set(id, { fn, at: now + ms }); return id; },
+    clearTimeout: (id) => timers.delete(id),
+  };
+  const advance = (ms) => {
+    now += ms;
+    for (const [id, t] of [...timers]) if (t.at <= now) { timers.delete(id); t.fn(); }
+  };
+  let fired = 0;
+  const t = createPausableTimer(20_000, () => { fired++; }, clock);
+  advance(15_000);
+  t.pause();
+  advance(25_000); // usuário pensando no diálogo
+  assert.equal(fired, 0);
+  t.resume();
+  advance(4_999);
+  assert.equal(fired, 0);
+  advance(1);
+  assert.equal(fired, 1);
+  // Pausas aninhadas: só retoma quando todas terminam; clear cancela.
+  const t2 = createPausableTimer(1000, () => { fired++; }, clock);
+  t2.pause(); t2.pause(); t2.resume();
+  advance(5000);
+  assert.equal(fired, 1);
+  t2.resume();
+  t2.clear();
+  advance(5000);
+  assert.equal(fired, 1);
+});
+
+test('readyTimeout não corre enquanto o diálogo espera o usuário; servidor mudo ainda expira', async () => {
+  const home = freshHome({ trusted: false, key: true });
+  const { client } = await openConnection(resolveTarget(`deploy@127.0.0.1:${server.port}`), baseOpts(home, {
+    readyTimeout: 300,
+    askHostKey: () => new Promise((r) => setTimeout(() => r(true), 900)),
+  }));
+  client.end();
+
+  const home2 = freshHome();
+  const { client: c2 } = await openConnection(resolveTarget(`ana@127.0.0.1:${server.port}`), baseOpts(home2, {
+    readyTimeout: 300,
+    askSecret: () => new Promise((r) => setTimeout(() => r({ value: 'abc', remember: false }), 900)),
+  }));
+  c2.end();
+
+  const socks = new Set();
+  const mute = net.createServer((sock) => socks.add(sock)); // aceita e nunca responde
+  await new Promise((r) => mute.listen(0, '127.0.0.1', r));
+  try {
+    const t0 = Date.now();
+    await assert.rejects(
+      openConnection(resolveTarget(`deploy@127.0.0.1:${mute.address().port}`), baseOpts(freshHome(), { readyTimeout: 300 })),
+      (err) => err.code === 'CONNECT_FAILED' && /Timed out/i.test(err.message),
+    );
+    assert.ok(Date.now() - t0 < 5000);
+  } finally {
+    for (const sock of socks) sock.destroy();
+    mute.close();
+  }
 });
 
 test('senha errada esgota e falha com AUTH_FAILED; cancelar → CANCELLED', async () => {

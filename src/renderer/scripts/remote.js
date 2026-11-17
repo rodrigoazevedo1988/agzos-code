@@ -23,8 +23,13 @@ const State = window.AgzosState;
    -------------------------------------------------------------------------- */
 async function askSecret(p) {
   const isPass = p.secret === 'passphrase';
+  // keyboard-interactive (OTP/2FA): título = texto do prompt; eco só se o servidor pedir.
+  const isKi = p.secret === 'keyboard-interactive';
   const fields = [
-    { name: 'value', type: 'password', label: isPass ? 'Passphrase' : 'Senha', required: true, autofocus: true },
+    {
+      name: 'value', type: isKi && p.echo ? 'text' : 'password', label: isKi ? 'Resposta' : (isPass ? 'Passphrase' : 'Senha'),
+      required: true, autofocus: true,
+    },
   ];
   if (p.canRemember !== false) fields.push({ name: 'remember', type: 'checkbox', label: 'Lembrar no cofre do sistema' });
   const res = await openGitDialog({

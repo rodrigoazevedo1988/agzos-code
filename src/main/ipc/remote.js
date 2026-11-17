@@ -64,7 +64,7 @@ function register(ipcMain, { manager, home = () => os.homedir(), createWindow = 
     return {
       askSecret: async (req) => {
         const { kind, ...rest } = req || {};
-        // secret: 'password' | 'passphrase'
+        // secret: 'password' | 'passphrase' | 'keyboard-interactive' (OTP: echo, sem "Lembrar")
         const r = await ask(sender, { ...rest, kind: 'secret', secret: kind });
         if (!r || typeof r.value !== 'string') return null;
         return { value: r.value, remember: !!r.remember };

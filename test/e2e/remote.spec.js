@@ -178,6 +178,83 @@ test('pasta remota: host key divergente bloqueia sem opção de continuar', asyn
   }
 });
 
+test('pasta remota: chave do host de outro tipo que a registrada bloqueia (não vira "desconhecido")', async () => {
+  test.setTimeout(60000);
+  const { root } = makeRemoteRoot();
+  // Servidor só com ssh-rsa; o known_hosts tem ssh-ed25519 para o host.
+  const server = createSshServer({
+    root, hostKey: generateKey('rsa', { bits: 2048 }).private, users: { deploy: { publicKeys: [userKey.public] } },
+  });
+  await server.listen();
+  const home = makeHome(server.port, { trust: publicBlob(generateKey().private) });
+  const { app, page } = await launch(home);
+  try {
+    await pickHost(page, 'fixture');
+    const blocked = page.locator('#remote-hostkey-blocked');
+    await expect(blocked).toBeVisible({ timeout: 15000 });
+    await expect(blocked).toContainText('diferente da registrada');
+    await expect(blocked).toContainText('ataque');
+    await expect(blocked.locator('button')).toHaveCount(1);
+    await expect(page.locator('#remote-hostkey-dialog')).toHaveCount(0);
+    await blocked.locator('button').click();
+    expect(await page.evaluate(() => window.agzos.remote.list())).toEqual([]);
+  } finally {
+    await app.close();
+    await server.close();
+  }
+});
+
+test('pasta remota: agente não lê arquivo fora da raiz por symlink do host', async () => {
+  test.setTimeout(90000);
+  const { startFakeOpenAI } = require('./fake-openai');
+  const { root, proj } = makeRemoteRoot();
+  const fora = path.join(root, 'fora');
+  fs.mkdirSync(fora);
+  fs.writeFileSync(path.join(fora, 'segredo'), 'SEGREDO-DO-HOST\n');
+  fs.symlinkSync(fora, path.join(proj, 'cfg'));
+  const server = await startServer(root);
+  const home = makeHome(server.port, { trust: server.hostPublic });
+  const fake = await startFakeOpenAI({
+    delayMs: 5,
+    script: [
+      { toolCalls: [{ name: 'read_file', arguments: { path: 'cfg/segredo' } }] },
+      { text: 'Não consegui.' },
+    ],
+  });
+  const { app, page } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true, aiAgent: { mode: 'auto' } },
+    env: { HOME: home, SSH_AUTH_SOCK: '', AGZOS_REMOTE_RETRY_MS: '150' },
+  });
+  const rootUri = `ssh://fixture${proj}`;
+  try {
+    await page.evaluate(async (uri) => {
+      await window.AgzosRemote.connect('fixture');
+      await window.AgzosRemote.openFolder(uri);
+    }, rootUri);
+    await expect.poll(() => page.evaluate(() => window.AgzosState.workspaceRoot)).toBe(rootUri);
+    // fs IPC também nega (mesmo provider).
+    const viaIpc = await page.evaluate((u) => window.agzos.fs.readFile(`${u}/cfg/segredo`).then(() => 'lido', (e) => String(e.message || e)), rootUri);
+    expect(viaIpc).toContain('Acesso negado');
+    await page.evaluate(async (url) => {
+      await window.agzos.ai.saveProfile({ preset: 'custom', label: 'Fake', baseUrl: `${url}/v1`, model: 'fake-1' });
+      window.dispatchEvent(new CustomEvent('agzos:ai-profiles-changed'));
+      window.AgzosAiDock.show();
+    }, fake.baseUrl);
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'agent');
+    await page.locator('#ai-input').fill('Leia cfg/segredo');
+    await page.locator('#ai-input').press('Enter');
+    await expect(page.locator('.ag-step[data-tool="read_file"]')).toHaveAttribute('data-status', 'error', { timeout: 15000 });
+    await expect(page.locator('#ai-send')).toHaveAttribute('data-state', 'send', { timeout: 15000 });
+    const sent = JSON.stringify(fake.requests.map((r) => r.body));
+    expect(sent).toContain('Acesso negado');
+    expect(sent).not.toContain('SEGREDO-DO-HOST');
+  } finally {
+    await app.close();
+    await fake.close();
+    await server.close();
+  }
+});
+
 test('pasta remota: senha pedida em diálogo e "Lembrar" grava no cofre', async () => {
   test.setTimeout(60000);
   const { root } = makeRemoteRoot();

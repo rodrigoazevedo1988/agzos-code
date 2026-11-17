@@ -60,7 +60,9 @@ function register(ipcMain, {
     if (!m || !m.get(sender.id, r.authority)) return false;
     const uri = toRemoteUri(r.authority, r.path);
     try {
-      const st = await providerFor(uri, sender).stat(uri);
+      // statRaw: a pasta nova ainda não é raiz (stat normal contém nas raízes atuais).
+      const prov = providerFor(uri, sender);
+      const st = await (typeof prov.statRaw === 'function' ? prov.statRaw(uri) : prov.stat(uri));
       if (!st.isDirectory) return false;
     } catch {
       return false;
