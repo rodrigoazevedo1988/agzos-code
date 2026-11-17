@@ -26,7 +26,7 @@ export function remotePickerItems({ hosts = [], hasWsl = false } = {}) {
     { id: 'connect', label: 'Conectar a um host…', description: 'usuario@host[:porta]', icon: 'plug' },
     { id: 'add', label: 'Adicionar novo host SSH…', description: 'Grava no ~/.ssh/config e conecta', icon: 'plus' },
     { id: 'config', label: 'Abrir arquivo de configuração SSH', description: '~/.ssh/config', icon: 'file-cog' },
-    { id: 'folder', label: 'Abrir pasta remota via SSH', description: '', icon: 'folder-closed', disabled: true, badge: 'Em breve (1.2.0)' },
+    { id: 'folder', label: 'Abrir pasta remota via SSH', description: 'Explorer, editor, terminal e Git no host', icon: 'folder-closed' },
   );
   if (hasWsl) items.push({ id: 'wsl', label: 'Abrir terminal WSL', description: 'Windows Subsystem for Linux', icon: 'server' });
   return items;
@@ -41,8 +41,12 @@ export function suggestAlias(target) {
   return host.split('.')[0] || host;
 }
 
-/** Estado do botão remoto da status bar a partir da sessão de terminal ativa. */
-export function remoteStatus(session) {
+/**
+ * Estado do botão remoto da status bar: pasta remota aberta (workspaceHost) tem
+ * prioridade; senão, a sessão de terminal SSH ativa.
+ */
+export function remoteStatus(session, workspaceHost = null) {
+  if (workspaceHost) return { connected: true, label: `SSH: ${workspaceHost}`, title: `Pasta remota em ${workspaceHost} via SSH` };
   const ssh = session?.ssh;
   if (!ssh || session.exited) return { connected: false, label: '', title: 'Abrir uma conexão remota' };
   const name = ssh.alias || ssh.host;

@@ -86,6 +86,11 @@ function parseSshConfig(text) {
       if (key === 'hostname' && entry.hostName === undefined) entry.hostName = value;
       else if (key === 'user' && entry.user === undefined) entry.user = value;
       else if (key === 'identityfile' && entry.identityFile === undefined) entry.identityFile = value;
+      // Pasta remota (1.2.0) não suporta saltos: só marca para avisar com clareza.
+      else if ((key === 'proxyjump' || key === 'proxycommand') && entry._proxySeen === undefined) {
+        entry._proxySeen = true;
+        if (value.toLowerCase() !== 'none') entry.proxy = true;
+      }
       else if (key === 'port' && !('port' in entry) && !entry._portSeen) {
         entry._portSeen = true;
         const port = validPort(value);
@@ -93,7 +98,7 @@ function parseSshConfig(text) {
       }
     }
   }
-  for (const h of hosts) delete h._portSeen;
+  for (const h of hosts) { delete h._portSeen; delete h._proxySeen; }
   return hosts;
 }
 

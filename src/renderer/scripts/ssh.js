@@ -3,7 +3,7 @@
  * comandos da paleta. Conectar = sessão de terminal com o `ssh` do sistema
  * (ver createTerminal({ ssh }) em terminal.js e term:create no main).
  *
- * Pasta remota via SSH/SFTP fica para a 1.2.0 (item desabilitado no seletor).
+ * "Abrir pasta remota via SSH" (1.2.0): remote.js (SFTP + provider no main).
  */
 
 import { toast } from './toast.js';
@@ -62,7 +62,7 @@ export async function openRemotePicker() {
     connect: () => promptConnect({ sshAvailable }),
     add: () => promptAddHost({ sshAvailable }),
     config: () => openSshConfig(),
-    folder: () => {},
+    folder: () => import('./remote.js').then((m) => m.openRemoteFolderFlow()),
     wsl: () => terminal().then((m) => m.createTerminal({ profileId: 'wsl' })),
   };
   const items = remotePickerItems({ hosts, hasWsl }).map((it) => ({
@@ -137,8 +137,19 @@ export async function openSshConfig() {
   }
 }
 
+let lastTerminal = null;
+function workspaceHost() {
+  const root = window.AgzosState?.workspaceRoot;
+  if (typeof root !== 'string' || !root.startsWith('ssh://')) return null;
+  const rest = root.slice(6);
+  const authority = rest.split('/')[0];
+  const m = /^[^@]+@(\[[^\]]+\]|[^:]+)(?::\d+)?$/.exec(authority);
+  return m ? m[1].replace(/^\[|\]$/g, '') : authority;
+}
+
 function renderStatus(btn, detail) {
-  const st = remoteStatus(detail);
+  if (detail !== undefined) lastTerminal = detail;
+  const st = remoteStatus(lastTerminal, workspaceHost());
   btn.classList.toggle('connected', st.connected);
   btn.title = st.title;
   btn.setAttribute('aria-label', st.connected ? st.title : 'Abrir uma conexão remota');
@@ -153,6 +164,7 @@ export function setupSsh() {
     btn.addEventListener('click', () => openRemotePicker());
     renderStatus(btn, null);
     window.addEventListener('agzos:terminal-active', (e) => renderStatus(btn, e.detail));
+    window.addEventListener('agzos:workspace-changed', () => renderStatus(btn));
   }
   registerCommands([
     { id: 'ssh.connect', label: 'SSH: Conectar ao Host…', run: () => openRemotePicker() },

@@ -7,6 +7,9 @@
  *   http.https://github.com/.extraheader), nunca por argumento (visível no `ps`)
  *   nem gravado em .git/config.
  * - Mensagens de erro passam por `redact` (URLs com credenciais nunca aparecem).
+ * - Pasta remota (cwd `ssh://…`): roda `git -C <raiz> …` no host pelo provider da
+ *   janela (exec com aspas POSIX). O token do GitHub NUNCA vai ao host (ficaria
+ *   visível no `ps` de lá): push/pull/fetch usam as credenciais do próprio host.
  */
 
 const childProcess = require('child_process');
@@ -14,6 +17,8 @@ const fs = require('fs');
 const path = require('path');
 
 const TIMEOUT_MS = 15_000;
+const REMOTE_TIMEOUT_MS = 30_000;
+const REMOTE_GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', LC_ALL: 'C', LANGUAGE: 'C' };
 const NETWORK_TIMEOUT_MS = 120_000;
 const CLONE_TIMEOUT_MS = 30 * 60_000;
 const GIT_INSTALL_URL = 'https://git-scm.com/downloads';
@@ -142,6 +147,7 @@ function friendlyMessage(kind, stderr) {
  * → Promise<{ stdout, stderr }>. Erro: GitError { code, stderr, kind, message }.
  */
 function runGit(cwd, args, opts = {}) {
+  if (typeof cwd === 'string' && cwd.startsWith('ssh://')) return runGitRemote(cwd, args, opts);
   const {
     token, timeoutMs = TIMEOUT_MS, execFileImpl = childProcess.execFile, onStderr,
     gitPath = defaultGitPath(), baseEnv,
@@ -180,6 +186,40 @@ function runGit(cwd, args, opts = {}) {
   });
 }
 
+/**
+ * git no host remoto. opts.token é ignorado de propósito (não vai ao host).
+ * opts.provider: injeção para testes; senão providerFor(cwd) da janela do contexto.
+ */
+async function runGitRemote(cwd, args, opts = {}) {
+  const { timeoutMs = REMOTE_TIMEOUT_MS, onStderr, provider } = opts;
+  if (!Array.isArray(args) || args.some((a) => typeof a !== 'string')) {
+    throw new GitError('Argumentos do git inválidos', { kind: 'invalid' });
+  }
+  const prov = provider || require('../workspace/provider-for').providerFor(cwd);
+  let res;
+  try {
+    res = await prov.exec('git', ['-C', prov.pathOf(cwd), ...args], {
+      env: REMOTE_GIT_ENV,
+      timeoutMs: Math.max(timeoutMs, REMOTE_TIMEOUT_MS),
+      onData: onStderr ? (chunk, stream) => { if (stream === 'stderr') onStderr(chunk); } : undefined,
+    });
+  } catch (e) {
+    throw new GitError(redact(e.message) || 'Falha ao rodar o git no host remoto.', { kind: e.code === 'REMOTE_LOST' ? 'network' : 'git' });
+  }
+  if (res.timedOut) throw new GitError(friendlyMessage('timeout', res.stderr), { kind: 'timeout', stderr: redact(res.stderr) });
+  if (res.code === 0) return { stdout: res.stdout || '', stderr: res.stderr || '' };
+  if (res.code === 127) {
+    throw new GitError('Git não encontrado no host remoto. Instale o git no servidor.', { code: 127, kind: 'git-missing' });
+  }
+  let kind = classifyError(res.stderr, { code: res.code });
+  let message = friendlyMessage(kind, res.stderr);
+  if (kind === 'auth') {
+    kind = 'auth-remote';
+    message = 'O host remoto recusou as credenciais do Git. Configure-as no servidor (chave SSH ou credential helper de lá); o token do GitHub do Agzos não é enviado ao host.';
+  }
+  throw new GitError(message, { code: res.code, stderr: redact(res.stderr), kind });
+}
+
 let versionCache = null;
 /** → { ok: true, version } | { ok: false, message, installUrl } */
 async function gitVersion({ force = false, ...opts } = {}) {
@@ -197,6 +237,8 @@ async function gitVersion({ force = false, ...opts } = {}) {
 module.exports = {
   GitError,
   runGit,
+  runGitRemote,
+  REMOTE_GIT_ENV,
   authEnv,
   buildEnv,
   findGit,

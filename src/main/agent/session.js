@@ -5,6 +5,7 @@
 const fs = require('fs');
 const { runAgent, createSteerQueue, MODES } = require('./loop');
 const { createToolbox, ToolError } = require('./tools');
+const { createRemoteToolbox } = require('./remote-tools');
 const { filterDefinitions } = require('./skills');
 const { buildSystemPrompt } = require('./prompt');
 const { pickShell } = require('./exec');
@@ -27,6 +28,7 @@ function createAgentSessions({
   runCommand, shell, maxSteps, getMaxSteps = () => undefined, getExtraTools = () => [],
   buildContent = (text) => text,
   getSkill = () => null, getCompactThreshold = () => 0,
+  providerFor = null,
 }) {
   const active = new Map(); // requestId → { controller, pending: Map(callId → { resolve, reject }) }
   const conversations = new Map(); // conversationId → Set(sessionKey)
@@ -66,13 +68,28 @@ function createAgentSessions({
     active.set(requestId, session);
 
     const env = getEnv();
-    const sh = shell || pickShell({ platform, env });
+    // Pasta remota (ssh://): ferramentas pelo provider SSH; comandos no shell POSIX do host.
+    const remote = typeof root === 'string' && root.startsWith('ssh://');
+    const sh = remote ? '/bin/sh' : (shell || pickShell({ platform, env }));
     const checkpoint = checkpoints.create({ root });
-    const toolbox = restrictToolbox(createToolbox({
-      root, checkpoint, platform, shell: sh, env, runCommand,
-      secrets: secretValues(env, [resolved.apiKey]),
-      extraTools: safeExtraTools(getExtraTools),
-    }), skill);
+    let toolbox;
+    try {
+      toolbox = restrictToolbox(remote
+        ? createRemoteToolbox({
+          root, checkpoint, provider: providerFor(root),
+          secrets: secretValues(env, [resolved.apiKey]),
+          extraTools: safeExtraTools(() => getExtraTools({ remote: true })),
+        })
+        : createToolbox({
+          root, checkpoint, platform, shell: sh, env, runCommand,
+          secrets: secretValues(env, [resolved.apiKey]),
+          extraTools: safeExtraTools(getExtraTools),
+        }), skill);
+    } catch (err) {
+      active.delete(requestId);
+      emit({ type: 'error', message: err.message, code: 'no_workspace' });
+      return false;
+    }
     const conversationKey = typeof payload.conversationId === 'string' && payload.conversationId
       ? `c:${payload.conversationId}` : `r:${requestId}`;
 
@@ -93,7 +110,7 @@ function createAgentSessions({
           emit,
           requestApproval,
           signal: controller.signal,
-          systemPrompt: buildSystemPrompt({ root, platform, shell: sh, mode, skill }),
+          systemPrompt: buildSystemPrompt({ root, platform: remote ? 'linux' : platform, shell: sh, mode, skill }),
           readOnly: !!skill?.readOnly,
           sessionAllow: allowSetFor(conversationKey),
           steering,

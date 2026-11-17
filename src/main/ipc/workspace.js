@@ -13,9 +13,11 @@
 
 const { createWorkspaceWatcher } = require('../lib/workspace-watcher');
 const { guardResolver } = require('../lib/window-guards');
+const { isRemote, parseRemoteUri, toRemoteUri, providerFor, getRemoteManager } = require('../workspace/provider-for');
 
 function register(ipcMain, {
   guard, guardFor, getRecentFolders, addRecentFolder, clearRecentFolders = () => {},
+  remoteManager = () => getRemoteManager(),
 }) {
   const guardOf = guardResolver({ guard, guardFor });
   const roots = new Map(); // webContents.id → pasta aberta naquela janela
@@ -45,8 +47,35 @@ function register(ipcMain, {
     if (prev && prev !== next && typeof g?.revoke === 'function') g.revoke(prev);
   }
 
+  /**
+   * Pasta remota (ssh://…): só com conexão SSH aberta por esta janela para o host
+   * (o usuário conectou e autenticou nela) e se o caminho for uma pasta no host.
+   * Recentes remotos passam pelo mesmo fluxo (o renderer reconecta antes).
+   */
+  async function openRemote(evt, folderPath) {
+    const r = parseRemoteUri(folderPath);
+    const sender = evt?.sender;
+    if (!r || !sender || sender.id === undefined) return false;
+    const m = remoteManager();
+    if (!m || !m.get(sender.id, r.authority)) return false;
+    const uri = toRemoteUri(r.authority, r.path);
+    try {
+      const st = await providerFor(uri, sender).stat(uri);
+      if (!st.isDirectory) return false;
+    } catch {
+      return false;
+    }
+    const g = guardOf(sender);
+    revokePrevious(sender, uri);
+    g.allow(uri);
+    addRecentFolder(uri);
+    track(sender, uri);
+    return true;
+  }
+
   ipcMain.handle('workspace:open', (evt, folderPath) => {
     if (typeof folderPath !== 'string' || !folderPath) return false;
+    if (isRemote(folderPath)) return openRemote(evt, folderPath);
     const g = guardOf(evt?.sender);
     if (!g.isAllowed(folderPath)) {
       if (!getRecentFolders().includes(folderPath)) return false;

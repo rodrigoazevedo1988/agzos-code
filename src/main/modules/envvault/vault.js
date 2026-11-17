@@ -4,6 +4,10 @@
  *
  * Só `readValue` devolve um valor — usado por `envvault:reveal`/`copy`, nunca pela listagem
  * nem pela ferramenta do agente.
+ *
+ * `io` (opcional, padrão = disco local): { path, readdir(dir) → [{ name, isDirectory, isFile }],
+ * stat(p) → { isFile, size }, readFile(p) → texto }. A pasta remota (ipc/envvault.js) passa um
+ * io em memória com os .env lidos do host e path POSIX.
  */
 
 const fs = require('node:fs');
@@ -19,24 +23,32 @@ const MAX_FILES = 200;
 const MAX_BYTES = 1024 * 1024;
 const MASK = '••••••••';
 
+const LOCAL_IO = {
+  path,
+  readdir: (dir) => fs.readdirSync(dir, { withFileTypes: true }).map((d) => ({ name: d.name, isDirectory: d.isDirectory(), isFile: d.isFile() })),
+  stat: (p) => { const st = fs.statSync(p); return { isFile: st.isFile(), size: st.size }; },
+  readFile: (p) => fs.readFileSync(p, 'utf8'),
+};
+
 function isEnvName(name) {
   return ENV_NAME_RE.test(name);
 }
 
 /** `.env*` da raiz e de subpastas até profundidade 3 (sem node_modules/.git/dist). */
-function findEnvFiles(root) {
+function findEnvFiles(root, io = LOCAL_IO) {
+  const P = io.path || path;
   const out = [];
   const queue = [{ dir: root, depth: 0 }];
   while (queue.length && out.length < MAX_FILES) {
     const { dir, depth } = queue.shift();
     let items;
-    try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    try { items = io.readdir(dir); } catch { continue; }
     items.sort((a, b) => a.name.localeCompare(b.name));
     for (const it of items) {
-      const full = path.join(dir, it.name);
-      if (it.isDirectory()) {
+      const full = P.join(dir, it.name);
+      if (it.isDirectory) {
         if (depth < MAX_DEPTH && !IGNORED_DIRS.has(it.name)) queue.push({ dir: full, depth: depth + 1 });
-      } else if (it.isFile() && isEnvName(it.name)) {
+      } else if (it.isFile && isEnvName(it.name)) {
         out.push(full);
         if (out.length >= MAX_FILES) break;
       }
@@ -45,11 +57,11 @@ function findEnvFiles(root) {
   return out;
 }
 
-function readEnvText(file) {
-  const st = fs.statSync(file);
-  if (!st.isFile()) throw new Error('Não é um arquivo');
+function readEnvText(file, io = LOCAL_IO) {
+  const st = io.stat(file);
+  if (!st.isFile) throw new Error('Não é um arquivo');
   if (st.size > MAX_BYTES) throw new Error('Arquivo .env grande demais (> 1 MB)');
-  return fs.readFileSync(file, 'utf8');
+  return io.readFile(file);
 }
 
 /** Linha final (1-based) de cada entrada, para mapear achados multilinha. */
@@ -65,10 +77,11 @@ function entrySpans(text) {
  * Lista mascarada de um arquivo. Nunca inclui valores.
  * → { path, rel, name, isExample, entries: [{ key, masked, line, rule?, flags }], compare, otherSecrets }
  */
-function describeFile(file, { root, example, detectOptions = {} }) {
-  const text = readEnvText(file);
+function describeFile(file, { root, example, detectOptions = {}, io = LOCAL_IO }) {
+  const P = io.path || path;
+  const text = readEnvText(file, io);
   const { entries } = parseEnv(text);
-  const findings = detectSecrets(text, { ...detectOptions, fileName: path.basename(file) });
+  const findings = detectSecrets(text, { ...detectOptions, fileName: P.basename(file) });
   const spans = entrySpans(text);
   const secretByIndex = new Map();
   let otherSecrets = 0;
@@ -79,8 +92,8 @@ function describeFile(file, { root, example, detectOptions = {} }) {
   }
   let compare = null;
   if (example && example !== file) {
-    const exText = readEnvText(example);
-    compare = { example: rel(root, example), ...compareEnv(parseEnv(exText).entries, entries) };
+    const exText = readEnvText(example, io);
+    compare = { example: rel(root, example, P), ...compareEnv(parseEnv(exText).entries, entries) };
   }
   const extra = new Set(compare?.extra || []);
   const lastIndex = new Map();
@@ -106,8 +119,8 @@ function describeFile(file, { root, example, detectOptions = {} }) {
   }
   return {
     path: file,
-    rel: rel(root, file),
-    name: path.basename(file),
+    rel: rel(root, file, P),
+    name: P.basename(file),
     isExample: isExampleFile(file),
     entries: out,
     compare,
@@ -115,26 +128,27 @@ function describeFile(file, { root, example, detectOptions = {} }) {
   };
 }
 
-function rel(root, file) {
-  return (path.relative(root, file) || path.basename(file)).split(path.sep).join('/');
+function rel(root, file, P = path) {
+  return (P.relative(root, file) || P.basename(file)).split(P.sep).join('/');
 }
 
 /** Listagem completa do workspace (sem valores). */
-function listVault(root, { detectOptions } = {}) {
-  const files = findEnvFiles(root);
+function listVault(root, { detectOptions, io = LOCAL_IO } = {}) {
+  const P = io.path || path;
+  const files = findEnvFiles(root, io);
   const byDir = new Map();
   for (const f of files) {
-    const d = path.dirname(f);
+    const d = P.dirname(f);
     if (!byDir.has(d)) byDir.set(d, []);
     byDir.get(d).push(f);
   }
   const out = [];
   for (const f of files) {
     try {
-      const example = findExampleFile(byDir.get(path.dirname(f)));
-      out.push(describeFile(f, { root, example, detectOptions }));
+      const example = findExampleFile(byDir.get(P.dirname(f)));
+      out.push(describeFile(f, { root, example, detectOptions, io }));
     } catch (e) {
-      out.push({ path: f, rel: rel(root, f), name: path.basename(f), isExample: isExampleFile(f), entries: [], compare: null, otherSecrets: 0, error: e.message });
+      out.push({ path: f, rel: rel(root, f, P), name: P.basename(f), isExample: isExampleFile(f), entries: [], compare: null, otherSecrets: 0, error: e.message });
     }
   }
   let secrets = 0;
@@ -147,8 +161,8 @@ function listVault(root, { detectOptions } = {}) {
 }
 
 /** Valor efetivo (última ocorrência) — SÓ para reveal/copy. */
-function readValue(file, key) {
-  const entries = parseEnv(readEnvText(file)).entries.filter((e) => e.key === key);
+function readValue(file, key, io = LOCAL_IO) {
+  const entries = parseEnv(readEnvText(file, io)).entries.filter((e) => e.key === key);
   if (!entries.length) throw new Error('Chave não encontrada no arquivo');
   return entries[entries.length - 1].value;
 }
@@ -209,5 +223,5 @@ function mergeExample(exampleText, sourceText) {
 
 module.exports = {
   findEnvFiles, listVault, describeFile, readValue, readEnvText, isEnvName,
-  setValueText, addKeyText, removeKeyText, exampleFromText, mergeExample, MASK,
+  setValueText, addKeyText, removeKeyText, exampleFromText, mergeExample, MASK, LOCAL_IO, MAX_BYTES,
 };

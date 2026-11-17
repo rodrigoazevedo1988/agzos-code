@@ -607,7 +607,35 @@ function createPipeSession({ id, shell, args, cwd, env, send }) {
   };
 }
 
-function register(ipcMain) {
+/**
+ * Terminal na pasta remota (1.2.0): shell no host pela conexão SSH da janela
+ * (exec com pty xterm-256color, já em `cd` na raiz com aspas seguras).
+ * A raiz tem de estar liberada no guard da janela.
+ */
+async function createRemoteSession({ id, sender, uri, cols, rows, guardFor }) {
+  const send = (channel, ...args) => { if (!sender.isDestroyed()) sender.send(channel, ...args); };
+  try {
+    if (typeof guardFor !== 'function') throw new Error('Terminal remoto indisponível.');
+    const real = guardFor(sender).assertAllowed(uri);
+    const { providerFor, parseRemoteUri } = require('../workspace/provider-for');
+    const prov = providerFor(real, sender);
+    const shell = await prov.spawnShell({ cols: clampDim(cols, 80), rows: clampDim(rows, 24), cwd: real });
+    shell.onData((data) => send('term:data', id, data));
+    shell.onExit((code) => {
+      if (sessions.has(id)) sessions.delete(id);
+      send('term:exit', id, code);
+    });
+    const session = { kind: 'ssh', pid: null, write: shell.write, resize: shell.resize, kill: shell.kill, ownerId: sender.id };
+    sessions.set(id, session);
+    watchSender(sender);
+    const authority = parseRemoteUri(real).authority;
+    return { id, cwd: real, mode: 'pty', shell: 'ssh', profileId: 'ssh-remote', label: `SSH: ${authority}`, remote: real };
+  } catch (err) {
+    return { error: `Não foi possível abrir o terminal remoto: ${err.message}`, code: 'ssh-remote' };
+  }
+}
+
+function register(ipcMain, { guardFor } = {}) {
   // Windows: guarda o ambiente do registro para que shells novos vejam
   // variáveis alteradas/removidas depois que o app abriu (ver lib/win-env.js).
   winEnv.captureStartupEnv();
@@ -635,6 +663,11 @@ function register(ipcMain) {
   ipcMain.handle('term:create', (evt, cols = 80, rows = 24, options = {}) => {
     const id = `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const opts = options && typeof options === 'object' ? options : {};
+    if (typeof opts.remote === 'string' && opts.remote) {
+      return createRemoteSession({ id, sender: evt.sender, uri: opts.remote, cols, rows, guardFor });
+    }
+    // Pasta remota aberta, mas perfil local: começa na pasta pessoal local.
+    if (typeof opts.cwd === 'string' && opts.cwd.startsWith('ssh://')) opts.cwd = null;
     const launch = resolveLaunch(opts);
     if (launch.error) return { error: launch.error, code: launch.code };
     const { shell, profile, profileId, label } = launch;

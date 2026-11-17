@@ -31,6 +31,7 @@ import { setupTree } from './mods/tree.js';
 import { setupSnap } from './mods/snap.js';
 import { setupLive } from './mods/live.js';
 import { setupSnippets } from './snippets.js';
+import { setupRemote } from './remote.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -119,7 +120,7 @@ async function boot() {
   } catch (e) {
     console.error('[Módulos] setupModulesHub falhou:', e);
   }
-  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['Snippets', setupSnippets], ['SSH', setupSsh], ['Git Slider', setupTimeline], ['Módulos de editor', setupEditorMods], ['Agzos Árvore', setupTree], ['Agzos Snap', setupSnap], ['Agzos Ao Vivo', setupLive]]) {
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['Snippets', setupSnippets], ['SSH', setupSsh], ['Pasta remota', setupRemote], ['Git Slider', setupTimeline], ['Módulos de editor', setupEditorMods], ['Agzos Árvore', setupTree], ['Agzos Snap', setupSnap], ['Agzos Ao Vivo', setupLive]]) {
     try {
       setup();
     } catch (e) {
@@ -625,7 +626,8 @@ async function newFolderInRoot() {
   } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
 }
 
-function sep() { return navigator.userAgent.includes('Windows') ? '\\' : '/'; }
+// Pasta remota (ssh://…) usa sempre '/'.
+function sep() { return String(State.workspaceRoot || '').startsWith('ssh://') || !navigator.userAgent.includes('Windows') ? '/' : '\\'; }
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);

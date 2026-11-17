@@ -226,7 +226,20 @@ function termOptions() {
    -------------------------------------------------------------------------- */
 
 /** Perfis de shell detectados pelo main ({ profiles, defaultId }); tolera main antigo. */
-export async function getTerminalProfiles({ force = false } = {}) {
+/** Pasta remota aberta: perfil "SSH: <host>" (shell no host, na raiz) vira o padrão. */
+function withRemoteProfile(res) {
+  const root = State.workspaceRoot;
+  if (typeof root !== 'string' || !root.startsWith('ssh://') || !res?.profiles) return res;
+  const authority = root.slice(6).split('/')[0];
+  const remote = { id: 'ssh-remote', label: `SSH: ${authority}`, shell: 'ssh', icon: 'remote', remote: root };
+  return { ...res, profiles: [remote, ...res.profiles.filter((p) => p.id !== 'ssh-remote')], defaultId: 'ssh-remote', fallback: false };
+}
+
+export async function getTerminalProfiles(opts = {}) {
+  return withRemoteProfile(await loadTerminalProfiles(opts));
+}
+
+async function loadTerminalProfiles({ force = false } = {}) {
   if (profilesCache && !force) return profilesCache;
   try {
     const fn = window.agzos?.term?.profiles;
@@ -375,6 +388,7 @@ async function spawnSession(session) {
   try {
     const opts = { cwd: State.workspaceRoot || null };
     if (session.ssh) opts.ssh = { ...session.ssh };
+    else if (session.profile?.id === 'ssh-remote') opts.remote = session.profile.remote || State.workspaceRoot;
     else if (session.profile?.id) opts.profileId = session.profile.id;
     res = await window.agzos.term.create(xterm.cols || 80, xterm.rows || 24, opts);
   } catch (e) {

@@ -45,6 +45,8 @@ function isEnabled() {
 function recordBefore(absPath, origin, { content } = {}) {
   try {
     if (!isEnabled() || typeof absPath !== 'string' || !absPath) return null;
+    // Pasta remota: só com o conteúdo lido pelo provider (o store nunca lê ssh:// pelo fs local).
+    if (absPath.startsWith('ssh://') && content === undefined) return null;
     return state.store.record(absPath, origin, content === undefined ? {} : { content });
   } catch (err) {
     console.warn('[histórico] cópia não gravada:', err.message);

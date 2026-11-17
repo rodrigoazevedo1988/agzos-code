@@ -57,6 +57,8 @@ function createWindowGuards({
     guardFor: (wcOrId) => entryFor(wcOrId)?.guard || DENY_GUARD,
     tokenFor: (wcOrId) => entryFor(wcOrId)?.token || null,
     guardForToken: (token) => (typeof token === 'string' && byToken.get(token)?.guard) || null,
+    /** webContents.id dono do token (provider remoto do protocolo agzos-file). */
+    ownerForToken: (token) => (typeof token === 'string' && byToken.get(token)?.wc?.id) ?? null,
     /** Só para testes E2E: libera o caminho em todas as janelas abertas. */
     allowAll: (p) => { for (const e of byId.values()) e.guard.allow(p); },
     ids: () => [...byId.keys()],

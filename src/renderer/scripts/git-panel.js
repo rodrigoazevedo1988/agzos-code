@@ -130,7 +130,8 @@ function cwd() { return State.workspaceRoot; }
 function absPath(rel) {
   const st = G.status;
   if (!st?.root) return null;
-  const sep = State.platform === 'win32' ? '\\' : '/';
+  // Pasta remota (ssh://): sempre '/'.
+  const sep = State.platform === 'win32' && !String(State.workspaceRoot || '').startsWith('ssh://') ? '\\' : '/';
   const prefix = st.prefix || '';
   if (prefix && rel.startsWith(prefix) && State.workspaceRoot) {
     return State.workspaceRoot.replace(/[\\/]+$/, '') + sep + rel.slice(prefix.length).split('/').join(sep);

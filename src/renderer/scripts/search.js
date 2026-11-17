@@ -34,7 +34,22 @@ async function runSearch(query, resultsHost) {
     return;
   }
   const hits = [];
-  await walk(State.workspaceRoot, async (filePath, stat) => {
+  // Pasta remota: a busca roda no host (rg --json ou grep -rIn) — ipc/fs.js fs:searchText.
+  if (String(State.workspaceRoot).startsWith('ssh://')) {
+    resultsHost.innerHTML = '<p class="hint">Buscando no host…</p>';
+    try {
+      const res = await window.agzos.fs.searchText(State.workspaceRoot, query, { max: MAX_HITS });
+      hits.push(...(res?.hits || []));
+    } catch (e) {
+      resultsHost.innerHTML = '';
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = `Falha na busca remota: ${e.message}`;
+      resultsHost.appendChild(p);
+      return;
+    }
+    resultsHost.innerHTML = '';
+  } else await walk(State.workspaceRoot, async (filePath, stat) => {
     if (stat.size > MAX_FILE_SIZE || stat.isDirectory) return;
     if (!isTexty(filePath)) return;
     try {

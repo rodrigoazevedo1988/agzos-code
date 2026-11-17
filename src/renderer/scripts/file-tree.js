@@ -16,6 +16,7 @@ import { openFile } from './editor.js';
 import { renderFileIcon, renderFolderIcon } from './icon-theme.js';
 import { invalidateQuickOpenCache } from './command-palette.js';
 import { gitStatusFor } from './git-decorations.js';
+import { isRemotePath, parentPath, joinRemote, remoteAuthority, remotePathPart, hostLabel } from './remote-paths.js';
 
 const State = window.AgzosState;
 
@@ -428,6 +429,12 @@ function invalidateTree() {
    Public API
    -------------------------------------------------------------------------- */
 export async function openWorkspace(folderPath) {
+  // Pasta remota (recentes/nova janela): conecta nesta janela antes de liberar.
+  if (isRemotePath(folderPath)) {
+    const remote = await import('./remote.js');
+    if (!(await remote.ensureConnectedFor(folderPath))) return;
+    if (remotePathPart(folderPath) !== '/') folderPath = folderPath.replace(/\/+$/, '');
+  }
   const allowed = await window.agzos.workspace.open(folderPath);
   if (!allowed) {
     toast('Abra a pasta pelo diálogo.', 'error');
@@ -452,7 +459,11 @@ export async function openWorkspace(folderPath) {
   }
   if (treeRoot !== root) return;
   const topbar = document.getElementById('topbar-workspace');
-  if (topbar) topbar.textContent = `— ${basename(folderPath)}`;
+  if (topbar) {
+    topbar.textContent = isRemotePath(folderPath)
+      ? `— ${basename(folderPath)} [SSH: ${hostLabel(remoteAuthority(folderPath))}]`
+      : `— ${basename(folderPath)}`;
+  }
   render();
 }
 
@@ -510,12 +521,16 @@ function basename(p) {
 }
 function dirname(p) {
   if (!p) return '';
+  if (isRemotePath(p)) return parentPath(p);
   const parts = p.split(/[\\/]/).filter(Boolean);
   parts.pop();
   return parts.join(sep()) || sep();
 }
-function joinPath(a, b) { return a.replace(/[\\/]+$/, '') + sep() + b.replace(/^[\\/]+/, ''); }
-function sep() { return navigator.userAgent.includes('Windows') || window.agzos?.app?.info?.()?.platform === 'win32' ? '\\' : '/'; }
+function joinPath(a, b) {
+  if (isRemotePath(a)) return joinRemote(a, b);
+  return a.replace(/[\\/]+$/, '') + sep() + b.replace(/^[\\/]+/, '');
+}
+function sep() { if (isRemotePath(State.workspaceRoot)) return '/'; return navigator.userAgent.includes('Windows') || window.agzos?.app?.info?.()?.platform === 'win32' ? '\\' : '/'; }
 function cssEscape(s) {
   return s.replace(/[\\"]/g, '\\$&');
 }

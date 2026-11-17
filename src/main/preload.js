@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('agzos', {
     delete: (p) => ipcRenderer.invoke('fs:delete', p),
     rename: (a, b) => ipcRenderer.invoke('fs:rename', a, b),
     homeDir: () => ipcRenderer.invoke('fs:homeDir'),
+    // Busca no host da pasta remota → { hits: [{ file, line, text }] } ({ unsupported } em pasta local).
+    searchText: (root, query, opts) => ipcRenderer.invoke('fs:searchText', root, query, opts),
     openPath: (p) => ipcRenderer.invoke('fs:openPath', p),
     reveal: (p) => ipcRenderer.invoke('fs:reveal', p),
     // Recebe um File de um drop real; o caminho sai do webUtils (o renderer não o forja).
@@ -84,6 +86,32 @@ contextBridge.exposeInMainWorld('agzos', {
     addHost: (input) => ipcRenderer.invoke('ssh:addHost', input),
     configPath: () => ipcRenderer.invoke('ssh:configPath'),
     parseTarget: (text) => ipcRenderer.invoke('ssh:parseTarget', text),
+  },
+
+  // Pasta remota via SSH (ipc/remote.js). Diálogos: onPrompt(cb) — cb(payload) → resposta
+  // ({ value, remember } para senha/passphrase; true/false para host key).
+  remote: {
+    connect: (target) => ipcRenderer.invoke('remote:connect', target),
+    reconnect: (authority) => ipcRenderer.invoke('remote:reconnect', authority),
+    disconnect: (authority) => ipcRenderer.invoke('remote:disconnect', authority),
+    list: () => ipcRenderer.invoke('remote:list'),
+    browse: (authority, dir) => ipcRenderer.invoke('remote:browse', authority, dir),
+    openInNewWindow: (uri) => ipcRenderer.invoke('remote:openInNewWindow', uri),
+    takePending: () => ipcRenderer.invoke('remote:takePending'),
+    onState: (cb) => {
+      const handler = (_e, st) => cb(st);
+      ipcRenderer.on('remote:state', handler);
+      return () => ipcRenderer.removeListener('remote:state', handler);
+    },
+    onPrompt: (cb) => {
+      const handler = async (_e, id, payload) => {
+        let result = null;
+        try { result = await cb(payload); } catch { result = null; }
+        ipcRenderer.invoke('remote:prompt:reply', id, result).catch(() => {});
+      };
+      ipcRenderer.on('remote:prompt', handler);
+      return () => ipcRenderer.removeListener('remote:prompt', handler);
+    },
   },
 
   // Portas TCP em escuta (aba PORTAS do painel).
