@@ -3,7 +3,7 @@ const globals = require('globals');
 
 module.exports = [
   {
-    ignores: ['src/renderer/vendor/**', '.claude/**', 'node_modules/**', 'dist/**', 'out/**', 'build/**'],
+    ignores: ['src/renderer/vendor/**', '.claude/**', 'spikes/**', 'node_modules/**', 'dist/**', 'out/**', 'build/**'],
   },
   js.configs.recommended,
   {
