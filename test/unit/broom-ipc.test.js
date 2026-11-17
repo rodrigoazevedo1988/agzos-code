@@ -239,3 +239,35 @@ test('undo com id inválido devolve erro', async () => {
     assert.ok(r.errors.length);
   } finally { h.cleanup(); }
 });
+
+test('broom:undo de outra janela é recusado; a dona desfaz', async () => {
+  const { createWindowGuards } = require('../../src/main/lib/window-guards');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-broom-own-')));
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-ud-'));
+  const guards = createWindowGuards();
+  const mk = (id) => Object.assign(new EventEmitter(), { id, isDestroyed: () => false, send: () => {} });
+  const a = mk(21);
+  const b = mk(22);
+  guards.guardFor(a).allow(root);
+  guards.guardFor(b).allow(root);
+  const handlers = {};
+  register({ handle: (ch, fn) => { handlers[ch] = fn; } }, {
+    guardFor: guards.guardFor, settingsStore: { load: () => ({ recentFolders: [root], modules: { broom: {} } }) }, userDataDir: userData, workerHost,
+  });
+  try {
+    const f = path.join(root, 'a.ts');
+    fs.writeFileSync(f, DIRTY);
+    const r = await handlers['broom:cleanFile']({ sender: a }, f);
+    assert.ok(r.checkpointId);
+    const denied = await handlers['broom:undo']({ sender: b }, r.checkpointId);
+    assert.deepEqual(denied.restored, []);
+    assert.match(denied.errors[0].message, /outra janela/);
+    assert.equal(fs.readFileSync(f, 'utf8'), CLEAN);
+    const ok = await handlers['broom:undo']({ sender: a }, r.checkpointId);
+    assert.deepEqual(ok.errors, []);
+    assert.equal(fs.readFileSync(f, 'utf8'), DIRTY);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+});

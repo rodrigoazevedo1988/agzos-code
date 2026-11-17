@@ -164,3 +164,33 @@ test('IPC: skill de projeto precisa de confiança (agent:skills:trust grava raiz
     assert.equal(h.sender.events.at(-1).evt.code, 'skill_untrusted');
   } finally { h.cleanup(); await fake.close(); }
 });
+
+test('IPC: agent:query:reply e agent:undo só valem para a janela dona', async () => {
+  const fake = await startFakeOpenAI({ delayMs: 1, script: [
+    { toolCalls: [{ name: 'read_terminal', arguments: {} }] },
+    { toolCalls: [{ name: 'write_file', arguments: { path: 'novo.txt', content: 'x\n' } }] },
+    { text: 'ok' },
+  ] });
+  const h = setup({ baseUrl: `${fake.baseUrl}/v1` });
+  h.sender.id = 1;
+  const other = { sender: Object.assign(new EventEmitter(), { id: 2, isDestroyed: () => false, send: () => {} }) };
+  try {
+    await h.handlers['agent:run'](h.event, 'q', { messages: [{ role: 'user', content: 'x' }] });
+    const query = await h.waitFor((e) => e.channel === 'agent:query');
+    assert.equal(await h.handlers['agent:query:reply'](other, query.id, 'resposta falsa de outra janela'), false);
+    assert.equal(await h.handlers['agent:query:reply'](h.event, query.id, 'saída real'), true);
+    const done = (await h.waitFor((e) => e.evt?.type === 'done')).evt;
+    const file = path.join(h.root, 'novo.txt');
+    assert.ok(done.checkpointId);
+    const denied = await h.handlers['agent:undo'](other, done.checkpointId);
+    assert.deepEqual(denied.restored, []);
+    assert.match(denied.errors[0].message, /outra janela/);
+    assert.equal(fs.existsSync(file), true);
+    const ok = await h.handlers['agent:undo'](h.event, done.checkpointId);
+    assert.deepEqual(ok.errors, []);
+    assert.equal(fs.existsSync(file), false);
+    // o modelo viu a resposta da janela dona
+    const toolMsg = fake.requests.flatMap((r) => r.body?.messages || []).find((m) => m.role === 'tool');
+    assert.match(String(toolMsg?.content), /saída real/);
+  } finally { h.cleanup(); await fake.close(); }
+});

@@ -212,3 +212,31 @@ test('canais registrados batem com CHANNELS (+ undo)', () => {
   for (const name of envIpc.CHANNELS) assert.equal(typeof h[`envvault:${name}`], 'function', name);
   assert.equal(typeof h['envvault:undo'], 'function');
 });
+
+test('undo de checkpoint de outra janela é recusado; guard da janela vale na restauração', async () => {
+  const { createWindowGuards } = require('../../src/main/lib/window-guards');
+  const guards = createWindowGuards();
+  const mk = (id) => Object.assign(new (require('node:events').EventEmitter)(), { id, isDestroyed: () => false, send: () => {} });
+  const a = mk(11);
+  const b = mk(12);
+  guards.guardFor(a).allow(root);
+  guards.guardFor(b).allow(root);
+  const hh = {};
+  envIpc.register({ handle: (ch, fn) => { hh[ch] = fn; } }, {
+    guardFor: guards.guardFor, userDataDir: userData, settingsStore: { load: () => settings }, clipboard: clip,
+  });
+  const { checkpointId } = await hh['envvault:setValue']({ sender: a }, p('.env'), 'PLAIN', 'novo-valor');
+  const changed = fs.readFileSync(p('.env'), 'utf8');
+  const denied = await hh['envvault:undo']({ sender: b }, checkpointId);
+  assert.deepEqual(denied.restored, []);
+  assert.match(denied.errors[0].message, /outra janela/);
+  assert.equal(fs.readFileSync(p('.env'), 'utf8'), changed);
+  // dona sem a pasta liberada (trocou de pasta) → negado pelo guard
+  guards.guardFor(a).revoke(root);
+  const noGuard = await hh['envvault:undo']({ sender: a }, checkpointId);
+  assert.match(noGuard.errors[0].message, /Acesso negado/);
+  guards.guardFor(a).allow(root);
+  const ok = await hh['envvault:undo']({ sender: a }, checkpointId);
+  assert.deepEqual(ok.errors, []);
+  assert.equal(fs.readFileSync(p('.env'), 'utf8'), ENV_TEXT);
+});

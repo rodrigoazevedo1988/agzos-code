@@ -14,6 +14,10 @@
  * pediu (getWindowRoot(sender), várias janelas). Sem getWindowRoot, cai na pasta
  * aberta por último (recentFolders[0], gravada pelo workspace:open). Sempre liberada.
  * A chave da API vem do cofre (como ipc/ai.js) e nunca vai ao renderer nem ao modelo.
+ *
+ * Dono: cada checkpoint (done/error com checkpointId) e cada agent:query lembram o
+ * webContents.id que os gerou. agent:undo e agent:query:reply de outra janela são recusados,
+ * e a restauração passa cada caminho pelo guard da janela que pediu.
  */
 
 const path = require('path');
@@ -40,7 +44,9 @@ function register(ipcMain, {
 }) {
   const sessions = new Map();
   const skillsDir = userDataDir ? path.join(userDataDir, 'skills') : null;
-  const queries = new Map(); // queryId → { resolve, timer }
+  const queries = new Map(); // queryId → { resolve, timer, owner }
+  const checkpointOwners = new Map(); // checkpointId → webContents.id
+  const senderId = (sender) => (sender && sender.id !== undefined ? sender.id : null);
 
   function skillsFor(root) {
     return loadSkills({ userDir: skillsDir, projectRoot: root || null });
@@ -53,7 +59,7 @@ function register(ipcMain, {
     const id = randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { queries.delete(id); reject(new Error('O editor não respondeu a tempo')); }, QUERY_TIMEOUT);
-      queries.set(id, { resolve, timer });
+      queries.set(id, { resolve, timer, owner: senderId(sender) });
       sender.send('agent:query', id, what, args || {});
     });
   }
@@ -98,6 +104,12 @@ function register(ipcMain, {
     return { provider, model, apiKey: store.get(`ai.${profile.id}`) || undefined };
   }
 
+  function rememberOwner(checkpointId, sender) {
+    checkpointOwners.set(checkpointId, senderId(sender));
+    // Só os mais recentes (o store também guarda no máx. 20).
+    while (checkpointOwners.size > 200) checkpointOwners.delete(checkpointOwners.keys().next().value);
+  }
+
   function forSender(sender) {
     if (!sessions.has(sender)) {
       const agent = createAgentSessions({
@@ -108,7 +120,10 @@ function register(ipcMain, {
         getSkill: (id, root) => pickSkill(skillsFor(root).skills, id, { trusted: trustedSkills(), kind: 'agent' }),
         ...(attachments ? { buildContent: (text, list) => attachments.buildContent(text, list) } : {}),
         checkpoints,
-        send: (requestId, evt) => { if (!sender.isDestroyed()) sender.send('agent:event', requestId, evt); },
+        send: (requestId, evt) => {
+          if (evt?.checkpointId) rememberOwner(evt.checkpointId, sender);
+          if (!sender.isDestroyed()) sender.send('agent:event', requestId, evt);
+        },
         ...sessionOptions,
       });
       sessions.set(sender, agent);
@@ -120,9 +135,11 @@ function register(ipcMain, {
   ipcMain.handle('agent:run', (event, requestId, payload) => forSender(event.sender).run(requestId, payload || {}));
   ipcMain.handle('agent:approve', (event, requestId, callId, decision) => sessions.get(event.sender)?.approve(requestId, callId, decision) ?? false);
   ipcMain.handle('agent:steer', (event, requestId, payload) => sessions.get(event.sender)?.steer(requestId, payload || {}) ?? false);
-  ipcMain.handle('agent:query:reply', (_event, id, result) => {
+  ipcMain.handle('agent:query:reply', (event, id, result) => {
     const query = queries.get(id);
     if (!query) return false;
+    // Resposta de outra janela é ignorada (a pergunta continua esperando a dona).
+    if (query.owner !== senderId(event?.sender)) return false;
     queries.delete(id);
     clearTimeout(query.timer);
     query.resolve(result);
@@ -175,9 +192,19 @@ function register(ipcMain, {
     return skillsDir;
   });
   ipcMain.handle('agent:cancel', (event, requestId) => sessions.get(event.sender)?.cancel(requestId) ?? false);
-  ipcMain.handle('agent:undo', (_event, checkpointId) => {
-    try { return checkpoints.undo(checkpointId); }
-    catch (err) { return { restored: [], errors: [{ path: null, message: err.message }] }; }
+  ipcMain.handle('agent:undo', (event, checkpointId) => {
+    const sender = event?.sender;
+    // Checkpoint de outra janela: recusado. Sem dono conhecido (ex.: depois de reiniciar),
+    // vale só o guard da janela que pediu.
+    if (checkpointOwners.has(checkpointId) && checkpointOwners.get(checkpointId) !== senderId(sender)) {
+      return { restored: [], errors: [{ path: null, message: 'Este checkpoint pertence a outra janela.' }] };
+    }
+    try {
+      const g = guardOf(sender);
+      const result = checkpoints.undo(checkpointId, { assertPath: (p) => g.assertAllowed(p) });
+      if (!result.errors.length || result.restored.length) checkpointOwners.delete(checkpointId);
+      return result;
+    } catch (err) { return { restored: [], errors: [{ path: null, message: err.message }] }; }
   });
   ipcMain.handle('agent:setMode', (_event, mode) => {
     if (!MODES.includes(mode)) return false;

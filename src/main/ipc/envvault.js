@@ -15,6 +15,8 @@
  * `root` omitido = pasta da janela que pediu (getWindowRoot(sender), como o agente; sem ele,
  * a mais recente). Todo caminho passa pelo path-guard daquela janela (guardFor(sender)).
  * Valores nunca são logados nem incluídos em mensagens de erro.
+ * undo: só a janela que criou o checkpoint desfaz (checkpointId → webContents.id), e cada
+ * caminho restaurado passa pelo guard dessa janela.
  *
  * deps: { guard | guardFor, getWindowRoot?, settingsStore, userDataDir, workerHost, clipboard? }
  */
@@ -48,6 +50,8 @@ function register(ipcMain, {
 
   const cpDir = userDataDir ? path.join(userDataDir, 'envvault-checkpoints') : undefined;
   const checkpoints = createCheckpointStore({ dir: cpDir, maxCount: 20 });
+  const owners = new Map(); // checkpointId → webContents.id
+  const senderId = (sender) => (sender && sender.id !== undefined ? sender.id : null);
 
   const options = () => normalizeModules(loadSettings().modules).envVault;
   const detectOptions = () => {
@@ -93,6 +97,8 @@ function register(ipcMain, {
       cp.record(abs);
       fs.writeFileSync(abs, text);
       cp.finalize();
+      owners.set(cp.id, senderId(sender));
+      while (owners.size > 200) owners.delete(owners.keys().next().value);
       return cp.id;
     }
 
@@ -131,7 +137,15 @@ function register(ipcMain, {
       addKey: (p, key, value = '') => edit(p, (t) => vault.addKeyText(t, key, value)),
       removeKey: (p, key) => edit(p, (t) => vault.removeKeyText(t, key)),
 
-      undo: (checkpointId) => checkpoints.undo(String(checkpointId)),
+      undo: (checkpointId) => {
+        const id = String(checkpointId);
+        if (owners.has(id) && owners.get(id) !== senderId(sender)) {
+          return { restored: [], errors: [{ path: null, message: 'Este checkpoint pertence a outra janela.' }] };
+        }
+        const result = checkpoints.undo(id, { assertPath: (p) => g.assertAllowed(p) });
+        if (!result.errors.length || result.restored.length) owners.delete(id);
+        return result;
+      },
 
       generateExample: (p) => {
         const src = envFile(p);

@@ -11,7 +11,8 @@
  * ('agent:event' { type: 'file_changed', path }), que recarrega a aba ou mostra o conflito.
  *
  * Todo caminho passa pelo path-guard da janela que pediu (guardFor(sender)); raiz padrão =
- * pasta daquela janela (getWindowRoot(sender)). deps: { guard | guardFor, getWindowRoot?,
+ * pasta daquela janela (getWindowRoot(sender)). broom:undo só vale para a janela que criou o
+ * checkpoint (checkpointId → webContents.id), com cada caminho passando pelo guard dela. deps: { guard | guardFor, getWindowRoot?,
  * settingsStore, userDataDir, workerHost }
  */
 
@@ -37,6 +38,12 @@ function register(ipcMain, {
   setDefaultEngine(engine, () => settingsStore.load());
   const running = new Map();
   const guardOf = guardResolver({ guard, guardFor });
+  const owners = new Map(); // checkpointId → webContents.id
+  const senderId = (sender) => (sender && sender.id !== undefined ? sender.id : null);
+  const own = (id, sender) => {
+    owners.set(id, senderId(sender));
+    while (owners.size > 200) owners.delete(owners.keys().next().value);
+  };
 
   function options() {
     const o = optionsFromSettings(settingsStore.load());
@@ -96,6 +103,7 @@ function register(ipcMain, {
     cp.record(abs);
     await engine.write(abs, p.text, p.after);
     cp.finalize();
+    own(cp.id, event?.sender);
     fileChanged(event.sender, abs);
     return { checkpointId: cp.id, removed: p.edits.length };
   });
@@ -141,6 +149,7 @@ function register(ipcMain, {
       cp.finalize();
       done();
     }
+    if (files) own(cp.id, event?.sender);
     const result = { checkpointId: files ? cp.id : null, files, removed };
     emit(event.sender, requestId, { type: 'done', ...result });
     return result;
@@ -159,8 +168,15 @@ function register(ipcMain, {
   });
 
   ipcMain.handle('broom:undo', (event, checkpointId) => {
+    if (owners.has(checkpointId) && owners.get(checkpointId) !== senderId(event?.sender)) {
+      return { restored: [], errors: [{ path: null, message: 'Este checkpoint pertence a outra janela.' }] };
+    }
     let r;
-    try { r = checkpoints.undo(checkpointId); } catch (err) { return { restored: [], errors: [{ path: null, message: err.message }] }; }
+    try {
+      const g = guardOf(event?.sender);
+      r = checkpoints.undo(checkpointId, { assertPath: (p) => g.assertAllowed(p) });
+    } catch (err) { return { restored: [], errors: [{ path: null, message: err.message }] }; }
+    if (!r.errors.length || r.restored.length) owners.delete(checkpointId);
     for (const p of r.restored) {
       engine.invalidate(p);
       fileChanged(event.sender, p);
