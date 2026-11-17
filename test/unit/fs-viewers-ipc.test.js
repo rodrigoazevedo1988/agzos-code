@@ -95,3 +95,20 @@ test('fs:readBinary devolve bytes só dentro do guard e respeita o limite', asyn
   await assert.rejects(() => call('fs:readBinary', big), /muito grande/);
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+test('fs:readDir segue link de pasta (junction/symlink/nuvem) e marca como diretório', async () => {
+  const { ws, call, base } = setup();
+  fs.mkdirSync(path.join(ws, 'videos-real'));
+  fs.writeFileSync(path.join(ws, 'videos-real', 'aula.mp4'), 'x');
+  fs.symlinkSync(path.join(ws, 'videos-real'), path.join(ws, 'Vídeos'), process.platform === 'win32' ? 'junction' : 'dir');
+  fs.symlinkSync(path.join(ws, 'nao-existe'), path.join(ws, 'quebrado'));
+  const list = await call('fs:readDir', ws);
+  const link = list.find((e) => e.name === 'Vídeos');
+  assert.equal(link.isDirectory, true);
+  assert.equal(link.isLink, true);
+  const broken = list.find((e) => e.name === 'quebrado');
+  assert.equal(broken.isDirectory, false);
+  const inside = await call('fs:readDir', link.path);
+  assert.deepEqual(inside.map((e) => e.name), ['aula.mp4']);
+  fs.rmSync(base, { recursive: true, force: true });
+});

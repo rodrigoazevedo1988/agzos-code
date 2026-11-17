@@ -65,3 +65,21 @@ test('título da janela mostra projeto › arquivo ativo', async () => {
     fs.rmSync(ws, { recursive: true, force: true });
   }
 });
+
+test('pasta linkada (symlink/junction) com vídeos expande no Explorer', async () => {
+  const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-link-')));
+  fs.mkdirSync(path.join(ws, 'real'));
+  fs.writeFileSync(path.join(ws, 'real', 'aula 01.mp4'), 'x');
+  fs.symlinkSync(path.join(ws, 'real'), path.join(ws, 'Vídeos'), process.platform === 'win32' ? 'junction' : 'dir');
+  const { app, page, errors } = await launchApp({ settings: { welcomeSeen: true, onboardingCompleted: true } });
+  try {
+    await app.evaluate((_e, d) => global.__agzosAllowRoot(d), ws);
+    await page.evaluate(async (d) => { const m = await import('./scripts/file-tree.js'); await m.openWorkspace(d); }, ws);
+    await page.locator('.tree-row', { hasText: 'Vídeos' }).first().click();
+    await expect(page.locator('.tree-row', { hasText: 'aula 01.mp4' })).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});

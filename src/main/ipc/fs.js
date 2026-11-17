@@ -23,6 +23,26 @@ async function looksBinary(filePath) {
 
 const MAX_BINARY_BYTES = 50 * 1024 * 1024;
 
+/**
+ * Tipo real da entrada. Links simbólicos, junctions do Windows e placeholders de
+ * nuvem (OneDrive/Google Drive) não vêm como diretório no Dirent: segue com stat
+ * para a pasta poder expandir. Link quebrado vira arquivo (abrir mostra o erro).
+ */
+async function describeEntry(dirPath, e) {
+  const full = path.join(dirPath, e.name);
+  let isDirectory = e.isDirectory();
+  let isFile = e.isFile();
+  const isLink = e.isSymbolicLink();
+  if (isLink || (!isDirectory && !isFile)) {
+    try {
+      const st = await fsp.stat(full);
+      isDirectory = st.isDirectory();
+      isFile = st.isFile();
+    } catch { /* link quebrado ou sem acesso: mantém o que o Dirent disse */ }
+  }
+  return { name: e.name, path: full, isDirectory, isFile, ...(isLink ? { isLink: true } : {}) };
+}
+
 function register(ipcMain, { guard, guardFor, shell }) {
   // Guard da janela que pediu (várias janelas: lib/window-guards.js).
   const guardOf = guardResolver({ guard, guardFor });
@@ -30,14 +50,9 @@ function register(ipcMain, { guard, guardFor, shell }) {
     if (!dirPath) throw new Error('dirPath required');
     guardOf(evt?.sender).assertAllowed(dirPath);
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
-    return entries
+    return Promise.all(entries
       .filter((e) => !e.name.startsWith('.') || e.name === '.gitignore')
-      .map((e) => ({
-        name: e.name,
-        path: path.join(dirPath, e.name),
-        isDirectory: e.isDirectory(),
-        isFile: e.isFile(),
-      }));
+      .map((e) => describeEntry(dirPath, e)));
   });
 
   // opts.detectBinary: devolve { binary: true, size } em vez de despejar bytes como texto.
