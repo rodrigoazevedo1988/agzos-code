@@ -41,6 +41,18 @@
 - Título da janela mostra `projeto › arquivo — Agzos Code`.
 - Explorer: a pasta relê o disco ao abrir e a árvore observa mudanças (arquivos criados por outros programas, como downloads, aparecem sozinhos); pastas linkadas (symlink, junction, OneDrive) expandem; erro ao abrir pasta aparece em aviso.
 - Histórico: dois salvamentos seguidos não guardam versão vazia.
+- Explorer mostra arquivos ocultos (`.gitignore`, `.env`, `.github`, `.vscode`…); só `.git`, `.DS_Store` e afins ficam ocultos, lista editável em Configurações → "Arquivos: Ocultar no Explorer".
+- Árvore: Copiar/Inserir/Criar usam sempre as opções atuais.
+
+### Segurança (revisão independente da 1.2.0)
+
+- Pasta remota: chave do servidor de outro tipo que a registrada bloqueia a conexão (antes aparecia como "host desconhecido"); hosts no `known_hosts` comparados sem diferenciar maiúsculas.
+- Pasta remota: links simbólicos no servidor não saem da pasta aberta (leitura, escrita, listagem, agente e Ao Vivo).
+- Pasta remota: o tempo limite da conexão pausa enquanto você confere o fingerprint ou digita a senha; 2FA (keyboard-interactive) pergunta cada código em vez de enviar a senha; sem conexões duplicadas na reconexão.
+- `.gitignore`, `.prettierrc` e globs da busca do agente com padrões maliciosos não congelam mais o app (matcher sem backtracking).
+- Git Slider não lê versão de outro arquivo nem aceita nomes de arquivo como pathspec especial do git.
+- Ao Vivo não serve `.env`/`.git` através de links simbólicos.
+- Observador de arquivos no Linux só vigia as pastas abertas na árvore (não esgota o limite do sistema em projetos grandes).
 
 ### Limitações conhecidas
 
