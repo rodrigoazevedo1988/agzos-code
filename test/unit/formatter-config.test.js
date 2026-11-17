@@ -97,3 +97,16 @@ test('parseSimpleYaml: chave: valor; estruturas aninhadas são recusadas', () =>
   assert.deepEqual(parseSimpleYaml('a: 1\nb: "x # y"\nc: off-text # comentário\nd: false\n'), { a: 1, b: 'x # y', c: 'off-text', d: false });
   assert.throws(() => parseSimpleYaml('overrides:\n  - files: "*.md"'));
 });
+
+test('optionsForFile: overrides.files patológico não congela (ReDoS) e inválido é ignorado', () => {
+  const cfg = {
+    overrides: [
+      { files: '**a**a**a**a**a**a**a**b', options: { semi: false } },
+      { files: ['[z-a]', '*.{js,ts}'], options: { tabWidth: 4 } },
+    ],
+  };
+  const t0 = process.hrtime.bigint();
+  assert.deepEqual(optionsForFile(cfg, `/p/${'a'.repeat(1000)}`, '/p'), {});
+  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 50);
+  assert.deepEqual(optionsForFile(cfg, '/p/src/x.ts', '/p'), { tabWidth: 4 });
+});
