@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld('agzos', {
   // File system
   fs: {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
+    // Diretórios que mudaram no disco (observador da pasta aberta) → recarregar a árvore.
+    onChanged: (cb) => {
+      const handler = (_e, dirs) => cb(dirs);
+      ipcRenderer.on('fs:changed', handler);
+      return () => ipcRenderer.removeListener('fs:changed', handler);
+    },
     findFiles: (p, maxResults) => ipcRenderer.invoke('fs:findFiles', p, maxResults),
     readFile: (p, opts) => ipcRenderer.invoke('fs:readFile', p, opts),
     readBinary: (p) => ipcRenderer.invoke('fs:readBinary', p),

@@ -217,7 +217,8 @@ async function toggleDir(node) {
     return;
   }
   const root = treeRoot;
-  if (!node.children) {
+  // Sempre relê o disco ao abrir: arquivos podem ter chegado depois da última leitura.
+  {
     node.loading = true;
     try {
       await withTimeout(loadChildren(node), LOAD_TIMEOUT_MS, 'a pasta demorou para responder');
@@ -246,6 +247,43 @@ async function toggleDir(node) {
 }
 
 const LOAD_TIMEOUT_MS = 15000;
+
+function normDir(p) {
+  return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function findLoadedNode(node, target) {
+  if (!node || !node.isDirectory) return null;
+  if (normDir(node.path) === target) return node.children ? node : null;
+  for (const child of node.children || []) {
+    if (!child.isDirectory) continue;
+    const t = normDir(child.path);
+    if (target === t || target.startsWith(`${t}/`)) return findLoadedNode(child, target);
+  }
+  return null;
+}
+
+/** Mudanças no disco (observador do main): recarrega só as pastas já lidas. */
+export async function reloadChangedDirs(dirs) {
+  if (!treeRoot || !Array.isArray(dirs)) return;
+  const root = treeRoot;
+  const nodes = new Set();
+  for (const d of dirs) {
+    const n = findLoadedNode(root, normDir(d));
+    if (n) nodes.add(n);
+  }
+  if (!nodes.size) return;
+  for (const n of nodes) {
+    try { await loadChildren(n); } catch (err) { console.warn('[explorer] recarregar', n.path, err); }
+  }
+  if (treeRoot !== root) return;
+  invalidateQuickOpenCache();
+  try { render(); } catch (err) { console.error('[explorer] render', err); }
+}
+
+if (typeof window !== 'undefined' && window.agzos?.fs?.onChanged) {
+  window.agzos.fs.onChanged((dirs) => { reloadChangedDirs(dirs); });
+}
 
 function withTimeout(promise, ms, message) {
   let timer;

@@ -11,6 +11,7 @@
  * reabertos por este mesmo fluxo.
  */
 
+const { createWorkspaceWatcher } = require('../lib/workspace-watcher');
 const { guardResolver } = require('../lib/window-guards');
 
 function register(ipcMain, {
@@ -18,13 +19,23 @@ function register(ipcMain, {
 }) {
   const guardOf = guardResolver({ guard, guardFor });
   const roots = new Map(); // webContents.id → pasta aberta naquela janela
+  const senders = new Map(); // webContents.id → webContents (para avisar mudanças no disco)
+  const watcher = createWorkspaceWatcher({
+    send: (id, dirs) => {
+      const s = senders.get(id);
+      if (s && !s.isDestroyed?.()) s.send('fs:changed', dirs);
+    },
+  });
 
   function track(sender, folderPath) {
     if (!sender || sender.id === undefined) return;
     if (!roots.has(sender.id) && typeof sender.once === 'function') {
-      sender.once('destroyed', () => roots.delete(sender.id));
+      sender.once('destroyed', () => { roots.delete(sender.id); senders.delete(sender.id); watcher.unwatch(sender.id); });
     }
     roots.set(sender.id, folderPath);
+    senders.set(sender.id, sender);
+    if (folderPath && typeof folderPath === 'string' && !folderPath.startsWith('ssh://')) watcher.watch(sender.id, folderPath);
+    else watcher.unwatch(sender.id);
   }
 
   function revokePrevious(sender, next) {
@@ -53,6 +64,7 @@ function register(ipcMain, {
     if (evt?.sender) {
       revokePrevious(evt.sender, null);
       roots.set(evt.sender.id, null);
+      watcher.unwatch(evt.sender.id);
     }
     return true;
   });

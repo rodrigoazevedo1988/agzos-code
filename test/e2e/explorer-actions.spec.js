@@ -101,3 +101,27 @@ test('erro ao ler pasta aparece em aviso (não fica em silêncio)', async () => 
     fs.rmSync(ws, { recursive: true, force: true });
   }
 });
+
+test('arquivo criado por outro programa aparece sem atualizar (observador) e ao reabrir a pasta', async () => {
+  const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-watch-')));
+  fs.mkdirSync(path.join(ws, 'Global'));
+  const { app, page } = await launchApp({ settings: { welcomeSeen: true, onboardingCompleted: true } });
+  try {
+    await app.evaluate((_e, d) => global.__agzosAllowRoot(d), ws);
+    await page.evaluate(async (d) => { const m = await import('./scripts/file-tree.js'); await m.openWorkspace(d); }, ws);
+    const globalRow = page.locator('.tree-row', { hasText: 'Global' }).first();
+    // Abre a pasta vazia (fica em cache) e fecha.
+    await globalRow.click();
+    await globalRow.click();
+    // "Download" chega depois.
+    fs.writeFileSync(path.join(ws, 'Global', 'video.mp4'), 'x');
+    await globalRow.click();
+    await expect(page.locator('.tree-row', { hasText: 'video.mp4' })).toBeVisible();
+    // Com a pasta aberta, um novo arquivo aparece sozinho (observador).
+    fs.writeFileSync(path.join(ws, 'Global', 'segundo.mp4'), 'x');
+    await expect(page.locator('.tree-row', { hasText: 'segundo.mp4' })).toBeVisible({ timeout: 5000 });
+  } finally {
+    await app.close();
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
