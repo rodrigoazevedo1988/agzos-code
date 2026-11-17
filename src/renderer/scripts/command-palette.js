@@ -39,6 +39,8 @@ const COMMANDS = [
   { id: 'file.closeAllTabs',    label: 'Arquivo: Fechar Todos os Editores',             hint: 'Ctrl+K Ctrl+W',  run: () => import('./tabs.js').then((m) => m.closeAllTabs()) },
 
   // Editor & Produtividade
+  { id: 'markdown.previewSide', label: 'Markdown: Abrir Pré-visualização ao Lado',     hint: 'Ctrl+Shift+V',   run: () => import('./editor.js').then((m) => m.openMarkdownPreview(State.activePath, 'side')) },
+  { id: 'markdown.preview',     label: 'Markdown: Abrir Pré-visualização na Aba Atual', hint: '',               run: () => import('./editor.js').then((m) => m.openMarkdownPreview(State.activePath, 'tab')) },
   { id: 'editor.find',          label: 'Editor: Localizar no Arquivo',                  hint: 'Ctrl+F',         run: () => triggerEditorAction('actions.find') },
   { id: 'editor.replace',       label: 'Editor: Substituir no Arquivo',                 hint: 'Ctrl+H',         run: () => triggerEditorAction('editor.action.startFindReplaceAction') },
   { id: 'editor.gotoLine',      label: 'Editor: Ir para Linha/Coluna…',                 hint: 'Ctrl+G',         run: () => triggerEditorAction('editor.action.gotoLine') },
@@ -677,6 +679,7 @@ export function showShortcutsModal() {
     { key: 'Ctrl + N', desc: 'Arquivo: Novo arquivo de texto (sem título)' },
     { key: 'Ctrl + Shift + N', desc: 'Arquivo: Nova janela' },
     { key: 'Ctrl + O', desc: 'Arquivo: Abrir pasta' },
+    { key: 'Ctrl + Shift + V', desc: 'Markdown: Abrir pré-visualização ao lado' },
     { key: 'Ctrl + S', desc: 'Arquivo: Salvar alterações' },
     { key: 'Ctrl + Shift + S', desc: 'Arquivo: Salvar como' },
     { key: 'Ctrl + W', desc: 'Arquivo: Fechar editor/aba ativa' },

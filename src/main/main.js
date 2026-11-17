@@ -10,7 +10,7 @@
  *  - Configurações persistentes em userData
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, safeStorage, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -60,6 +60,14 @@ function sendToTarget(channel, ...args) {
   if (win) win.webContents.send(channel, ...args);
 }
 
+// Visualizadores (imagem/vídeo/áudio/PDF): agzos-file:// serve só caminhos liberados
+// no path-guard. Precisa ser registrado antes do app ficar pronto.
+const fileProtocol = require('./lib/file-protocol');
+protocol.registerSchemesAsPrivileged([{
+  scheme: fileProtocol.SCHEME,
+  privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true },
+}]);
+
 /* -------------------------------------------------------------------------- */
 /*  Janela splash (carregamento inicial)                                       */
 /* -------------------------------------------------------------------------- */
@@ -101,6 +109,8 @@ function createMainWindow() {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
+      // Visualizador de PDF embutido do Chromium (aba de PDF via agzos-file://).
+      plugins: true,
     },
   };
   if (APP_ICON) {
@@ -248,7 +258,7 @@ const deps = {
 };
 const { createPathGuard } = require('./lib/path-guard');
 const guard = createPathGuard();
-require('./ipc/fs').register(ipcMain, { guard });
+require('./ipc/fs').register(ipcMain, { guard, shell });
 require('./ipc/dialog').register(ipcMain, { ...deps, guard });
 require('./ipc/term').register(ipcMain);
 require('./ipc/ssh').register(ipcMain, { guard });
@@ -318,6 +328,8 @@ ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
+  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({ guard }));
+
   // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
   const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);
   // Em seguida, associa o provider antigo à chave já guardada em ai.legacy.

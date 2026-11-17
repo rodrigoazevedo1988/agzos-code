@@ -1,0 +1,241 @@
+/* =========================================================================
+   Visualizadores (imagem, vídeo, áudio, PDF, planilha, Markdown, fallback)
+   Usa só as variáveis de tema (dark/light/monokai).
+   ========================================================================= */
+
+/* Barra de abas + ações do editor */
+#tabs-bar {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+#tabs-bar #tabs { flex: 1; min-width: 0; border-bottom: 0; }
+#editor-actions {
+  display: flex; align-items: center; gap: 2px;
+  padding: 0 6px;
+  border-left: 1px solid var(--line);
+}
+#editor-actions[hidden] { display: none; }
+
+/* Editor + pré-visualização ao lado */
+#editor-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+#editor-row > #editor-host { flex: 1 1 0; min-width: 0; }
+#md-preview-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex; flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+}
+#md-preview-side[hidden] { display: none; }
+.md-side-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px 4px 12px;
+  font-size: 12px; color: var(--fg-dim);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+.md-side-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-side-body { flex: 1; overflow: auto; }
+
+/* Camada da aba de visualização (sobre o Monaco) */
+.viewer-host {
+  position: absolute; inset: 0;
+  z-index: 4;
+  background: var(--bg);
+  display: flex;
+}
+.viewer-host[hidden] { display: none; }
+.viewer {
+  flex: 1;
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  color: var(--fg);
+  user-select: text;
+}
+.viewer-toolbar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.viewer-spacer { flex: 1; }
+.viewer-meta, .viewer-zoom-label { color: var(--fg-mute); font-size: 12px; padding: 0 6px; }
+.viewer-zoom-label { min-width: 92px; text-align: center; }
+.viewer-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+.viewer-btn:hover { background: var(--hover); color: var(--fg); }
+.viewer-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.viewer-btn.icon-only { padding: 4px; }
+.viewer-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+.viewer-footer {
+  padding: 4px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--fg-mute);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Imagem */
+.viewer-image .viewer-stage {
+  display: flex;
+  padding: 16px;
+}
+.viewer-image .viewer-stage img {
+  margin: auto;
+  image-rendering: auto;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.checker {
+  background-color: var(--bg-soft);
+  background-image:
+    linear-gradient(45deg, var(--bg-soft3) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--bg-soft3) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--bg-soft3) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--bg-soft3) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* Vídeo / áudio */
+.viewer-media-stage { display: flex; align-items: center; justify-content: center; padding: 16px; background: #000; }
+.viewer-media-stage.audio { background: var(--bg); }
+.viewer-media-stage video { max-width: 100%; max-height: 100%; }
+.viewer-media-stage audio { width: min(560px, 100%); }
+
+/* PDF */
+.viewer-pdf-stage { overflow: hidden; }
+.viewer-pdf-stage iframe { width: 100%; height: 100%; border: 0; display: block; background: #525659; }
+
+/* Planilha (CSV/TSV) */
+.viewer-sheet-stage { padding: 0; }
+.viewer-loading { padding: 16px; color: var(--fg-mute); }
+.viewer-warning {
+  position: sticky; left: 0; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 12px;
+  background: var(--accent-bg);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.viewer-table {
+  border-collapse: separate; border-spacing: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+.viewer-table th, .viewer-table td {
+  padding: 3px 10px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: pre;
+  max-width: 480px;
+  overflow: hidden; text-overflow: ellipsis;
+  text-align: left;
+}
+.viewer-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-soft2);
+  color: var(--fg);
+  font-weight: 600;
+}
+.viewer-table tbody tr:nth-child(even) td { background: var(--bg-soft); }
+.viewer-table tbody tr:hover td { background: var(--hover); }
+.viewer-table .rownum { color: var(--fg-mute); text-align: right; background: var(--bg-soft); position: sticky; left: 0; }
+.viewer-table thead .rownum { z-index: 2; }
+
+/* Fallback (sem pré-visualização / binário) */
+.viewer-fallback { align-items: center; justify-content: center; padding: 24px; overflow: auto; }
+.viewer-fallback-card {
+  max-width: 460px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.viewer-fallback-icon { color: var(--fg-mute); margin-bottom: 6px; }
+.viewer-fallback h2 { margin: 0; font-size: 18px; font-weight: 500; }
+.viewer-fallback-name { margin: 0; color: var(--fg-dim); word-break: break-all; }
+.viewer-fallback-meta { margin: 0; color: var(--fg-mute); font-size: 12px; }
+.viewer-fallback-detail { margin: 6px 0 0; color: var(--fg-mute); font-size: 12px; line-height: 1.5; }
+.viewer-fallback-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+.viewer-fallback-actions .viewer-btn { border-color: var(--line-2); padding: 6px 12px; }
+
+/* Markdown (documentação) */
+.viewer-md-stage { background: var(--bg); }
+.md-doc {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 32px 64px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--fg);
+  user-select: text;
+  word-wrap: break-word;
+}
+.md-doc > :first-child { margin-top: 0; }
+.md-doc h1, .md-doc h2, .md-doc h3, .md-doc h4, .md-doc h5, .md-doc h6 {
+  margin: 1.4em 0 0.6em;
+  line-height: 1.25;
+  font-weight: 600;
+}
+.md-doc h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--line); }
+.md-doc h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--line); }
+.md-doc h3 { font-size: 1.25em; }
+.md-doc h4 { font-size: 1em; }
+.md-doc h5, .md-doc h6 { font-size: 0.9em; color: var(--fg-dim); }
+.md-doc p, .md-doc ul, .md-doc ol, .md-doc blockquote, .md-doc pre, .md-doc table { margin: 0 0 1em; }
+.md-doc ul, .md-doc ol { padding-left: 2em; }
+.md-doc li + li { margin-top: 0.25em; }
+.md-doc li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.4em; }
+.md-doc input[type="checkbox"] { margin: 0 0.4em 0 0; vertical-align: middle; accent-color: var(--accent); }
+.md-doc a { color: var(--accent-2); text-decoration: none; cursor: pointer; }
+.md-doc a:hover { text-decoration: underline; }
+.md-doc blockquote {
+  padding: 0 1em;
+  color: var(--fg-dim);
+  border-left: 4px solid var(--line-2);
+}
+.md-doc hr { border: 0; height: 1px; background: var(--line); margin: 1.5em 0; }
+.md-doc img { max-width: 100%; }
+.md-doc code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.88em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: var(--bg-soft2);
+}
+.md-doc pre {
+  padding: 12px 16px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  line-height: 1.45;
+}
+.md-doc pre code { padding: 0; background: none; font-size: 12.5px; white-space: pre; }
+.md-doc table { border-collapse: collapse; display: block; overflow: auto; max-width: 100%; }
+.md-doc th, .md-doc td { padding: 6px 13px; border: 1px solid var(--line); }
+.md-doc th { font-weight: 600; background: var(--bg-soft); }
+.md-doc tr:nth-child(even) td { background: var(--bg-soft); }
+#md-preview-side .md-doc { padding: 16px 24px 48px; }

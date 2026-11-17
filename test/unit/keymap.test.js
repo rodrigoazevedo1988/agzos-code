@@ -143,3 +143,11 @@ test('isMenuMnemonicKey: Alt+letra só sem Ctrl/Shift/Meta e fora dos atalhos Al
   assert.equal(isMenuMnemonicKey(ev({ key: 'a', code: 'KeyA' })), null);
   assert.equal(isMenuMnemonicKey(ev({ key: 'ArrowUp', code: 'ArrowUp', altKey: true })), null);
 });
+
+test('matchShortcut: Ctrl+Shift+V abre a pré-visualização de Markdown ao lado', async () => {
+  const { matchShortcut, shouldHandleInTarget } = await load('keymap.js');
+  assert.equal(matchShortcut(ev({ key: 'V', code: 'KeyV', ctrlKey: true, shiftKey: true })), 'markdown.previewSide');
+  assert.equal(matchShortcut(ev({ key: 'v', code: 'KeyV', ctrlKey: true })), null);
+  // No terminal/inputs, Ctrl+Shift+V continua sendo colar.
+  assert.equal(shouldHandleInTarget('markdown.previewSide', true), false);
+});

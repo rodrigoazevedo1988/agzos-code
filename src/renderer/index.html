@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: agzos-file:; media-src agzos-file:; frame-src 'self' blob: agzos-file:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
   <title>Agzos Code</title>
   <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg" />
   <link rel="stylesheet" href="styles/app.css" />
@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="styles/modules.css" />
   <link rel="stylesheet" href="styles/broom.css" />
   <link rel="stylesheet" href="styles/envvault.css" />
+  <link rel="stylesheet" href="styles/viewers.css" />
 </head>
 
 <body class="theme-agzos-dark">
@@ -86,10 +87,19 @@
     <!-- Workbench body (Editor + Resizer + Terminal/Bottom Panel) -->
     <div id="workbench-body" class="panel-bottom">
       <main id="editor-area">
-        <div id="tabs"></div>
-        <div id="editor-host">
-          <!-- Welcome screen do editor (preenchido por welcome.js) -->
-          <div class="welcome" id="welcome"></div>
+        <div id="tabs-bar">
+          <div id="tabs"></div>
+          <!-- Ações do editor ativo (ex.: pré-visualização de Markdown) -->
+          <div id="editor-actions" hidden></div>
+        </div>
+        <div id="editor-row">
+          <div id="editor-host">
+            <!-- Welcome screen do editor (preenchido por welcome.js).
+                 #viewer-host (abas de visualização) é criado aqui por viewers/index.js -->
+            <div class="welcome" id="welcome"></div>
+          </div>
+          <!-- Pré-visualização de Markdown ao lado (viewers/markdown-side.js) -->
+          <aside id="md-preview-side" aria-label="Pré-visualização de Markdown" hidden></aside>
         </div>
       </main>
 
