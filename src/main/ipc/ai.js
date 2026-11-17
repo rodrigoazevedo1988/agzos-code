@@ -1,10 +1,53 @@
 const { randomUUID } = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { PRESETS } = require('../ai/presets');
 const { upsertProfile, removeProfile, setActiveProfile, getActiveProfile, createProviderForProfile } = require('../ai/profiles');
 const { createChatSessions } = require('../ai/sessions');
+const { loadSkills, pickSkill } = require('../agent/skills');
+const { SKILL_RULE } = require('../agent/prompt');
+const { normalizeAiSkills } = require('../lib/settings');
+const { guardResolver } = require('../lib/window-guards');
 
-function register(ipcMain, { settingsStore, store, fetchImpl = fetch }) {
+const MAX_ATTACH_READ = 30 * 1024 * 1024;
+
+function register(ipcMain, {
+  settingsStore, store, fetchImpl = fetch, attachments = null, guard = null, guardFor = null, dialog = null,
+  getMainWindow = () => null, getWindowFor = null, userDataDir = null,
+}) {
   const sessions = new Map();
+  // Guard da janela que pediu (várias janelas: lib/window-guards.js).
+  const guardOf = guardResolver({ guard, guardFor });
+
+  /**
+   * Mensagens do chat: anexos (refs) viram conteúdo; skill de chat vira system prompt.
+   * Skill de projeto não confiada → lança Error com code 'skill_untrusted'.
+   */
+  function prepareMessages(payload, sender) {
+    const list = Array.isArray(payload?.messages) ? payload.messages : [];
+    const messages = list.map((m) => {
+      if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length || !attachments) {
+        return { role: m?.role, content: m?.content };
+      }
+      return { role: 'user', content: attachments.buildContent(typeof m.content === 'string' ? m.content : '', m.attachments) };
+    });
+    const skillId = typeof payload?.skill === 'string' ? payload.skill : null;
+    if (skillId) {
+      const root = typeof payload.root === 'string' && guardOf(sender)?.isAllowed?.(payload.root) ? payload.root : null;
+      try {
+        const { skills } = loadSkills({ userDir: userDataDir ? path.join(userDataDir, 'skills') : null, projectRoot: root });
+        const skill = pickSkill(skills, skillId, { trusted: normalizeAiSkills(settingsStore.load().aiSkills).trusted });
+        // Depois das mensagens de sistema do renderer (contexto do arquivo), antes da conversa.
+        const at = messages.findIndex((m) => m.role !== 'system');
+        const origin = skill?.source === 'project' ? 'Este modo vem do repositório do projeto (arquivo .agzos/skills).\n' : '';
+        if (skill?.prompt) messages.splice(at < 0 ? messages.length : at, 0, { role: 'system', content: `Você é o Agzos IA, assistente do editor Agzos Code.\n\n## Modo ativo: ${skill.label}\n${origin}${SKILL_RULE}\n\n${skill.prompt}` });
+      } catch (err) {
+        if (err.code === 'skill_untrusted') throw err;
+        console.error('[ai] skill do chat indisponível:', err.message);
+      }
+    }
+    return messages;
+  }
   function findProfile(id) {
     const settings = settingsStore.load();
     return id ? settings.ai?.profiles?.find((profile) => profile.id === id) : getActiveProfile(settings);
@@ -37,6 +80,10 @@ function register(ipcMain, { settingsStore, store, fetchImpl = fetch }) {
       label: draft.label || PRESETS[draft.preset].label,
       baseUrl: draft.baseUrl || PRESETS[draft.preset].baseUrl, model: draft.model || null,
     };
+    // Visão (imagens): true | false | 'auto' (padrão). Edição sem o campo mantém o valor salvo.
+    const previous = draft.id ? findProfile(draft.id) : null;
+    const vision = [true, false, 'auto'].includes(draft.vision) ? draft.vision : previous?.vision;
+    if (vision === true || vision === false) profile.vision = vision;
     if (apiKey !== undefined) store.set(`ai.${profile.id}`, apiKey);
     settingsStore.save(upsertProfile(settingsStore.load(), profile));
     return profile;
@@ -60,7 +107,57 @@ function register(ipcMain, { settingsStore, store, fetchImpl = fetch }) {
   });
   ipcMain.handle('ai:chat', (event, requestId, payload) => {
     const profile = findProfile(payload.profileId);
-    forSender(event.sender).start(requestId, { ...payload, model: payload.model || profile?.model });
+    let messages;
+    try {
+      messages = prepareMessages(payload, event.sender);
+    } catch (err) {
+      if (err.code !== 'skill_untrusted') throw err;
+      if (!event.sender.isDestroyed()) event.sender.send('ai:error', requestId, err.message);
+      return;
+    }
+    forSender(event.sender).start(requestId, { ...payload, model: payload.model || profile?.model, messages });
+  });
+
+  // Anexos: o renderer manda bytes (imagens já reduzidas); aqui classifica, extrai e guarda.
+  ipcMain.handle('ai:attach:save', async (_event, file) => {
+    if (!attachments) throw new Error('Anexos indisponíveis');
+    try {
+      return { ok: true, attachment: await attachments.save({ name: file?.name, bytes: file?.bytes }) };
+    } catch (err) {
+      return { ok: false, error: err.userMessage || err.message };
+    }
+  });
+  // Lê arquivos para anexar: sem caminhos → diálogo nativo; com caminhos (Explorer) → só os liberados no guard.
+  ipcMain.handle('ai:attach:read', async (event, paths) => {
+    const g = guardOf(event?.sender);
+    let list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && path.isAbsolute(p)) : null;
+    if (!list) {
+      if (!dialog?.showOpenDialog) return [];
+      // Diálogo modal na janela que pediu.
+      const win = typeof getWindowFor === 'function' ? getWindowFor(event) : getMainWindow();
+      const options = {
+        title: 'Anexar arquivos', properties: ['openFile', 'multiSelections'],
+        filters: [
+          { name: 'Suportados', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'md', 'json', 'js', 'ts', 'py', 'csv', 'log', 'html', 'css', '*'] },
+        ],
+      };
+      const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      if (result.canceled) return [];
+      list = result.filePaths;
+    } else if (!g || list.some((p) => !g.isAllowed(p))) {
+      return list.map((p) => ({ name: path.basename(p), error: 'Fora das pastas liberadas.' }));
+    }
+    const out = [];
+    for (const file of list.slice(0, 10)) {
+      const name = path.basename(file);
+      try {
+        const stat = await fs.promises.stat(file);
+        if (!stat.isFile()) { out.push({ name, error: 'Não é um arquivo.' }); continue; }
+        if (stat.size > MAX_ATTACH_READ) { out.push({ name, error: 'Arquivo grande demais (máx. 30 MB).' }); continue; }
+        out.push({ name, bytes: new Uint8Array(await fs.promises.readFile(file)) });
+      } catch (err) { out.push({ name, error: err.message }); }
+    }
+    return out;
   });
   ipcMain.handle('ai:cancel', (event, requestId) => sessions.get(event.sender)?.cancel(requestId));
   return { cancelAll: () => { for (const chat of sessions.values()) chat.cancelAll(); } };

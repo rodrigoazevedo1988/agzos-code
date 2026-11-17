@@ -1,10 +1,24 @@
 const { parseSSE } = require('../sse');
 const { friendlyError, request } = require('../errors');
 const { markToolsUnsupported, parseToolInput } = require('../tool-calls');
+const { toAnthropicContent, contentText, hasImages, markVisionUnsupported } = require('../content');
+
+const anyImages = (messages) => Array.isArray(messages) && messages.some((m) => hasImages(m?.content));
+const asBlocks = (content) => (typeof content === 'string' ? (content ? [{ type: 'text', text: content }] : []) : content);
+
+/** Junta mensagens consecutivas do mesmo papel (a API exige alternância). */
+function pushMerged(out, message) {
+  const last = out[out.length - 1];
+  if (last && last.role === message.role) {
+    last.content = [...asBlocks(last.content), ...asBlocks(message.content)];
+    return;
+  }
+  out.push(message);
+}
 
 /** Mensagens no formato neutro do agente → { system, messages } da Anthropic. */
 function toAnthropicMessages(messages) {
-  const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+  const system = messages.filter((m) => m.role === 'system').map((m) => contentText(m.content)).join('\n\n');
   const out = [];
   for (const message of messages) {
     if (message.role === 'system') continue;
@@ -23,10 +37,10 @@ function toAnthropicMessages(messages) {
       const content = [];
       if (message.content) content.push({ type: 'text', text: message.content });
       for (const call of message.toolCalls) content.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input ?? {} });
-      out.push({ role: 'assistant', content });
+      pushMerged(out, { role: 'assistant', content });
       continue;
     }
-    out.push({ role: message.role, content: message.content });
+    pushMerged(out, { role: message.role, content: toAnthropicContent(message.content) });
   }
   return { system, messages: out };
 }
@@ -80,8 +94,8 @@ function createAnthropicProvider({ baseUrl, apiKey, fetchImpl = fetch }) {
   }
   async function* chat({ model, messages, signal }) {
     try {
-      const system = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n');
-      const body = { model, max_tokens: 8192, stream: true, system, messages: messages.filter((message) => message.role !== 'system') };
+      const converted = toAnthropicMessages(messages);
+      const body = { model, max_tokens: 8192, stream: true, system: converted.system, messages: converted.messages };
       const response = await request(fetchImpl, `${root}/messages`, { method: 'POST', headers, body: JSON.stringify(body) }, { baseUrl, apiKey, signal });
       for await (const item of parseSSE(response.body)) {
         if (item.event === 'message_stop') break;
@@ -89,7 +103,7 @@ function createAnthropicProvider({ baseUrl, apiKey, fetchImpl = fetch }) {
         const text = JSON.parse(item.data).delta?.text;
         if (text) yield text;
       }
-    } catch (err) { throw friendlyError(err, baseUrl, apiKey); }
+    } catch (err) { throw markVisionUnsupported(friendlyError(err, baseUrl, apiKey), { hadImages: anyImages(messages) }); }
   }
   // Tool calling (agente). O chat de texto acima continua igual.
   async function* chatTools({ model, messages, tools, signal }) {
@@ -101,7 +115,9 @@ function createAnthropicProvider({ baseUrl, apiKey, fetchImpl = fetch }) {
       };
       const response = await request(fetchImpl, `${root}/messages`, { method: 'POST', headers, body: JSON.stringify(body) }, { baseUrl, apiKey, signal });
       yield* parseAnthropicToolStream(response.body);
-    } catch (err) { throw markToolsUnsupported(friendlyError(err, baseUrl, apiKey)); }
+    } catch (err) {
+      throw markVisionUnsupported(markToolsUnsupported(friendlyError(err, baseUrl, apiKey)), { hadImages: anyImages(messages) });
+    }
   }
   async function testConnection() {
     try { return { ok: true, models: (await listModels()).length }; }

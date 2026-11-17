@@ -11,6 +11,7 @@
 import { perfLabel } from './labels.js';
 import { renderFileIcon } from './icon-theme.js';
 import { toast } from './toast.js';
+import { lucideIcon } from './lucide.js';
 import { isQuickOpenResultCurrent, quickOpenEnterAction } from './ui-utils.js';
 
 const State = window.AgzosState;
@@ -38,6 +39,8 @@ const COMMANDS = [
   { id: 'file.closeAllTabs',    label: 'Arquivo: Fechar Todos os Editores',             hint: 'Ctrl+K Ctrl+W',  run: () => import('./tabs.js').then((m) => m.closeAllTabs()) },
 
   // Editor & Produtividade
+  { id: 'markdown.previewSide', label: 'Markdown: Abrir Pré-visualização ao Lado',     hint: 'Ctrl+Shift+V',   run: () => import('./editor.js').then((m) => m.openMarkdownPreview(State.activePath, 'side')) },
+  { id: 'markdown.preview',     label: 'Markdown: Abrir Pré-visualização na Aba Atual', hint: '',               run: () => import('./editor.js').then((m) => m.openMarkdownPreview(State.activePath, 'tab')) },
   { id: 'editor.find',          label: 'Editor: Localizar no Arquivo',                  hint: 'Ctrl+F',         run: () => triggerEditorAction('actions.find') },
   { id: 'editor.replace',       label: 'Editor: Substituir no Arquivo',                 hint: 'Ctrl+H',         run: () => triggerEditorAction('editor.action.startFindReplaceAction') },
   { id: 'editor.gotoLine',      label: 'Editor: Ir para Linha/Coluna…',                 hint: 'Ctrl+G',         run: () => triggerEditorAction('editor.action.gotoLine') },
@@ -52,6 +55,7 @@ const COMMANDS = [
   { id: 'view.focusExplorer',   label: 'Exibir: Focar no Explorer de Arquivos',         hint: 'Ctrl+Shift+E',   run: () => switchView('explorer') },
   { id: 'view.focusSearch',     label: 'Exibir: Focar na Busca no Projeto',             hint: 'Ctrl+Shift+F',   run: () => switchView('search') },
   { id: 'view.focusGit',        label: 'Exibir: Focar no Controle de Versão (Git)',     hint: 'Ctrl+Shift+G',   run: () => switchView('git') },
+  { id: 'view.focusModules',    label: 'Exibir: Abrir Módulos Agzos',                   hint: 'Ctrl+Shift+X',   run: () => switchView('modules') },
   { id: 'view.focusAI',         label: 'Exibir: Focar no Chat Agzos IA',                hint: 'Ctrl+Shift+A',   run: () => aiDock()?.show({ focus: true }) },
   { id: 'view.toggleTerminal',  label: 'Exibir: Alternar Terminal Integrado',           hint: 'Ctrl+`',         run: () => import('./terminal.js').then((m) => m.toggleTerminal()) },
   { id: 'view.termMoveRight',   label: 'Exibir: Mover Terminal para a Direita',         hint: '',               run: () => import('./terminal.js').then((m) => m.toggleTerminalPosition('right')) },
@@ -116,6 +120,44 @@ const COMMANDS = [
   { id: 'help.about',           label: 'Ajuda: Sobre o Agzos Code',                     hint: '',               run: showAbout },
 ];
 
+/**
+ * Acrescenta comandos à paleta (módulos nativos). Mesmo id substitui o anterior.
+ * cmds: [{ id, label, run, hint? }]
+ */
+export function registerCommands(cmds) {
+  for (const cmd of Array.isArray(cmds) ? cmds : [cmds]) {
+    if (!cmd || typeof cmd.id !== 'string' || typeof cmd.label !== 'string' || typeof cmd.run !== 'function') continue;
+    const entry = { hint: '', ...cmd };
+    const i = COMMANDS.findIndex((c) => c.id === cmd.id);
+    if (i === -1) COMMANDS.push(entry);
+    else COMMANDS[i] = entry;
+  }
+}
+
+/** Comando registrado com esse id? (barra de menus, testes) */
+export function hasCommand(id) {
+  return COMMANDS.some((c) => c.id === id);
+}
+
+/**
+ * Executa um comando da paleta pelo id (barra de menus e atalhos usam a mesma
+ * função que a paleta). Devolve false se o id não existe.
+ */
+export function runCommand(id, ...args) {
+  const cmd = COMMANDS.find((c) => c.id === id);
+  if (!cmd) {
+    console.warn(`[paleta] comando desconhecido: ${id}`);
+    return false;
+  }
+  try {
+    const out = cmd.run(...args);
+    if (out && typeof out.catch === 'function') out.catch((e) => toast(`Erro: ${e.message}`, 'error'));
+  } catch (e) {
+    toast(`Erro: ${e.message}`, 'error');
+  }
+  return true;
+}
+
 export async function showQuickOpen() {
   const overlay = document.getElementById('cmd-overlay');
   const input = document.getElementById('cmd-input');
@@ -161,10 +203,12 @@ export function showCommandPalette() {
 }
 
 /**
- * Lista de escolha na paleta (ex.: perfis de terminal).
- * items: [{ label, hint?, run }]
+ * Lista de escolha na paleta (ex.: perfis de terminal, conexão remota).
+ * items: [{ label, hint?, description?, icon?, badge?, disabled?, id?, run }]
+ * `title` (opcional) vira o placeholder do campo, como no quick pick do VS Code.
  */
-export function showPicker({ placeholder = 'Escolha…', items = [] } = {}) {
+export function showPicker({ placeholder = 'Escolha…', title = '', items = [] } = {}) {
+  if (title) placeholder = title;
   const overlay = document.getElementById('cmd-overlay');
   const input = document.getElementById('cmd-input');
   if (!overlay || !input) return;
@@ -217,7 +261,7 @@ export function setupCommandPalette() {
     if (currentMode === 'pick' && !val.startsWith('>')) {
       const q = val.trim().toLowerCase();
       currentResults = pickItems
-        .map((c) => ({ c, score: fuzzyScore(c.label, q) }))
+        .map((c) => ({ c, score: Math.max(fuzzyScore(c.label, q), c.description ? fuzzyScore(c.description, q) - 1 : -1) }))
         .filter((r) => r.score >= 0)
         .sort((a, b) => b.score - a.score)
         .map((r) => r.c);
@@ -360,7 +404,9 @@ function renderList() {
     const li = document.createElement('li');
     if (idx === activeIndex) li.classList.add('active');
 
-    if (currentMode === 'commands' || currentMode === 'pick') {
+    if (currentMode === 'pick' && (item.icon || item.description || item.badge || item.disabled)) {
+      renderPickItem(li, item);
+    } else if (currentMode === 'commands' || currentMode === 'pick') {
       const label = document.createElement('span');
       label.textContent = item.label;
       const hint = document.createElement('span');
@@ -416,6 +462,41 @@ function renderList() {
   }
 }
 
+/** Item rico do seletor: ícone, rótulo, descrição, selo e estado desabilitado. */
+function renderPickItem(li, item) {
+  li.classList.add('cmd-item-pick');
+  if (item.id) li.dataset.pickId = item.id;
+  if (item.disabled) {
+    li.classList.add('disabled');
+    li.setAttribute('aria-disabled', 'true');
+  }
+  if (item.icon) {
+    const ic = document.createElement('span');
+    ic.className = 'cmd-pick-icon';
+    ic.appendChild(lucideIcon(item.icon, { size: 15, strokeWidth: 1.8 }));
+    li.appendChild(ic);
+  }
+  const label = document.createElement('span');
+  label.className = 'cmd-pick-label';
+  label.textContent = item.label;
+  li.appendChild(label);
+  if (item.description) {
+    const desc = document.createElement('span');
+    desc.className = 'cmd-pick-desc';
+    desc.textContent = item.description;
+    li.appendChild(desc);
+  }
+  const tail = document.createElement('span');
+  tail.className = item.badge ? 'cmd-pick-badge' : 'kbd-hint';
+  tail.textContent = item.badge || item.hint || '';
+  li.appendChild(tail);
+  li.addEventListener('click', () => {
+    if (item.disabled) return;
+    hideCommandPalette();
+    item.run();
+  });
+}
+
 function updateActiveVisual(list, idx) {
   Array.from(list.children).forEach((child, i) => {
     child.classList.toggle('active', i === idx);
@@ -457,15 +538,21 @@ async function openFileDialog() {
   }
 }
 
-async function saveFileAs() {
-  const defaultPath = State.activePath || 'sem-titulo.txt';
+export async function saveFileAs() {
+  const editorMod = await import('./editor.js');
+  const source = State.activePath;
+  const untitled = editorMod.isUntitled(source);
+  const defaultPath = !source || untitled
+    ? (State.workspaceRoot ? `${State.workspaceRoot}/sem-titulo.txt` : 'sem-titulo.txt')
+    : source;
   const targetPath = await window.agzos.dialog.saveFile(defaultPath);
   if (targetPath) {
-    const editorMod = await import('./editor.js');
     const editor = editorMod.getActiveEditor();
     if (editor) {
       await window.agzos.fs.writeFile(targetPath, editor.getValue());
       invalidateQuickOpenCache();
+      // Arquivo sem título salvo: a aba "Sem título" dá lugar ao arquivo novo
+      if (untitled) editorMod.discardFile(source);
       await editorMod.openFile(targetPath);
       toast('Arquivo salvo com sucesso.', 'success', 1500);
     }
@@ -589,7 +676,12 @@ export function showShortcutsModal() {
     { key: 'Ctrl + G', desc: 'Editor: Ir para Linha/Coluna' },
     { key: 'Shift + Alt + F', desc: 'Editor: Formatar documento' },
     { key: 'Alt + Z', desc: 'Editor: Alternar quebra de linha (Word Wrap)' },
+    { key: 'Ctrl + N', desc: 'Arquivo: Novo arquivo de texto (sem título)' },
+    { key: 'Ctrl + Shift + N', desc: 'Arquivo: Nova janela' },
+    { key: 'Ctrl + O', desc: 'Arquivo: Abrir pasta' },
+    { key: 'Ctrl + Shift + V', desc: 'Markdown: Abrir pré-visualização ao lado' },
     { key: 'Ctrl + S', desc: 'Arquivo: Salvar alterações' },
+    { key: 'Ctrl + Shift + S', desc: 'Arquivo: Salvar como' },
     { key: 'Ctrl + W', desc: 'Arquivo: Fechar editor/aba ativa' },
     { key: 'Ctrl + K  Ctrl + W', desc: 'Arquivo: Fechar todos os editores' },
     { key: 'Ctrl + K  Ctrl + S', desc: 'Preferências: Atalhos de Teclado' },
@@ -601,8 +693,14 @@ export function showShortcutsModal() {
     { key: 'Ctrl + Shift + E', desc: 'Exibir: Focar no Explorer de Arquivos' },
     { key: 'Ctrl + Shift + F', desc: 'Exibir: Focar na Busca no Projeto' },
     { key: 'Ctrl + Shift + G', desc: 'Exibir: Focar no Controle de Versão (Git)' },
+    { key: 'Ctrl + Shift + X', desc: 'Exibir: Abrir Módulos Agzos' },
     { key: 'Ctrl + Shift + A', desc: 'Agzos IA: Abrir e focar no Chat de IA' },
     { key: 'Ctrl + = / -', desc: 'Zoom: Aumentar / diminuir tamanho da fonte' },
+    { key: 'Ctrl + Shift + B', desc: 'Terminal: Executar tarefa de build (npm run build)' },
+    { key: 'F11', desc: 'Exibir: Tela cheia' },
+    { key: 'Alt', desc: 'Barra de menus: focar (Alt + letra sublinhada abre o menu)' },
+    { key: 'Ctrl + Shift + I', desc: 'Ajuda: Ferramentas de desenvolvedor' },
+    { key: 'Ctrl + Q', desc: 'Arquivo: Sair' },
   ];
 
   let modalEl = document.getElementById('shortcuts-modal-overlay');

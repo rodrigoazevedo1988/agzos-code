@@ -5,9 +5,16 @@
  * O renderer NUNCA tem acesso direto a `require`, `process` ou `fs`.
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+// Token desta janela para o protocolo agzos-file (host da URL). O main só serve
+// caminhos liberados no guard da janela dona do token (lib/window-guards.js).
+let fileHost = 'local';
+try { fileHost = ipcRenderer.sendSync('window:fileToken') || 'local'; } catch { /* sem main */ }
 
 contextBridge.exposeInMainWorld('agzos', {
+  fileHost,
+
   // App info
   app: {
     info: () => ipcRenderer.invoke('app:info'),
@@ -18,7 +25,8 @@ contextBridge.exposeInMainWorld('agzos', {
   fs: {
     readDir: (p) => ipcRenderer.invoke('fs:readDir', p),
     findFiles: (p, maxResults) => ipcRenderer.invoke('fs:findFiles', p, maxResults),
-    readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
+    readFile: (p, opts) => ipcRenderer.invoke('fs:readFile', p, opts),
+    readBinary: (p) => ipcRenderer.invoke('fs:readBinary', p),
     writeFile: (p, c) => ipcRenderer.invoke('fs:writeFile', p, c),
     mkdir: (p) => ipcRenderer.invoke('fs:mkdir', p),
     exists: (p) => ipcRenderer.invoke('fs:exists', p),
@@ -26,6 +34,14 @@ contextBridge.exposeInMainWorld('agzos', {
     delete: (p) => ipcRenderer.invoke('fs:delete', p),
     rename: (a, b) => ipcRenderer.invoke('fs:rename', a, b),
     homeDir: () => ipcRenderer.invoke('fs:homeDir'),
+    openPath: (p) => ipcRenderer.invoke('fs:openPath', p),
+    reveal: (p) => ipcRenderer.invoke('fs:reveal', p),
+    // Recebe um File de um drop real; o caminho sai do webUtils (o renderer não o forja).
+    allowDropped: (file) => {
+      let p = '';
+      try { p = webUtils.getPathForFile(file); } catch { p = ''; }
+      return p ? ipcRenderer.invoke('fs:allowDropped', p) : Promise.resolve(null);
+    },
   },
 
   // Diálogos
@@ -56,6 +72,14 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
+  // Atalho SSH (ipc/ssh.js). Conectar = term.create(..., { ssh: { alias } | { user, host, port } }).
+  ssh: {
+    hosts: () => ipcRenderer.invoke('ssh:hosts'),
+    addHost: (input) => ipcRenderer.invoke('ssh:addHost', input),
+    configPath: () => ipcRenderer.invoke('ssh:configPath'),
+    parseTarget: (text) => ipcRenderer.invoke('ssh:parseTarget', text),
+  },
+
   // Portas TCP em escuta (aba PORTAS do painel).
   ports: {
     list: () => ipcRenderer.invoke('ports:list'),
@@ -79,6 +103,10 @@ contextBridge.exposeInMainWorld('agzos', {
     detectOllama: () => ipcRenderer.invoke('ai:detectOllama'),
     chat: (requestId, payload) => ipcRenderer.invoke('ai:chat', requestId, payload),
     cancel: (requestId) => ipcRenderer.invoke('ai:cancel', requestId),
+    // Anexos: save({ name, bytes }) → { ok, attachment | error }; read(paths?) → [{ name, bytes | error }]
+    // (sem caminhos abre o diálogo nativo; caminhos do Explorer passam pelo guard).
+    saveAttachment: (file) => ipcRenderer.invoke('ai:attach:save', file),
+    readAttachments: (paths) => ipcRenderer.invoke('ai:attach:read', paths),
     onChunk: (cb) => {
       const handler = (_event, id, text) => cb(id, text);
       ipcRenderer.on('ai:chunk', handler);
@@ -103,11 +131,62 @@ contextBridge.exposeInMainWorld('agzos', {
     cancel: (requestId) => ipcRenderer.invoke('agent:cancel', requestId),
     undo: (checkpointId) => ipcRenderer.invoke('agent:undo', checkpointId),
     setMode: (mode) => ipcRenderer.invoke('agent:setMode', mode),
+    // "Enviar agora": { id?, content, attachments? } → true se entra na execução em andamento.
+    steer: (requestId, payload) => ipcRenderer.invoke('agent:steer', requestId, payload),
+    // Skills (modos): lista { skills, warnings, userDir, projectDir }; nova skill → caminho do arquivo.
+    skills: (payload) => ipcRenderer.invoke('agent:skills', payload),
+    newSkill: () => ipcRenderer.invoke('agent:skills:new'),
+    openSkillsFolder: () => ipcRenderer.invoke('agent:skills:openFolder'),
+    // Confia numa skill do projeto ({ root?, id, sha256 }) depois do diálogo → { ok, error? }.
+    trustSkill: (payload) => ipcRenderer.invoke('agent:skills:trust', payload),
     onEvent: (cb) => {
       const handler = (_event, id, evt) => cb(id, evt);
       ipcRenderer.on('agent:event', handler);
       return () => ipcRenderer.removeListener('agent:event', handler);
     },
+    // Ferramentas read_terminal/get_problems: o main pergunta, o renderer responde (cb pode ser async).
+    onQuery: (cb) => {
+      const handler = async (_event, id, what, args) => {
+        let result = null;
+        try { result = await cb(what, args); } catch { result = null; }
+        ipcRenderer.invoke('agent:query:reply', id, result).catch(() => {});
+      };
+      ipcRenderer.on('agent:query', handler);
+      return () => ipcRenderer.removeListener('agent:query', handler);
+    },
+  },
+
+  // Módulos nativos — Vassoura de Produção (ipc/broom.js). Argumentos repassados como vêm.
+  broom: {
+    analyzeFile: (...args) => ipcRenderer.invoke('broom:analyzeFile', ...args),
+    cleanFile: (...args) => ipcRenderer.invoke('broom:cleanFile', ...args),
+    scanWorkspace: (...args) => ipcRenderer.invoke('broom:scanWorkspace', ...args),
+    cleanWorkspace: (...args) => ipcRenderer.invoke('broom:cleanWorkspace', ...args),
+    cancel: (...args) => ipcRenderer.invoke('broom:cancel', ...args),
+    undo: (...args) => ipcRenderer.invoke('broom:undo', ...args),
+    onEvent: (cb) => {
+      const handler = (_event, id, evt) => cb(id, evt);
+      ipcRenderer.on('broom:event', handler);
+      return () => ipcRenderer.removeListener('broom:event', handler);
+    },
+  },
+
+  // Módulos nativos — Cofre .env (ipc/envvault.js). Valores só chegam por reveal.
+  envVault: {
+    list: (...args) => ipcRenderer.invoke('envvault:list', ...args),
+    reveal: (...args) => ipcRenderer.invoke('envvault:reveal', ...args),
+    setValue: (...args) => ipcRenderer.invoke('envvault:setValue', ...args),
+    addKey: (...args) => ipcRenderer.invoke('envvault:addKey', ...args),
+    removeKey: (...args) => ipcRenderer.invoke('envvault:removeKey', ...args),
+    generateExample: (...args) => ipcRenderer.invoke('envvault:generateExample', ...args),
+    copy: (...args) => ipcRenderer.invoke('envvault:copy', ...args),
+    scanStaged: (...args) => ipcRenderer.invoke('envvault:scanStaged', ...args),
+    installHook: (...args) => ipcRenderer.invoke('envvault:installHook', ...args),
+    removeHook: (...args) => ipcRenderer.invoke('envvault:removeHook', ...args),
+    hookStatus: (...args) => ipcRenderer.invoke('envvault:hookStatus', ...args),
+    gitignoreStatus: (...args) => ipcRenderer.invoke('envvault:gitignoreStatus', ...args),
+    addToGitignore: (...args) => ipcRenderer.invoke('envvault:addToGitignore', ...args),
+    undo: (...args) => ipcRenderer.invoke('envvault:undo', ...args),
   },
 
   // Git do sistema. Respostas: { ok: true, data } | { ok: false, error: { message, kind } }.
@@ -154,6 +233,13 @@ contextBridge.exposeInMainWorld('agzos', {
     // Histórico por workspace: { conversations: [{ id, title, updatedAt, messages }], activeId }
     loadHistory: (root) => ipcRenderer.invoke('chat:history:load', root),
     saveHistory: (root, history) => ipcRenderer.invoke('chat:history:save', root, history),
+    // Índice global (todas as pastas) e operações por chave do arquivo (hash da pasta).
+    allHistory: (options) => ipcRenderer.invoke('chat:history:all', options),
+    getConversation: (key, id) => ipcRenderer.invoke('chat:history:get', key, id),
+    renameConversation: (key, id, title) => ipcRenderer.invoke('chat:history:rename', key, id, title),
+    deleteConversation: (key, id) => ipcRenderer.invoke('chat:history:delete', key, id),
+    // Exportar: format 'md' | 'pdf' → caminho salvo ou null (cancelado).
+    exportConversation: (key, id, format) => ipcRenderer.invoke('chat:export', key, id, format),
   },
 
   update: {
@@ -166,9 +252,20 @@ contextBridge.exposeInMainWorld('agzos', {
     },
   },
 
-  // Workspace (libera a pasta no guard de arquivos)
+  // Workspace (libera a pasta no guard desta janela; trocar/fechar revoga a anterior)
   workspace: {
     open: (p) => ipcRenderer.invoke('workspace:open', p),
+    close: () => ipcRenderer.invoke('workspace:close'),
+    clearRecent: () => ipcRenderer.invoke('workspace:clearRecent'),
+  },
+
+  // Janela atual (barra de menus in-app)
+  window: {
+    newWindow: () => ipcRenderer.invoke('window:new'),
+    close: () => ipcRenderer.invoke('window:close'),
+    toggleFullScreen: () => ipcRenderer.invoke('window:toggleFullScreen'),
+    toggleDevTools: () => ipcRenderer.invoke('window:toggleDevTools'),
+    quit: () => ipcRenderer.invoke('app:quit'),
   },
 
   // Settings
@@ -176,6 +273,15 @@ contextBridge.exposeInMainWorld('agzos', {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (s) => ipcRenderer.invoke('settings:save', s),
     importVSCode: (editor) => ipcRenderer.invoke('settings:import-vscode', editor),
+    // Outra janela salvou: cb(settings) atualiza a cópia local; depois confirma ao main
+    // (o merge do settings:save deixa de considerar a cópia anterior).
+    onChanged: (cb) => {
+      const handler = (_e, s, seq) => {
+        try { cb(s); } finally { ipcRenderer.send('settings:ack', seq); }
+      };
+      ipcRenderer.on('settings:changed', handler);
+      return () => ipcRenderer.removeListener('settings:changed', handler);
+    },
   },
 
   // Menu events (main → renderer)

@@ -30,7 +30,7 @@ export function isQuickOpenResultCurrent({ seq, currentSeq, mode, value, current
  * 'run' só para comando (tem run()) em modo comandos; 'open' só para arquivo em modo arquivos.
  */
 export function quickOpenEnterAction(mode, item) {
-  if (!item) return null;
+  if (!item || item.disabled) return null;
   if (mode === 'commands') return typeof item.run === 'function' && !item.path ? 'run' : null;
   if (mode === 'files') return typeof item.path === 'string' && item.path ? 'open' : null;
   return null;

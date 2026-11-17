@@ -3,8 +3,9 @@
  */
 
 const fs = require('fs');
-const { runAgent, MODES } = require('./loop');
-const { createToolbox } = require('./tools');
+const { runAgent, createSteerQueue, MODES } = require('./loop');
+const { createToolbox, ToolError } = require('./tools');
+const { filterDefinitions } = require('./skills');
 const { buildSystemPrompt } = require('./prompt');
 const { pickShell } = require('./exec');
 const { secretValues } = require('./text');
@@ -17,11 +18,14 @@ const winEnv = require('../lib/win-env');
  *   getMode() → modo salvo nas settings
  *   checkpoints: createCheckpointStore(...)
  *   send(requestId, evt)
+ *   getExtraTools() → ferramentas extras dos módulos habilitados (ver modules/agent-tools.js)
  */
 function createAgentSessions({
   getRoot, getProvider, getMode = () => 'edit', checkpoints, send,
   platform = process.platform, getEnv = () => winEnv.freshEnv({ platform }),
-  runCommand, shell, maxSteps,
+  runCommand, shell, maxSteps, getExtraTools = () => [],
+  buildContent = (text) => text,
+  getSkill = () => null,
 }) {
   const active = new Map(); // requestId → { controller, pending: Map(callId → { resolve, reject }) }
   const conversations = new Map(); // conversationId → Set(sessionKey)
@@ -46,18 +50,28 @@ function createAgentSessions({
       emit({ type: 'error', message: err.userMessage || err.message, code: err.code || 'no_profile' });
       return false;
     }
+    let skill;
+    try {
+      skill = safeSkill(getSkill, payload.skill, root);
+    } catch (err) {
+      // Skill de projeto não confiada: recusa antes de chamar o modelo.
+      emit({ type: 'error', message: err.message, code: err.code || 'skill_error' });
+      return false;
+    }
     const mode = MODES.includes(payload.mode) ? payload.mode : (MODES.includes(getMode()) ? getMode() : 'edit');
     const controller = new AbortController();
-    const session = { controller, pending: new Map() };
+    const steering = createSteerQueue();
+    const session = { controller, pending: new Map(), steering };
     active.set(requestId, session);
 
     const env = getEnv();
     const sh = shell || pickShell({ platform, env });
     const checkpoint = checkpoints.create({ root });
-    const toolbox = createToolbox({
+    const toolbox = restrictToolbox(createToolbox({
       root, checkpoint, platform, shell: sh, env, runCommand,
       secrets: secretValues(env, [resolved.apiKey]),
-    });
+      extraTools: safeExtraTools(getExtraTools),
+    }), skill);
     const conversationKey = typeof payload.conversationId === 'string' && payload.conversationId
       ? `c:${payload.conversationId}` : `r:${requestId}`;
 
@@ -71,15 +85,17 @@ function createAgentSessions({
         return await runAgent({
           provider: resolved.provider,
           model: resolved.model,
-          history: payload.messages,
+          history: expandHistory(payload.messages),
           mode,
           toolbox,
           checkpoint,
           emit,
           requestApproval,
           signal: controller.signal,
-          systemPrompt: buildSystemPrompt({ root, platform, shell: sh, mode }),
+          systemPrompt: buildSystemPrompt({ root, platform, shell: sh, mode, skill }),
+          readOnly: !!skill?.readOnly,
           sessionAllow: allowSetFor(conversationKey),
+          steering,
           ...(maxSteps ? { maxSteps } : {}),
         });
       } finally {
@@ -99,6 +115,38 @@ function createAgentSessions({
     return true;
   }
 
+  /**
+   * "Enviar agora": acrescenta uma mensagem do usuário ao pedido em andamento.
+   * payload: { id?, content, attachments? } → true se aceita (vira `user_steer` no
+   * próximo ponto seguro); false se o pedido já terminou ou o conteúdo é vazio.
+   */
+  /** Mensagens do usuário com `attachments` (refs do renderer) viram conteúdo multimodal. */
+  function expandHistory(messages) {
+    if (!Array.isArray(messages)) return [];
+    return messages.map((m) => {
+      if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length) return m;
+      try {
+        return { role: 'user', content: buildContent(typeof m.content === 'string' ? m.content : '', m.attachments) };
+      } catch (err) {
+        console.error('[agent] anexos ignorados:', err.message);
+        return { role: 'user', content: m.content };
+      }
+    });
+  }
+
+  function steer(requestId, payload = {}) {
+    const session = active.get(requestId);
+    if (!session || session.steering.closed || session.controller.signal.aborted) return false;
+    const text = typeof payload.content === 'string' ? payload.content : '';
+    let content = text;
+    try {
+      content = buildContent(text, payload.attachments);
+    } catch (err) {
+      console.error('[agent] anexos do steer ignorados:', err.message);
+    }
+    return session.steering.push({ id: payload.id, content, text });
+  }
+
   function cancel(requestId) {
     const session = active.get(requestId);
     if (!session) return false;
@@ -113,6 +161,7 @@ function createAgentSessions({
   return {
     run,
     approve,
+    steer,
     cancel,
     cancelAll: () => [...active.keys()].forEach(cancel),
     // Para testes: aguarda o fim de um pedido.
@@ -121,9 +170,49 @@ function createAgentSessions({
   };
 }
 
+/**
+ * Skill pedida (id) → objeto da skill ou null. Erro no loader nunca derruba o agente,
+ * exceto `skill_untrusted` (skill de projeto sem confiança), que é repassado.
+ */
+function safeSkill(getSkill, id, root) {
+  if (typeof id !== 'string' || !id) return null;
+  try {
+    return getSkill(id, root) || null;
+  } catch (err) {
+    if (err.code === 'skill_untrusted') throw err;
+    console.error('[agent] skill indisponível:', err.message);
+    return null;
+  }
+}
+
+/** Aplica a allowlist da skill: só as definitions permitidas e prepare recusa o resto. */
+function restrictToolbox(toolbox, skill) {
+  if (!skill || !Array.isArray(skill.tools)) return toolbox;
+  const allowed = new Set(skill.tools);
+  return {
+    ...toolbox,
+    definitions: filterDefinitions(toolbox.definitions, skill),
+    prepare(name, input) {
+      if (!allowed.has(name)) throw new ToolError(`Ferramenta ${name} não está disponível no modo ${skill.label}.`);
+      return toolbox.prepare(name, input);
+    },
+  };
+}
+
+/** Falha ao carregar ferramentas de módulos não derruba o agente. */
+function safeExtraTools(getExtraTools) {
+  try {
+    const tools = getExtraTools();
+    return Array.isArray(tools) ? tools : [];
+  } catch (err) {
+    console.error('[agent] ferramentas de módulos indisponíveis:', err.message);
+    return [];
+  }
+}
+
 /** Diretório existente? (para validar a raiz) */
 function isDirectory(p) {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
 }
 
-module.exports = { createAgentSessions, isDirectory };
+module.exports = { createAgentSessions, isDirectory, restrictToolbox };

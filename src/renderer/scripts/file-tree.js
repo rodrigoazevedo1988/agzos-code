@@ -23,6 +23,9 @@ const emptyHost = () => document.getElementById('empty-explorer');
 const contextMenu = () => document.getElementById('context-menu');
 
 let treeRoot = null; // { name, path, isDirectory, children?, expanded? }
+const contextProviders = []; // registerContextMenuItems: (node) => [{ label, run }]
+let contextExtraRuns = []; // ações extras do menu aberto agora
+const fileBadges = new Map(); // caminho absoluto → texto (setFileBadge)
 
 /* --------------------------------------------------------------------------
    Render
@@ -73,6 +76,15 @@ function buildNode(node, depth) {
   row.title = node.path;
   const gitKind = gitStatusFor(node.path);
   if (gitKind) row.dataset.git = gitKind;
+  if (!node.isDirectory) {
+    // Arrastar um arquivo para o Agzos IA anexa (o main confere o caminho no guard).
+    row.draggable = true;
+    row.addEventListener('dragstart', (event) => {
+      event.dataTransfer.setData('application/x-agzos-path', node.path);
+      event.dataTransfer.setData('text/plain', node.path);
+      event.dataTransfer.effectAllowed = 'copy';
+    });
+  }
 
   if (State.activePath === node.path && !node.isDirectory) {
     row.classList.add('selected', 'active-file');
@@ -104,6 +116,9 @@ function buildNode(node, depth) {
   name.className = 'name';
   name.textContent = node.name;
   row.appendChild(name);
+
+  const badgeText = fileBadges.get(node.path);
+  if (badgeText) row.appendChild(buildBadge(badgeText));
 
   // Click na linha
   row.addEventListener('click', (e) => {
@@ -221,6 +236,51 @@ function showContextMenu(x, y, node) {
   m.style.top = `${y}px`;
   m.dataset.targetPath = node.path;
   m.dataset.targetIsDir = String(node.isDirectory);
+
+  // Itens extras dos módulos (registerContextMenuItems)
+  m.querySelectorAll('li[data-extra]').forEach((li) => li.remove());
+  contextExtraRuns = [];
+  const ul = m.querySelector('ul') || m;
+  const info = { path: node.path, name: node.name, isDirectory: node.isDirectory };
+  for (const provider of contextProviders) {
+    let items = [];
+    try { items = provider(info) || []; } catch (err) { console.error('[file-tree] item de menu falhou:', err); }
+    for (const item of items) {
+      if (!item || typeof item.label !== 'string' || typeof item.run !== 'function') continue;
+      const li = document.createElement('li');
+      li.dataset.extra = String(contextExtraRuns.length);
+      li.textContent = item.label;
+      contextExtraRuns.push(item.run);
+      ul.appendChild(li);
+    }
+  }
+}
+
+/**
+ * Módulos acrescentam itens ao menu de contexto do Explorer.
+ * fn(node: { path, name, isDirectory }) → [{ label, run }]
+ */
+export function registerContextMenuItems(fn) {
+  if (typeof fn === 'function') contextProviders.push(fn);
+}
+
+function buildBadge(text) {
+  const badge = document.createElement('span');
+  badge.className = 'tree-badge';
+  badge.textContent = text;
+  return badge;
+}
+
+/** Contador discreto ao lado de um arquivo no Explorer; null/'' remove. */
+export function setFileBadge(absPath, text) {
+  if (typeof absPath !== 'string' || !absPath) return;
+  const value = text == null ? '' : String(text);
+  if (value) fileBadges.set(absPath, value);
+  else fileBadges.delete(absPath);
+  const row = treeHost()?.querySelector(`.tree-row[data-path="${cssEscape(absPath)}"]`);
+  if (!row) return;
+  row.querySelector('.tree-badge')?.remove();
+  if (value) row.appendChild(buildBadge(value));
 }
 
 document.addEventListener('click', () => {
@@ -231,6 +291,13 @@ document.addEventListener('click', () => {
 const ctx = contextMenu();
 if (ctx) {
   ctx.addEventListener('click', async (e) => {
+    const extra = e.target.closest?.('li[data-extra]');
+    if (extra) {
+      const run = contextExtraRuns[Number(extra.dataset.extra)];
+      ctx.hidden = true;
+      try { await run?.(); } catch (err) { toast(`Erro: ${err.message}`, 'error'); }
+      return;
+    }
     const action = e.target.dataset.action;
     if (!action) return;
     const m = contextMenu();
@@ -275,7 +342,7 @@ if (ctx) {
         await window.agzos.fs.mkdir(newPath);
         invalidateTree(); render();
       } else if (action === 'reveal') {
-        window.agzos.app.openExternal('file://' + target);
+        await window.agzos.fs.reveal(target);
       }
     } catch (err) {
       toast(`Erro: ${err.message}`, 'error');
@@ -320,10 +387,42 @@ export async function openWorkspace(folderPath) {
   render();
 }
 
+/**
+ * Fecha a pasta desta janela (Arquivo › Fechar Pasta). Fecha as abas antes
+ * (arquivos sujos pedem confirmação); se alguma ficar aberta, cancela.
+ */
+export async function closeWorkspace() {
+  if (!State.workspaceRoot) return true;
+  const { closeAllTabs } = await import('./editor.js');
+  await closeAllTabs();
+  if (State.files.size > 0) return false;
+  State.workspaceRoot = null;
+  treeRoot = null;
+  invalidateQuickOpenCache();
+  try { await window.agzos.workspace.close(); } catch {}
+  window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
+  const topbar = document.getElementById('topbar-workspace');
+  if (topbar) topbar.textContent = '— Sem pasta aberta';
+  render();
+  return true;
+}
+
 export function refreshTree(keepState = false) {
   if (!keepState) {
     treeRoot = null;
   }
+  render();
+}
+
+/** Recolhe todas as pastas, mantendo a raiz aberta. */
+export function collapseAllFolders() {
+  State.expandedDirs.clear();
+  const walk = (node) => {
+    for (const child of node.children || []) {
+      if (child.isDirectory) { child.expanded = false; walk(child); }
+    }
+  };
+  if (treeRoot) walk(treeRoot);
   render();
 }
 

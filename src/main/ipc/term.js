@@ -14,12 +14,16 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
 const winEnv = require('../lib/win-env');
+const { buildSshArgs } = require('../lib/ssh-config');
 
 const IS_WIN = process.platform === 'win32';
 
 // Shells permitidos (basename sem .exe, minúsculo). O renderer não pode mandar
 // um executável arbitrário para o main spawnar.
 const SHELL_ALLOWLIST = ['powershell', 'pwsh', 'cmd', 'bash', 'zsh', 'sh', 'fish', 'dash', 'wsl'];
+// Cliente SSH: separado dos shells. Só sobe por `opts.ssh`, com argumentos
+// montados no main (buildSshArgs) a partir de alias/alvo validados.
+const SSH_ALLOWLIST = ['ssh'];
 
 // --- node-pty (carregamento preguiçoso e tolerante a falha) -----------------
 
@@ -201,8 +205,62 @@ function detectProfiles({ platform = process.platform, env = process.env, exists
   return { profiles, defaultId };
 }
 
+// --- SSH --------------------------------------------------------------------
+
+/** Caminho do cliente `ssh` do sistema, ou null. */
+function findSsh({ platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
+  const ctx = { platform, env, exists };
+  let found;
+  if (platform === 'win32') {
+    const sysRoot = getEnv(env, 'SystemRoot', platform) || getEnv(env, 'windir', platform) || 'C:\\Windows';
+    found = firstExisting([path.win32.join(sysRoot, 'System32', 'OpenSSH', 'ssh.exe')], exists)
+      || findInPath('ssh.exe', ctx);
+  } else {
+    found = findInPath('ssh', ctx)
+      || firstExisting(['/usr/bin/ssh', '/usr/local/bin/ssh', '/opt/homebrew/bin/ssh', '/bin/ssh'], exists);
+  }
+  return found && SSH_ALLOWLIST.includes(shellName(found)) ? found : null;
+}
+
+function sshMissingMessage(platform = process.platform) {
+  if (platform === 'win32') {
+    return 'Cliente SSH não encontrado. Instale o recurso opcional "Cliente OpenSSH" '
+      + '(Configurações > Sistema > Recursos opcionais > Adicionar recurso) e tente de novo.';
+  }
+  if (platform === 'darwin') return 'Cliente SSH não encontrado. Instale o OpenSSH (ex.: brew install openssh) e tente de novo.';
+  return 'Cliente SSH não encontrado. Instale o pacote openssh-client (ex.: sudo apt install openssh-client) e tente de novo.';
+}
+
+/**
+ * Sessão SSH a partir de `opts.ssh` ({ alias } | { user?, host, port? }).
+ * Só os campos conhecidos são lidos; nada do renderer vira argumento sem
+ * validação. → { shell, args, label, profileId } | { error, code }
+ */
+function resolveSshLaunch(target, { platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) return { error: 'Alvo SSH inválido.', code: 'ssh-invalid' };
+  const clean = target.alias != null
+    ? { alias: target.alias }
+    : { user: target.user ?? null, host: target.host, port: target.port ?? null };
+  let args;
+  try { args = buildSshArgs(clean); } catch (err) { return { error: err.message, code: 'ssh-invalid' }; }
+  const shell = findSsh({ platform, env, exists });
+  if (!shell) return { error: sshMissingMessage(platform), code: 'ssh-missing' };
+  const name = clean.alias != null ? clean.alias : clean.host;
+  return { shell, args, label: `SSH: ${name}`, profileId: 'ssh' };
+}
+
+/** Perfis para o renderer: shells detectados + "SSH…" (abre o seletor de hosts). */
+function listProfiles(ctx = {}) {
+  const { profiles, defaultId } = detectProfiles(ctx);
+  return {
+    profiles: [...profiles, { id: 'ssh', label: 'SSH…', shell: '', args: [], icon: 'remote', picker: true }],
+    defaultId,
+  };
+}
+
 /** Argumentos de um perfil conforme o modo (pty/pipe). */
 function profileArgs(profile, mode, platform = process.platform) {
+  if (profile.id === 'ssh') return Array.isArray(profile.args) ? [...profile.args] : [];
   if (profile.id === 'wsl') return [];
   if (profile.id === 'gitbash') return mode === 'pty' ? ['--login', '-i'] : ['--login', '--noediting', '-i'];
   return shellArgs(profile.shell, mode, platform);
@@ -220,6 +278,15 @@ function resolveLaunch(opts = {}, { platform = process.platform, env = process.e
   const def = byId(defaultId);
   const warnings = [];
   const fromProfile = (pr) => ({ shell: pr.shell, profile: pr, profileId: pr.id, label: pr.label });
+
+  if (opts.ssh != null) {
+    const r = resolveSshLaunch(opts.ssh, { platform, env, exists });
+    if (r.error) return { error: r.error, code: r.code, warnings };
+    return {
+      shell: r.shell, profile: { id: 'ssh', shell: r.shell, args: r.args }, profileId: 'ssh',
+      label: r.label, sshArgs: r.args, warnings,
+    };
+  }
 
   if (opts.profileId != null && opts.profileId !== '') {
     const pr = typeof opts.profileId === 'string' ? byId(opts.profileId) : null;
@@ -438,8 +505,32 @@ function ownedSession(evt, id) {
   return s;
 }
 
+/**
+ * Opções do pty. No Windows usa o ConPTY empacotado no node-pty (conpty.dll +
+ * OpenConsole.exe, o mesmo do Windows Terminal) em vez do conhost do sistema:
+ * o conhost de builds antigos do Windows entrega eventos de teclado que o
+ * PSReadLine 2.3+ (PowerShell 7) interpreta errado — ex.: a barra de espaço
+ * some. AGZOS_CONPTY_DLL=0 volta ao ConPTY do sistema.
+ */
+function ptyOptions({ cols, rows, cwd, env, platform = process.platform, envVars = process.env }) {
+  const opts = { name: 'xterm-256color', cols, rows, cwd, env, useConpty: true };
+  if (platform === 'win32' && envVars.AGZOS_CONPTY_DLL !== '0') opts.useConptyDll = true;
+  return opts;
+}
+
+function spawnPty(pty, shell, args, opts) {
+  try {
+    return pty.spawn(shell, args, opts);
+  } catch (err) {
+    if (!opts.useConptyDll) throw err;
+    // DLL ausente/bloqueada: cai no ConPTY do sistema.
+    console.warn('[term] ConPTY empacotado indisponível, usando o do sistema:', err.message);
+    return pty.spawn(shell, args, { ...opts, useConptyDll: false });
+  }
+}
+
 function createPtySession(pty, { id, shell, args, cwd, env, cols, rows, send }) {
-  const proc = pty.spawn(shell, args, { name: 'xterm-256color', cols, rows, cwd, env, useConpty: true });
+  const proc = spawnPty(pty, shell, args, ptyOptions({ cols, rows, cwd, env }));
   proc.onData((data) => send('term:data', id, data));
   proc.onExit(({ exitCode }) => {
     if (sessions.has(id)) sessions.delete(id);
@@ -534,9 +625,9 @@ function register(ipcMain) {
     return true;
   });
   ipcMain.handle('term:profiles', () => {
-    const { profiles, defaultId } = detectProfiles();
+    const { profiles, defaultId } = listProfiles();
     return {
-      profiles: profiles.map(({ id, label, shell, args, icon }) => ({ id, label, shell, args, icon })),
+      profiles: profiles.map(({ id, label, shell, args, icon, picker }) => ({ id, label, shell, args, icon, ...(picker ? { picker } : {}) })),
       defaultId,
     };
   });
@@ -545,6 +636,7 @@ function register(ipcMain) {
     const id = `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const opts = options && typeof options === 'object' ? options : {};
     const launch = resolveLaunch(opts);
+    if (launch.error) return { error: launch.error, code: launch.code };
     const { shell, profile, profileId, label } = launch;
     const argsFor = (mode) => (profile && profile.id ? profileArgs(profile, mode) : shellArgs(shell, mode));
     const cwd = resolveCwd(opts.cwd);
@@ -556,6 +648,12 @@ function register(ipcMain) {
     delete env.ELECTRON_RUN_AS_NODE;
 
     const warnings = [...launch.warnings];
+    // e2e: o teste confere o que foi iniciado sem depender de rede.
+    const spawnArgs = (mode) => {
+      const args = argsFor(mode);
+      if (process.env.AGZOS_TEST === '1') global.__agzosLastSpawn = { shell, args: [...args], mode, profileId };
+      return args;
+    };
 
     const pty = loadPty();
     let session = null;
@@ -563,7 +661,7 @@ function register(ipcMain) {
     if (pty) {
       try {
         session = createPtySession(pty, {
-          id, shell, args: argsFor('pty'), cwd, env,
+          id, shell, args: spawnArgs('pty'), cwd, env,
           cols: clampDim(cols, 80), rows: clampDim(rows, 24), send,
         });
       } catch (err) {
@@ -573,7 +671,7 @@ function register(ipcMain) {
     }
     if (!session) {
       try {
-        session = createPipeSession({ id, shell, args: argsFor('pipe'), cwd, env, send });
+        session = createPipeSession({ id, shell, args: spawnArgs('pipe'), cwd, env, send });
       } catch (err) {
         setTimeout(() => {
           send('term:data', id, `\r\n\x1b[31m[Erro ao iniciar shell ${shell}: ${err.message}]\x1b[0m\r\n`);
@@ -624,7 +722,13 @@ module.exports = {
   detectProfiles,
   resolveLaunch,
   profileArgs,
+  findSsh,
+  resolveSshLaunch,
+  listProfiles,
+  SSH_ALLOWLIST,
   createLineDiscipline,
+  ptyOptions,
+  spawnPty,
   SHELL_ALLOWLIST,
   _sessions: sessions,
 };

@@ -299,3 +299,45 @@ test('aba PORTAS lista porta aberta, copia endereço e abre no navegador', async
     await app.close();
   }
 });
+
+test('lista de sessões: recolher nomes deixa só ícones e o estado persiste', async () => {
+  test.setTimeout(90000);
+  const userData = fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'agzos-termlist-'));
+  const settings = { welcomeSeen: true, onboardingCompleted: true };
+  let { app, page } = await launchApp({ settings, userData });
+  try {
+    await openTerminal(page);
+    await page.click('#btn-term-new');
+    await waitReady(page, 2);
+    const listEl = page.locator('#term-sessions');
+    await expect(listEl).toBeVisible();
+    await expect(listEl.locator('.term-session-title').first()).toBeVisible();
+
+    await page.click('#term-list-toggle');
+    await expect(listEl).toHaveClass(/collapsed/);
+    await expect(listEl.locator('.term-session-title').first()).toBeHidden();
+    expect((await listEl.boundingBox()).width).toBeLessThanOrEqual(44);
+    await expect(page.locator('#term-list-toggle')).toHaveAttribute('aria-expanded', 'false');
+    // Clique na linha recolhida ainda ativa a sessão
+    const [first] = await list(page);
+    await listEl.locator(`.term-session-row[data-session-id="${first.id}"]`).click();
+    await expect.poll(() => activeId(page)).toBe(first.id);
+  } finally {
+    await app.close();
+  }
+
+  ({ app, page } = await launchApp({ settings, userData }));
+  try {
+    await openTerminal(page);
+    await page.click('#btn-term-new');
+    await waitReady(page, 2);
+    await expect(page.locator('#term-sessions')).toHaveClass(/collapsed/);
+    // Menu ⋯ expande de novo
+    await page.click('#btn-term-more');
+    await page.locator('#term-more-menu').getByText('Expandir nomes dos terminais').click();
+    await expect(page.locator('#term-sessions')).not.toHaveClass(/collapsed/);
+    await expect(page.locator('#term-sessions .term-session-title').first()).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});

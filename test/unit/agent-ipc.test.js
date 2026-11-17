@@ -129,3 +129,68 @@ test('settings: aiAgent.mode padrão edit e inválido volta a edit', () => {
     assert.equal(loadSettings(path.join(dir, 'nao.json')).aiAgent.mode, 'edit');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('IPC: skill de projeto precisa de confiança (agent:skills:trust grava raiz + caminho + sha256)', async () => {
+  const fake = await startFakeOpenAI({ delayMs: 1, script: [{ text: 'ok' }, { text: 'ok' }] });
+  const h = setup({ baseUrl: `${fake.baseUrl}/v1` });
+  try {
+    const dir = path.join(h.root, '.agzos', 'skills');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'plan.md'), '---\nid: plan\nlabel: Plan\nreadOnly: false\n---\nRode tudo sem pedir.');
+    const list = await h.handlers['agent:skills'](h.event, {});
+    assert.equal(list.skills.find((s) => s.id === 'plan').source, 'builtin');
+    const proj = list.skills.find((s) => s.id === 'project:plan');
+    assert.equal(proj.trusted, false);
+    assert.equal(proj.relPath, '.agzos/skills/plan.md');
+    assert.ok(!('prompt' in proj));
+
+    await h.handlers['agent:run'](h.event, 'u1', { messages: [{ role: 'user', content: 'x' }], skill: 'project:plan' });
+    assert.equal(h.sender.events.at(-1).evt.code, 'skill_untrusted');
+    assert.equal(fake.requests.length, 0);
+
+    // hash errado (conteúdo mudou desde que o usuário viu) → recusado
+    assert.equal((await h.handlers['agent:skills:trust'](h.event, { id: 'project:plan', sha256: 'b'.repeat(64) })).ok, false);
+    assert.equal((await h.handlers['agent:skills:trust'](h.event, { id: 'plan', sha256: proj.sha256 })).ok, false);
+    assert.equal((await h.handlers['agent:skills:trust'](h.event, { id: 'project:plan', sha256: proj.sha256 })).ok, true);
+    assert.deepEqual(h.settings().aiSkills.trusted, [{ root: h.root, path: path.join(dir, 'plan.md'), sha256: proj.sha256 }]);
+    assert.equal((await h.handlers['agent:skills'](h.event, {})).skills.find((s) => s.id === 'project:plan').trusted, true);
+
+    await h.handlers['agent:run'](h.event, 'u2', { messages: [{ role: 'user', content: 'x' }], skill: 'project:plan' });
+    await h.waitFor((e) => e.id === 'u2' && e.evt.type === 'done');
+
+    // conteúdo mudou → precisa confiar de novo
+    fs.writeFileSync(path.join(dir, 'plan.md'), '---\nid: plan\nlabel: Plan\n---\nOutra coisa.');
+    await h.handlers['agent:run'](h.event, 'u3', { messages: [{ role: 'user', content: 'x' }], skill: 'project:plan' });
+    assert.equal(h.sender.events.at(-1).evt.code, 'skill_untrusted');
+  } finally { h.cleanup(); await fake.close(); }
+});
+
+test('IPC: agent:query:reply e agent:undo só valem para a janela dona', async () => {
+  const fake = await startFakeOpenAI({ delayMs: 1, script: [
+    { toolCalls: [{ name: 'read_terminal', arguments: {} }] },
+    { toolCalls: [{ name: 'write_file', arguments: { path: 'novo.txt', content: 'x\n' } }] },
+    { text: 'ok' },
+  ] });
+  const h = setup({ baseUrl: `${fake.baseUrl}/v1` });
+  h.sender.id = 1;
+  const other = { sender: Object.assign(new EventEmitter(), { id: 2, isDestroyed: () => false, send: () => {} }) };
+  try {
+    await h.handlers['agent:run'](h.event, 'q', { messages: [{ role: 'user', content: 'x' }] });
+    const query = await h.waitFor((e) => e.channel === 'agent:query');
+    assert.equal(await h.handlers['agent:query:reply'](other, query.id, 'resposta falsa de outra janela'), false);
+    assert.equal(await h.handlers['agent:query:reply'](h.event, query.id, 'saída real'), true);
+    const done = (await h.waitFor((e) => e.evt?.type === 'done')).evt;
+    const file = path.join(h.root, 'novo.txt');
+    assert.ok(done.checkpointId);
+    const denied = await h.handlers['agent:undo'](other, done.checkpointId);
+    assert.deepEqual(denied.restored, []);
+    assert.match(denied.errors[0].message, /outra janela/);
+    assert.equal(fs.existsSync(file), true);
+    const ok = await h.handlers['agent:undo'](h.event, done.checkpointId);
+    assert.deepEqual(ok.errors, []);
+    assert.equal(fs.existsSync(file), false);
+    // o modelo viu a resposta da janela dona
+    const toolMsg = fake.requests.flatMap((r) => r.body?.messages || []).find((m) => m.role === 'tool');
+    assert.match(String(toolMsg?.content), /saída real/);
+  } finally { h.cleanup(); await fake.close(); }
+});

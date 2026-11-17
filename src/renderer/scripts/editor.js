@@ -7,6 +7,8 @@
 
 import { toast } from './toast.js';
 import { renderTabs, focusTab } from './tabs.js';
+import { detectViewer, isViewerKind } from './viewers/detect.js';
+import { showViewer, hideViewer } from './viewers/index.js';
 
 const State = window.AgzosState;
 
@@ -127,6 +129,8 @@ export async function setupEditor() {
     insertSpaces: edCfg.insertSpaces !== false,
     wordWrap: edCfg.wordWrap || 'off',
     wordWrapColumn: Number(edCfg.wordWrapColumn) || 80,
+    columnSelection: !!edCfg.columnSelection,
+    multiCursorModifier: edCfg.multiCursorModifier === 'ctrlCmd' ? 'ctrlCmd' : 'alt',
   });
 
   const aiActions = [
@@ -172,13 +176,13 @@ export async function setupEditor() {
       clearTimeout(autoSaveTimers.get(path));
       autoSaveTimers.set(path, setTimeout(() => {
         autoSaveTimers.delete(path);
-        if (State.files.get(path)?.dirty) saveFile(path);
+        if (State.files.get(path)?.dirty && !isUntitled(path)) saveFile(path);
       }, Number(State.settings.editor?.autoSaveDelay) || 1000));
     }
   });
 
   activeEditor.onDidBlurEditorWidget(() => {
-    if (State.settings.editor?.autoSave === 'onFocusChange' && State.files.get(State.activePath)?.dirty) {
+    if (State.settings.editor?.autoSave === 'onFocusChange' && State.files.get(State.activePath)?.dirty && !isUntitled(State.activePath)) {
       saveActive();
     }
   });
@@ -205,14 +209,33 @@ export async function setupEditor() {
 /* --------------------------------------------------------------------------
    Abrir / criar arquivos
    -------------------------------------------------------------------------- */
-export async function openFile(filePath, contentOverride) {
+/**
+ * Abre (ou ativa) um arquivo. Roteia pelo tipo: texto vai para o Monaco;
+ * imagem/vídeo/áudio/PDF/planilha/binário viram aba de visualização (sem modelo).
+ * opts.as === 'text' força o editor de texto (ex.: "Abrir como texto" no SVG/CSV).
+ */
+export async function openFile(filePath, contentOverride, opts = {}) {
+  if (contentOverride && typeof contentOverride === 'object') {
+    opts = contentOverride;
+    contentOverride = undefined;
+  }
+  const asText = opts.as === 'text';
   let file = State.files.get(filePath);
+  if (file && asText && file.preview) file.preview = false;
+  if (file && asText && file.viewer) {
+    // Converte a aba de visualização em texto mantendo a posição da aba.
+    try {
+      const loaded = await loadFile(filePath, undefined, true);
+      delete file.viewer;
+      Object.assign(file, loaded);
+    } catch (e) {
+      toast(`Não foi possível abrir como texto: ${e.message}`, 'error');
+      return;
+    }
+  }
   if (!file) {
     try {
-      const { content, size, mtime } = contentOverride
-        ? { content: contentOverride, size: 0, mtime: 0 }
-        : await window.agzos.fs.readFile(filePath);
-      file = { path: filePath, content, size, mtime, dirty: false };
+      file = await loadFile(filePath, contentOverride, asText);
       State.files.set(filePath, file);
     } catch (e) {
       toast(`Não foi possível abrir: ${e.message}`, 'error');
@@ -220,7 +243,7 @@ export async function openFile(filePath, contentOverride) {
     }
   }
   State.activePath = filePath;
-  setModel(file);
+  activate(file);
   renderTabs();
   syncEditorWelcome();
   focusTab(filePath);
@@ -228,6 +251,74 @@ export async function openFile(filePath, contentOverride) {
   document.getElementById('welcome').style.display = 'none';
   // Atualiza título da janela
   document.title = `${basename(filePath)} — Agzos Code`;
+  notifyActiveChanged();
+}
+
+async function loadFile(filePath, contentOverride, asText) {
+  if (typeof contentOverride === 'string') return { path: filePath, content: contentOverride, size: 0, mtime: 0, dirty: false };
+  const kind = asText ? 'text' : detectViewer(filePath);
+  if (isViewerKind(kind)) {
+    const st = await window.agzos.fs.stat(filePath);
+    if (!st || !st.isFile) throw new Error('arquivo não encontrado');
+    return { path: filePath, viewer: kind, size: st.size, mtime: st.mtime, dirty: false };
+  }
+  const res = await window.agzos.fs.readFile(filePath, asText ? undefined : { detectBinary: true });
+  if (res.binary) return { path: filePath, viewer: 'binary', size: res.size, mtime: res.mtime, dirty: false };
+  return { path: filePath, content: res.content, size: res.size, mtime: res.mtime, dirty: false };
+}
+
+const VIEWER_LABELS = {
+  image: 'Imagem', video: 'Vídeo', audio: 'Áudio', pdf: 'PDF', sheet: 'Planilha', docx: 'Documento',
+  external: 'Sem pré-visualização', binary: 'Binário', 'md-preview': 'Markdown (pré-visualização)',
+};
+
+const viewerCtx = {
+  openAsText: (p) => openFile(p, undefined, { as: 'text' }),
+  previewSide: (p) => openMarkdownPreview(p, 'side'),
+  getText: (p) => State.files.get(p)?.content ?? '',
+};
+
+function activate(file) {
+  if (file.viewer || file.preview) {
+    if (currentModel) { currentModel.dispose(); currentModel = null; }
+    activeEditor?.setModel(null);
+    const view = file.preview ? { ...file, viewer: 'md-preview' } : file;
+    showViewer(view, viewerCtx);
+    document.getElementById('status-lang').textContent = VIEWER_LABELS[view.viewer] || 'Visualização';
+    return;
+  }
+  hideViewer();
+  setModel(file);
+}
+
+function notifyActiveChanged() {
+  const file = State.activePath ? State.files.get(State.activePath) : null;
+  window.dispatchEvent(new CustomEvent('agzos:active-file-changed', { detail: { path: State.activePath, file } }));
+}
+
+export function isMarkdownPath(p) {
+  return detectViewer(p) === 'markdown';
+}
+
+/**
+ * Pré-visualização de Markdown: where = 'side' (painel ao lado, atualiza ao
+ * digitar) ou 'tab' (substitui o editor na própria aba).
+ */
+export async function openMarkdownPreview(filePath = State.activePath, where = 'side') {
+  if (!filePath || !isMarkdownPath(filePath)) {
+    toast('A pré-visualização é para arquivos Markdown (.md).', 'info');
+    return;
+  }
+  if (where === 'tab') {
+    if (!State.files.has(filePath)) await openFile(filePath);
+    const file = State.files.get(filePath);
+    if (!file) return;
+    file.preview = true;
+    await openFile(filePath);
+    return;
+  }
+  await openFile(filePath, undefined, { as: 'text' });
+  window.dispatchEvent(new CustomEvent('agzos:md-preview-side', { detail: { path: filePath } }));
 }
 
 function setModel(file) {
@@ -240,7 +331,51 @@ function setModel(file) {
 
 export async function saveActive() {
   if (!State.activePath) return;
+  // Sem título: ainda não tem caminho no disco → Salvar Como
+  if (isUntitled(State.activePath)) {
+    const { saveFileAs } = await import('./command-palette.js');
+    await saveFileAs();
+    return;
+  }
   await saveFile(State.activePath);
+}
+
+/* --------------------------------------------------------------------------
+   Arquivos sem título (Arquivo › Novo Arquivo de Texto)
+   -------------------------------------------------------------------------- */
+const UNTITLED_PREFIX = 'untitled:';
+
+export function isUntitled(p) {
+  return typeof p === 'string' && p.startsWith(UNTITLED_PREFIX);
+}
+
+/** Abre uma aba "Sem título-N" vazia (salvar pede o caminho). */
+export async function newUntitledFile() {
+  let n = 1;
+  while (State.files.has(`${UNTITLED_PREFIX}Sem título-${n}`)) n++;
+  const p = `${UNTITLED_PREFIX}Sem título-${n}`;
+  await openFile(p, '');
+  activeEditor?.focus();
+  return p;
+}
+
+/** Tira o arquivo das abas sem perguntar (ex.: sem título já salvo em outro caminho). */
+export function discardFile(filePath) {
+  if (!State.files.has(filePath)) return;
+  State.files.delete(filePath);
+  if (conflicts.delete(filePath)) syncConflictBar();
+  if (State.activePath === filePath) State.activePath = null;
+  renderTabs();
+}
+
+/** Recarrega do disco descartando as alterações (pede confirmação se sujo). */
+export async function revertFile(filePath = State.activePath) {
+  if (!filePath || isUntitled(filePath) || !State.files.has(filePath)) return false;
+  const file = State.files.get(filePath);
+  if (file.dirty && !confirm(`Descartar as alterações de ${basename(filePath)} e recarregar do disco?`)) return false;
+  const res = await handleExternalChange(filePath, { force: true });
+  if (res === 'missing') toast('O arquivo não existe mais no disco.', 'error');
+  return res !== 'missing';
 }
 
 /**
@@ -249,7 +384,8 @@ export async function saveActive() {
  */
 export async function saveFile(filePath) {
   const file = State.files.get(filePath);
-  if (!file) return;
+  // Abas de visualização não têm texto: nunca escrever nada no arquivo.
+  if (!file || file.viewer) return;
   const isActive = filePath === State.activePath && !!activeEditor && !!currentModel;
   if (isActive && State.settings.editor?.formatOnSave) {
     try {
@@ -285,8 +421,10 @@ export async function closeTab(filePath) {
   State.files.delete(filePath);
   if (conflicts.delete(filePath)) syncConflictBar();
   syncEditorWelcome();
+  window.dispatchEvent(new CustomEvent('agzos:tab-closed', { detail: { path: filePath } }));
   if (State.activePath === filePath) {
     State.activePath = null;
+    hideViewer();
     const remaining = [...State.files.keys()];
     if (remaining.length > 0) {
       await openFile(remaining[remaining.length - 1]);
@@ -294,6 +432,7 @@ export async function closeTab(filePath) {
       activeEditor.setModel(monaco.editor.createModel('', 'plaintext'));
       document.getElementById('welcome').style.display = '';
       document.title = 'Agzos Code';
+      notifyActiveChanged();
     }
   }
   renderTabs();
@@ -352,6 +491,8 @@ export function applyEditorSettings(customSettings) {
     cursorBlinking: ed.cursorBlinking || 'smooth',
     cursorSmoothCaretAnimation: ed.cursorSmoothCaretAnimation || 'on',
     smoothScrolling: ed.smoothScrolling !== false,
+    columnSelection: !!ed.columnSelection,
+    multiCursorModifier: ed.multiCursorModifier === 'ctrlCmd' ? 'ctrlCmd' : 'alt',
   });
 }
 
@@ -382,6 +523,15 @@ export async function handleExternalChange(filePath, { force = false } = {}) {
   const key = openPathFor(filePath);
   if (!key) return 'closed';
   const file = State.files.get(key);
+  if (file.viewer) {
+    // Aba de visualização: só recarrega a mídia (mtime novo fura o cache).
+    const st = await window.agzos.fs.stat(key);
+    if (!st) { await closeTab(key); return 'missing'; }
+    file.size = st.size;
+    file.mtime = st.mtime;
+    if (key === State.activePath) activate(file);
+    return 'reloaded';
+  }
   if (file.dirty && !force) {
     conflicts.add(key);
     syncConflictBar();
@@ -492,5 +642,6 @@ function themeIdToMonaco(name) {
 
 function basename(p) {
   if (!p) return '';
+  if (isUntitled(p)) return p.slice(UNTITLED_PREFIX.length);
   return p.split(/[\\/]/).filter(Boolean).pop() || p;
 }

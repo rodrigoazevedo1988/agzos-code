@@ -1,0 +1,116 @@
+/* Vassoura de Produção (broom.js) */
+#status-broom { cursor: pointer; }
+#status-broom:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; border-radius: 2px; }
+
+.module-view[data-module="broom"] { display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+
+.module-view[data-module="broom"] button {
+  padding: 4px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: var(--bg-soft2);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.module-view[data-module="broom"] button:hover:not(:disabled) { background: var(--hover); }
+.module-view[data-module="broom"] button:disabled { opacity: 0.5; cursor: default; }
+.module-view[data-module="broom"] button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.module-view[data-module="broom"] button.primary:hover:not(:disabled) { background: var(--accent-2); }
+
+.broom-toolbar, .broom-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.broom-progress { display: flex; flex-direction: column; gap: 4px; }
+.broom-progress-track { height: 4px; border-radius: 2px; background: var(--bg-soft3); overflow: hidden; }
+.broom-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.15s ease; }
+.broom-progress-label { color: var(--fg-mute); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.broom-summary { margin: 0; color: var(--fg-dim); line-height: 1.4; }
+
+.broom-files { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.broom-file {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "check name count" ". chips chips";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 3px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.broom-file:last-child { border-bottom: none; }
+.broom-file:hover { background: var(--bg-soft); }
+.broom-file input[type="checkbox"] { grid-area: check; margin: 0; accent-color: var(--accent); }
+.module-view[data-module="broom"] .broom-name {
+  grid-area: name;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.module-view[data-module="broom"] .broom-name:hover:not(:disabled) { background: none; text-decoration: underline; }
+.broom-count { grid-area: count; color: var(--accent-2); font-variant-numeric: tabular-nums; font-weight: 600; }
+.broom-chips { grid-area: chips; display: flex; flex-wrap: wrap; gap: 4px; }
+.broom-chip {
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  color: var(--fg-dim);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.broom-disabled { color: var(--fg-mute); }
+
+/* Toast com "Desfazer" */
+.broom-undo-toast { display: flex; align-items: center; gap: 12px; }
+.broom-undo {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.broom-undo:hover { background: var(--hover); }
+
+/* Pedido para salvar antes de limpar */
+.broom-dirty-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.broom-dirty {
+  width: 420px;
+  max-width: 90vw;
+  padding: 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg);
+  font-size: 12.5px;
+}
+.broom-dirty p { margin: 0 0 14px; line-height: 1.45; }
+.broom-dirty-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.broom-dirty-actions button {
+  padding: 5px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: var(--bg-soft2);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.broom-dirty-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }

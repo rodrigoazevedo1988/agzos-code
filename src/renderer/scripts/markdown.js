@@ -11,9 +11,14 @@ const CODE_ACTIONS = [
  * Blocos de código ganham um cabeçalho (linguagem + ações). Os botões só usam
  * texto/ícones nossos; o conteúdo do modelo já passou pelo DOMPurify.
  */
+/** Markdown (GFM) → HTML já sanitizado pelo DOMPurify, sem enfeites do chat. */
+export function sanitizeMarkdown(text) {
+  return window.DOMPurify.sanitize(window.marked.parse(String(text ?? ''), { gfm: true }));
+}
+
 export function renderMarkdown(text) {
   const container = document.createElement('div');
-  container.innerHTML = window.DOMPurify.sanitize(window.marked.parse(String(text)));
+  container.innerHTML = sanitizeMarkdown(text);
   container.querySelectorAll('pre').forEach((pre, index) => {
     const code = pre.querySelector('code');
     const lang = (code?.className.match(/language-([\w+#.-]+)/) || [])[1] || '';

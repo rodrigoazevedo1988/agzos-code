@@ -160,3 +160,149 @@ test('run_command: cancelamento mata a árvore de processos', { skip: process.pl
   await new Promise((res) => setTimeout(res, 1700));
   assert.ok(!fs.existsSync(marker), 'processo neto deveria ter sido morto');
 });
+
+// ------------------------------------------------- ferramentas extras (módulos)
+function extraTool(overrides = {}) {
+  return {
+    definition: {
+      name: 'mod_tool',
+      description: 'ferramenta de teste',
+      input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    },
+    kind: 'write',
+    prepare(input, ctx) {
+      const abs = ctx.resolvePath(input.path);
+      return {
+        title: `Mexer em ${ctx.rel(abs)}`,
+        preview: { path: abs },
+        run: async () => {
+          ctx.checkpoint?.record(abs);
+          fs.writeFileSync(abs, 'mexido');
+          return { summary: 'mexeu', meta: { path: abs }, output: 'mexeu em 1 arquivo', changed: [abs] };
+        },
+      };
+    },
+    ...overrides,
+  };
+}
+
+test('extraTools aparecem em definitions', () => {
+  const b = createToolbox({ root, extraTools: [extraTool()] });
+  const names = b.definitions.map((d) => d.name);
+  assert.ok(names.includes('read_file'));
+  assert.ok(names.includes('mod_tool'));
+  assert.equal(b.definitions.find((d) => d.name === 'mod_tool').description, 'ferramenta de teste');
+  // sem extras, a lista é a padrão
+  assert.ok(!createToolbox({ root }).definitions.some((d) => d.name === 'mod_tool'));
+  // nome repetido de ferramenta embutida é ignorado
+  const dup = createToolbox({ root, extraTools: [extraTool({ definition: { name: 'read_file', description: 'x', input_schema: {} } })] });
+  assert.equal(dup.definitions.filter((d) => d.name === 'read_file').length, 1);
+});
+
+test('prepare de extra recebe ctx com resolvePath que nega fora da raiz', async () => {
+  let seenCtx;
+  const tool = extraTool({
+    prepare(input, ctx) {
+      seenCtx = ctx;
+      return extraTool().prepare(input, ctx);
+    },
+  });
+  const b = createToolbox({ root, checkpoint: cp, extraTools: [tool] });
+  assert.throws(() => b.prepare('mod_tool', { path: path.join(outside, 'secret.txt') }), /fora da pasta/);
+  assert.equal(seenCtx.root, root);
+  assert.equal(typeof seenCtx.readTextFile, 'function');
+  assert.equal(seenCtx.checkpoint, cp);
+  assert.equal(seenCtx.rel(path.join(root, 'src', 'app.js')), 'src/app.js');
+  assert.equal(seenCtx.readTextFile(path.join(root, 'src', 'app.js')).split('\n')[0], 'const a = 1;');
+
+  const prepared = b.prepare('mod_tool', { path: 'src/app.js' });
+  assert.equal(prepared.title, 'Mexer em src/app.js');
+  assert.equal(prepared.category, 'write');
+  assert.equal(prepared.risky, false);
+  const res = await prepared.execute({});
+  assert.equal(res.ok, true);
+  assert.equal(res.summary, 'mexeu');
+  assert.equal(res.result, 'mexeu em 1 arquivo');
+  assert.deepEqual(res.changed, [path.join(root, 'src', 'app.js')]);
+  assert.equal(fs.readFileSync(path.join(root, 'src', 'app.js'), 'utf8'), 'mexido');
+  // checkpoint da conversa desfaz
+  assert.ok(cp.finalize());
+});
+
+test('extra: kind inválido vira command; prepare assíncrono é aceito', async () => {
+  const b = createToolbox({
+    root,
+    extraTools: [
+      extraTool({ kind: 'qualquer' }),
+      extraTool({
+        definition: { name: 'async_tool', description: 'x', input_schema: { type: 'object' } },
+        kind: 'read',
+        prepare: async () => ({ title: 'async', run: async () => ({ summary: 'ok' }) }),
+      }),
+    ],
+  });
+  assert.equal(b.prepare('mod_tool', { path: 'src/app.js' }).category, 'command');
+  const p = await b.prepare('async_tool', {});
+  assert.equal(p.category, 'read');
+  const r = await p.execute({});
+  assert.equal(r.result, 'ok');
+});
+
+test('getModuleTools ignora módulo desabilitado e stub null', () => {
+  const { getModuleTools } = require('../../src/main/modules/agent-tools');
+  const { DEFAULT_SETTINGS } = require('../../src/main/lib/settings');
+  // registro real: clean_code e env_check, cada um só com o módulo habilitado
+  const realNames = (s) => getModuleTools(s).map((t) => t.definition.name);
+  assert.deepEqual(realNames(DEFAULT_SETTINGS).sort(), ['clean_code', 'env_check']);
+  assert.ok(!realNames({ modules: { envVault: { enabled: false } } }).includes('env_check'));
+  assert.ok(!realNames({ modules: { broom: { enabled: false } } }).includes('clean_code'));
+  const a = extraTool({ definition: { name: 'a_tool', description: 'a', input_schema: {} } });
+  const b = extraTool({ definition: { name: 'b_tool', description: 'b', input_schema: {} } });
+  const registry = [
+    { module: 'broom', load: () => a },
+    { module: 'envVault', load: () => [b] },
+    { module: 'broom', load: () => null },
+  ];
+  const names = (s) => getModuleTools(s, { registry }).map((t) => t.definition.name);
+  assert.deepEqual(names(DEFAULT_SETTINGS), ['a_tool', 'b_tool']);
+  assert.deepEqual(names({ modules: { broom: { enabled: false } } }), ['b_tool']);
+  assert.deepEqual(names({ modules: { envVault: { enabled: false } } }), ['a_tool']);
+  assert.deepEqual(names(undefined), ['a_tool', 'b_tool']);
+});
+
+test('extra: gancho commandRisk marca run_command como risco (síncrono ou assíncrono)', async () => {
+  const mk = (commandRisk) => ({
+    definition: { name: 'hook_tool', description: 'x', input_schema: { type: 'object', properties: {} } },
+    kind: 'read',
+    prepare: () => ({ title: 'x', run: async () => ({ summary: 'ok' }) }),
+    commandRisk,
+  });
+  const seen = [];
+  const syncBox = createToolbox({ root, checkpoint: cp, extraTools: [mk((c, ctx) => { seen.push(ctx.cwd); return c.includes('perigo') ? 'motivo x' : null; })] });
+  const p = syncBox.prepare('run_command', { command: 'echo perigo' });
+  assert.equal(p.risky, true);
+  assert.equal(p.riskReason, 'motivo x');
+  assert.equal(p.preview.reason, 'motivo x');
+  assert.equal(syncBox.prepare('run_command', { command: 'echo ok' }).risky, false);
+  assert.deepEqual(seen, [root, root]);
+
+  const asyncBox = createToolbox({ root, checkpoint: cp, extraTools: [mk(async () => 'motivo y')] });
+  const a = await asyncBox.prepare('run_command', { command: 'echo 1' });
+  assert.equal(a.riskReason, 'motivo y');
+
+  const brokenBox = createToolbox({ root, checkpoint: cp, extraTools: [mk(() => { throw new Error('x'); })] });
+  assert.equal(brokenBox.prepare('run_command', { command: 'echo 1' }).risky, false);
+});
+
+test('extraTools com input_schema chegam aos providers como parameters', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-schema-')));
+  const schema = { type: 'object', properties: { x: { type: 'string' } } };
+  const box = createToolbox({
+    root,
+    checkpoint: { record() {} },
+    extraTools: [{ definition: { name: 'x_tool', description: 'd', input_schema: schema }, kind: 'read', prepare: () => ({ title: 't', run: async () => ({ summary: 'ok' }) }) }],
+  });
+  const def = box.definitions.find((d) => d.name === 'x_tool');
+  assert.deepEqual(def.parameters, schema);
+  assert.equal(def.input_schema, undefined);
+});

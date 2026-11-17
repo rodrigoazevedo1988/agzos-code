@@ -41,6 +41,9 @@ const State = {
       sidebarPosition: 'left',
       statusBarVisible: true,
     },
+    window: {
+      confirmBeforeQuit: true,
+    },
     terminal: {
       fontSize: 13,
       scrollback: 1000,

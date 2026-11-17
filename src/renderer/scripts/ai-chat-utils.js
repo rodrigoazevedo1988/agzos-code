@@ -235,8 +235,10 @@ export function lineDiff(before, after, { context = 2, maxCells = 4_000_000 } = 
 
 /* ------------------------------------------------- estado do turno do agente */
 
-export function createAgentTurn(mode = DEFAULT_AGENT_MODE) {
-  return { v: 1, mode: normalizeAgentMode(mode), segments: [], steps: {}, done: null, error: null, undone: false, cancelled: false };
+export function createAgentTurn(mode = DEFAULT_AGENT_MODE, skill = null) {
+  const turn = { v: 1, mode: normalizeAgentMode(mode), segments: [], steps: {}, done: null, error: null, undone: false, cancelled: false };
+  if (skill) turn.skill = skill;
+  return turn;
 }
 
 const MAX_OUTPUT = 64 * 1024;
@@ -304,6 +306,12 @@ export function applyAgentEvent(turn, evt) {
     }
     case 'file_changed':
       return { kind: 'file' };
+    case 'user_steer': {
+      // "Enviar agora": a mensagem entrou na execução neste ponto.
+      const text = String(evt.content ?? '');
+      turn.segments.push({ t: 'steer', id: String(evt.id || ''), text });
+      return { kind: 'steer', id: evt.id };
+    }
     case 'done': {
       turn.done = {
         checkpointId: evt.checkpointId || null,
@@ -336,7 +344,9 @@ export function settleSteps(turn, status = 'cancelled') {
 
 /** Texto do turno (todos os trechos de prosa, na ordem). */
 export function agentTurnText(turn) {
-  return turn.segments.filter((s) => s.t === 'text').map((s) => s.text.trim()).filter(Boolean).join('\n\n');
+  return turn.segments
+    .map((s) => (s.t === 'text' ? s.text.trim() : s.t === 'steer' ? `> _Mensagem do usuário durante a execução:_ ${String(s.text || '').replace(/\n+/g, ' ')}` : ''))
+    .filter(Boolean).join('\n\n');
 }
 
 /** Alterações para o resumo: as do `done`, ou derivadas dos passos se o turno não terminou. */
@@ -401,10 +411,13 @@ export function compactAgentTurn(turn) {
       elapsedMs: step.elapsedMs,
     };
   }
-  return {
-    v: 1, mode: turn.mode, segments: turn.segments.map((s) => (s.t === 'text' ? { t: 'text', text: s.text } : { t: 'step', id: s.id })),
+  const out = {
+    v: 1, mode: turn.mode,
+    segments: turn.segments.map((s) => (s.t === 'text' ? { t: 'text', text: s.text } : s.t === 'steer' ? { t: 'steer', text: clip(s.text, 4000) } : { t: 'step', id: s.id })),
     steps, done: turn.done, error: turn.error, undone: !!turn.undone, cancelled: !!turn.cancelled,
   };
+  if (turn.skill) out.skill = turn.skill;
+  return out;
 }
 
 /**
@@ -435,4 +448,66 @@ export function decodeAgentContent(content) {
 /** Conteúdo enviado ao modelo: sem o marcador (prosa + resumo legível). */
 export function stripAgentMarker(content) {
   return String(content ?? '').replace(MARKER_RE, '\n\n').trim();
+}
+
+/* ======================================================================== */
+/* 1.1.0 — fila, anexos e modos (skills)                                    */
+/* ======================================================================== */
+
+export const IMAGE_MAX_SIDE = 1568;
+export const IMAGE_TARGET_BYTES = 1024 * 1024;
+export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/** Tamanho que cabe em `max` px no maior lado, mantendo a proporção (nunca amplia). */
+export function fitImageSize(width, height, max = IMAGE_MAX_SIDE) {
+  const w = Math.max(1, Math.round(Number(width) || 1));
+  const hgt = Math.max(1, Math.round(Number(height) || 1));
+  const scale = Math.min(1, max / Math.max(w, hgt));
+  return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(hgt * scale)), scaled: scale < 1 };
+}
+
+export function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+}
+
+export function truncate(text, max = 80) {
+  const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+}
+
+/** Modos mínimos se as skills não carregarem (sem main ou erro). */
+export const FALLBACK_SKILLS = [
+  { id: 'agent', label: 'Agente', icon: 'bot', kind: 'agent', description: 'Lê, edita e roda comandos no projeto aberto.', source: 'builtin' },
+  { id: 'chat', label: 'Chat', icon: 'message-circle', kind: 'chat', description: 'Só conversa, não mexe nos arquivos.', source: 'builtin' },
+];
+
+/** Modo efetivo: o escolhido (se existir) ou Agente com pasta aberta / Chat sem pasta. */
+export function resolveSkill(skills, id, hasWorkspace) {
+  const list = Array.isArray(skills) && skills.length ? skills : FALLBACK_SKILLS;
+  const wanted = id || (hasWorkspace ? 'agent' : 'chat');
+  return list.find((s) => s.id === wanted) || list.find((s) => s.id === (hasWorkspace ? 'agent' : 'chat')) || list[0];
+}
+
+/** Rótulo curto de um modo pelo id (para selos de mensagens antigas). */
+export function skillLabel(skills, id) {
+  if (!id) return '';
+  const list = Array.isArray(skills) && skills.length ? skills : FALLBACK_SKILLS;
+  return list.find((s) => s.id === id)?.label || id;
+}
+
+/** Texto da mensagem para o modelo + anexos (refs) — o main expande os anexos. */
+export function payloadMessage(message, strip = (c) => c) {
+  const out = { role: message.role, content: strip(message.content) };
+  if (message.role === 'user' && Array.isArray(message.attachments) && message.attachments.length) {
+    out.attachments = message.attachments.map(({ id, name, kind }) => ({ id, name, kind }));
+  }
+  return out;
+}
+
+/** Erro de visão? (provider respondeu que o modelo não aceita imagens) */
+export function isVisionError(text) {
+  return /não aceita imagens/i.test(String(text || ''));
 }

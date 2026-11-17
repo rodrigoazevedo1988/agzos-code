@@ -25,7 +25,7 @@ async function setup({ script = [], mode = 'edit', files = {}, fakeOptions = {},
   }, fake.baseUrl);
   await expect(page.locator('#ai-chat')).toBeVisible();
   await expect(page.locator('.ai-pill-model')).toHaveText('fake-1');
-  await expect(page.locator('.ai-seg-btn[data-agent="agent"]')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'agent');
   const close = async () => { await app.close(); await fake.close(); };
   return { ...launched, fake, workspace, close };
 }
@@ -125,7 +125,9 @@ test('troca o modo pelo seletor e persiste', async () => {
     await expect(page.locator('#ai-agent-mode')).toContainText('Auto');
     await expect.poll(() => JSON.parse(fs.readFileSync(path.join(userData, 'settings.json'), 'utf8')).aiAgent?.mode).toBe('auto');
     // Chat desliga o agente e esconde o seletor de modo.
-    await page.locator('.ai-seg-btn[data-agent="chat"]').click();
+    await page.locator('#ai-skill-btn').click();
+    await page.locator('.ai-menu-item', { hasText: 'Chat' }).click();
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'chat');
     await expect(page.locator('#ai-agent-mode')).toBeHidden();
   } finally { await env.close(); }
 });
@@ -174,7 +176,7 @@ test('modelo sem ferramentas oferece responder como chat', async () => {
     await expect(page.locator('.ag-error[data-code="tools_unsupported"]')).toBeVisible();
     await page.locator('.ag-chat-fallback').click();
     await expect(page.locator('.ai-assistant').last()).toContainText('Resposta do chat');
-    await expect(page.locator('.ai-seg-btn[data-agent="chat"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#ai-skill-btn')).toHaveAttribute('data-skill', 'chat');
   } finally { await env.close(); }
 });
 
@@ -204,4 +206,33 @@ test('reabrir a conversa mostra os passos e o resumo do agente', async () => {
     await expect(second.page.locator('.ag-text')).toContainText('Criei nota.md.');
     await expect(second.page.locator('.ai-agent-msg')).not.toContainText('agzos-agent');
   } finally { await second.app.close(); }
+});
+
+test('agente chama clean_code no modo edit sem pedir OK e o arquivo aberto recarrega', async () => {
+  const dirty = "import { a } from './x';\n// comentário\nconsole.log(a);\nexport const n = 1;\n";
+  const env = await setup({
+    mode: 'edit',
+    files: { 'app.ts': dirty },
+    script: [
+      { toolCalls: [{ name: 'clean_code', arguments: { path: 'app.ts' } }] },
+      { text: 'Código limpo.' },
+    ],
+  });
+  const { page, workspace } = env;
+  const file = path.join(workspace, 'app.ts');
+  const editorValue = () => page.evaluate(() => window.monaco.editor.getModels().find((m) => !m.isDisposed() && m.getValue().includes('export const n'))?.getValue());
+  try {
+    await page.evaluate((p) => window.AgzosEditor.openFile(p), file);
+    await expect.poll(editorValue).toBe(dirty);
+    await ask(page, 'Limpe o app.ts para produção');
+    await expect(step(page, 'clean_code')).toHaveAttribute('data-status', 'ok');
+    await expect(page.locator('.ag-approval')).toHaveCount(0);
+    await idle(page);
+    await expect(step(page, 'clean_code')).toContainText('app.ts');
+    expect(fs.readFileSync(file, 'utf8')).toBe('export const n = 1;\n');
+    await expect.poll(editorValue).toBe('export const n = 1;\n');
+    // O modelo recebeu a ferramenta com o schema (campo parameters dos providers).
+    const tool = env.fake.requests.at(-1).body.tools.find((t) => t.function.name === 'clean_code');
+    expect(tool.function.parameters.required).toEqual(['path']);
+  } finally { await env.close(); }
 });

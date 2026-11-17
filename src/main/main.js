@@ -10,7 +10,7 @@
  *  - Configurações persistentes em userData
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, safeStorage, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -42,8 +42,32 @@ const DATA_DIR = 'agzos-code';
 app.setName(APP_NAME);
 app.setPath('userData', process.env.AGZOS_USER_DATA || path.join(app.getPath('appData'), DATA_DIR));
 
-let mainWindow = null;
 let splashWindow = null;
+const isMac = process.platform === 'darwin';
+
+/**
+ * Várias janelas: cada BrowserWindow é independente (pasta, terminais, agente).
+ * Eventos de menu/updater vão para a janela focada (ou a primeira aberta).
+ */
+function targetWindow() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed() && focused !== splashWindow) return focused;
+  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w !== splashWindow) || null;
+}
+
+function sendToTarget(channel, ...args) {
+  const win = targetWindow();
+  if (win) win.webContents.send(channel, ...args);
+}
+
+// Visualizadores (imagem/vídeo/áudio/PDF): agzos-file:// serve só caminhos liberados
+// no path-guard da janela dona do token (host da URL). Registrado antes do app ficar pronto.
+const fileProtocol = require('./lib/file-protocol');
+const { openExternalSafe } = require('./lib/external-url');
+protocol.registerSchemesAsPrivileged([{
+  scheme: fileProtocol.SCHEME,
+  privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true },
+}]);
 
 /* -------------------------------------------------------------------------- */
 /*  Janela splash (carregamento inicial)                                       */
@@ -86,20 +110,32 @@ function createMainWindow() {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
+      // Visualizador de PDF embutido do Chromium (aba de PDF via agzos-file://).
+      plugins: true,
     },
   };
   if (APP_ICON) {
     winOpts.icon = APP_ICON;
   }
-  mainWindow = new BrowserWindow(winOpts);
+  // Janelas novas abrem levemente deslocadas da focada (como no VS Code).
+  const from = BrowserWindow.getFocusedWindow();
+  if (from && from !== splashWindow && !from.isDestroyed()) {
+    const [x, y] = from.getPosition();
+    Object.assign(winOpts, { x: x + 30, y: y + 30 });
+  }
+  const mainWindow = new BrowserWindow(winOpts);
+  // Permissões de arquivo desta janela (descartadas quando ela fecha).
+  windowGuards.register(mainWindow.webContents);
 
-  // Menu nativo — escondemos a barra mas mantemos atalhos
-  Menu.setApplicationMenu(buildAppMenu());
+  // macOS: menu nativo na barra do sistema (a barra in-app fica escondida).
+  // Windows/Linux: a barra de menus é a do renderer (menubar.js); sem menu
+  // nativo na janela (não reaparece com Alt). Atalhos: keymap.js.
+  if (!isMac) mainWindow.removeMenu();
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    if (splashWindow) {
+    if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
       splashWindow = null;
     }
@@ -108,23 +144,30 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Links externos abrem no browser padrão, nunca dentro do app
-    shell.openExternal(url);
+    // Links externos abrem no browser padrão, nunca dentro do app; só http(s)/mailto
+    // (file:, smb:, protocolos de apps… são negados — lib/external-url.js).
+    openExternalSafe(shell, url);
     return { action: 'deny' };
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  return mainWindow;
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Menu nativo (atalhos)                                                      */
 /* -------------------------------------------------------------------------- */
 function buildAppMenu() {
-  const isMac = process.platform === 'darwin';
+  // Sair passa pela confirmação (requestQuit), inclusive Cmd+Q no macOS.
+  const quitItem = { label: `Sair do ${APP_NAME}`, accelerator: 'CmdOrCtrl+Q', click: () => quitWithConfirm() };
   return Menu.buildFromTemplate([
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac ? [{
+      label: APP_NAME,
+      submenu: [
+        { role: 'about' }, { type: 'separator' }, { role: 'services' }, { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' },
+        quitItem,
+      ],
+    }] : []),
     {
       label: 'Arquivo',
       submenu: [
@@ -136,22 +179,22 @@ function buildAppMenu() {
         {
           label: 'Abrir Pasta…',
           accelerator: 'CmdOrCtrl+O',
-          click: () => mainWindow?.webContents.send('menu:open-folder'),
+          click: () => sendToTarget('menu:open-folder'),
         },
         { type: 'separator' },
         {
           label: 'Salvar',
           accelerator: 'CmdOrCtrl+S',
-          click: () => mainWindow?.webContents.send('menu:save'),
+          click: () => sendToTarget('menu:save'),
         },
         { type: 'separator' },
         {
           label: 'Configurações…',
           accelerator: 'CmdOrCtrl+,',
-          click: () => mainWindow?.webContents.send('menu:open-settings'),
+          click: () => sendToTarget('menu:open-settings'),
         },
         { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' },
+        isMac ? { role: 'close' } : quitItem,
       ],
     },
     {
@@ -167,17 +210,17 @@ function buildAppMenu() {
         {
           label: 'Command Palette',
           accelerator: 'CmdOrCtrl+Shift+P',
-          click: () => mainWindow?.webContents.send('menu:command-palette'),
+          click: () => sendToTarget('menu:command-palette'),
         },
         {
           label: 'Alternar Terminal',
           accelerator: 'CmdOrCtrl+`',
-          click: () => mainWindow?.webContents.send('menu:toggle-terminal'),
+          click: () => sendToTarget('menu:toggle-terminal'),
         },
         {
           label: 'Alternar Sidebar',
           accelerator: 'CmdOrCtrl+B',
-          click: () => mainWindow?.webContents.send('menu:toggle-sidebar'),
+          click: () => sendToTarget('menu:toggle-sidebar'),
         },
         { type: 'separator' },
         { role: 'reload' },
@@ -195,13 +238,13 @@ function buildAppMenu() {
       submenu: [
         {
           label: 'Verificar atualizações…',
-          click: () => mainWindow?.webContents.send('menu:check-updates'),
+          click: () => sendToTarget('menu:check-updates'),
         },
         { type: 'separator' },
         {
           label: 'Sobre o Agzos Code',
           click: () => {
-            dialog.showMessageBox(mainWindow, {
+            dialog.showMessageBox(targetWindow(), {
               type: 'info',
               title: 'Sobre',
               message: `${APP_NAME}`,
@@ -224,27 +267,79 @@ const deps = {
   dialog,
   isDev,
   APP_NAME,
-  getMainWindow: () => mainWindow,
+  getWindowFor: (evt) => (evt?.sender ? BrowserWindow.fromWebContents(evt.sender) : targetWindow()),
 };
-const { createPathGuard } = require('./lib/path-guard');
-const guard = createPathGuard();
-require('./ipc/fs').register(ipcMain, { guard });
-require('./ipc/dialog').register(ipcMain, { ...deps, guard });
+// Path-guard por janela (como no VS Code): cada janela só acessa a pasta aberta nela,
+// arquivos que ela abriu por diálogo/arrastar e caminhos liberados para ela.
+const { createWindowGuards } = require('./lib/window-guards');
+const windowGuards = createWindowGuards();
+const { guardFor } = windowGuards;
+ipcMain.on('window:fileToken', (evt) => { evt.returnValue = windowGuards.tokenFor(evt.sender); });
+require('./ipc/fs').register(ipcMain, { guardFor, shell });
+require('./ipc/dialog').register(ipcMain, { ...deps, guardFor });
 require('./ipc/term').register(ipcMain);
+require('./ipc/ssh').register(ipcMain, { guardFor });
 require('./ipc/ports').register(ipcMain);
-const settingsStore = require('./ipc/settings').register(ipcMain, deps);
-require('./ipc/workspace').register(ipcMain, {
-  guard,
+const settingsStore = require('./ipc/settings').register(ipcMain, {
+  ...deps,
+  // settings:changed vai às outras janelas quando uma salva.
+  listWebContents: () => BrowserWindow.getAllWindows().filter((w) => w !== splashWindow && !w.isDestroyed()).map((w) => w.webContents),
+});
+const workspaces = require('./ipc/workspace').register(ipcMain, {
+  guardFor,
   getRecentFolders: () => settingsStore.load().recentFolders || [],
   addRecentFolder: (folderPath) => {
     const s = settingsStore.load();
     const recent = [folderPath, ...(s.recentFolders || []).filter((p) => p !== folderPath)];
     settingsStore.save({ ...s, recentFolders: recent.slice(0, 10) });
   },
+  clearRecentFolders: () => settingsStore.save({ ...settingsStore.load(), recentFolders: [] }),
+});
+// Ctrl+Q / Arquivo › Sair: confirma antes (lib/quit-confirm.js). Fechar uma janela não pergunta.
+const { confirmQuit } = require('./lib/quit-confirm');
+const DIRTY_SCRIPT = `(() => { const f = window.AgzosState && window.AgzosState.files; if (!f) return 0;
+  let n = 0; for (const x of f.values()) if (x && x.dirty) n++; return n; })()`;
+async function countDirtyFiles() {
+  const wins = BrowserWindow.getAllWindows().filter((w) => w !== splashWindow && !w.isDestroyed());
+  const counts = await Promise.all(wins.map((w) => Promise.race([
+    w.webContents.executeJavaScript(DIRTY_SCRIPT, true).catch(() => 0),
+    new Promise((r) => setTimeout(() => r(0), 1500)),
+  ])));
+  return counts.reduce((a, n) => a + (Number(n) || 0), 0);
+}
+let quitPrompt = null; // uma pergunta por vez (Ctrl+Q repetido não empilha diálogos)
+function requestQuit(parent) {
+  if (quitPrompt) return quitPrompt.then(() => false);
+  quitPrompt = confirmQuit({
+    // Lido na hora da chamada: os e2e substituem dialog.showMessageBox.
+    dialog: { showMessageBox: (win, opts) => (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts)) },
+    parent: parent || targetWindow(),
+    getSettings: () => settingsStore.load(),
+    disableConfirm: () => {
+      const s = settingsStore.load();
+      settingsStore.save({ ...s, window: { ...(s.window || {}), confirmBeforeQuit: false } });
+    },
+    countDirty: countDirtyFiles,
+  }).finally(() => { quitPrompt = null; });
+  return quitPrompt;
+}
+async function quitWithConfirm(parent) {
+  if (await requestQuit(parent)) app.quit();
+}
+require('./ipc/window').register(ipcMain, {
+  createWindow: () => createMainWindow(),
+  fromWebContents: (wc) => BrowserWindow.fromWebContents(wc),
+  quit: () => app.quit(),
+  confirmQuit: (win) => requestQuit(win),
 });
 // Só em testes E2E: libera uma pasta temporária sem passar pelo diálogo nativo.
+// Sem id: em todas as janelas abertas (compatível com os testes de 1 janela);
+// com webContents.id: só naquela janela.
 if (process.env.AGZOS_TEST === '1') {
-  global.__agzosAllowRoot = (p) => guard.allow(p);
+  global.__agzosAllowRoot = (p, webContentsId) => {
+    if (webContentsId === undefined) windowGuards.allowAll(p);
+    else guardFor(webContentsId).allow(p);
+  };
 }
 const { createSecretStore } = require('./lib/secrets');
 const { migrateLegacySecrets } = require('./lib/settings');
@@ -263,18 +358,38 @@ const secretStore = createSecretStore({
 });
 require('./ipc/secrets').register(ipcMain, { store: secretStore });
 // Git + GitHub: contas (tokens só no main) e operações git do sistema.
-const githubAccounts = require('./ipc/github').register(ipcMain, { guard, settingsStore, store: secretStore, app });
-require('./ipc/git').register(ipcMain, { guard, accounts: githubAccounts });
-const aiSessions = require('./ipc/ai').register(ipcMain, { settingsStore, store: secretStore });
-// Agente (tools no workspace): chave da IA só no main; raiz via guard.
-const agentSessions = require('./ipc/agent').register(ipcMain, { settingsStore, store: secretStore, guard, userDataDir: app.getPath('userData') });
-require('./ipc/chat-history').register(ipcMain, deps);
+const githubAccounts = require('./ipc/github').register(ipcMain, { guardFor, settingsStore, store: secretStore, app });
+require('./ipc/git').register(ipcMain, { guardFor, accounts: githubAccounts });
+// Anexos do Agzos IA (imagens, texto, PDF) em userData/chat-attachments.
+const { createAttachmentStore } = require('./ai/attachments');
+const chatAttachments = createAttachmentStore({ dir: path.join(app.getPath('userData'), 'chat-attachments') });
+const aiSessions = require('./ipc/ai').register(ipcMain, {
+  settingsStore, store: secretStore, attachments: chatAttachments, guardFor, dialog,
+  getWindowFor: deps.getWindowFor, userDataDir: app.getPath('userData'),
+});
+// Agente (tools no workspace): chave da IA só no main; raiz e guard da janela que pediu.
+const agentSessions = require('./ipc/agent').register(ipcMain, {
+  settingsStore, store: secretStore, guardFor, userDataDir: app.getPath('userData'), attachments: chatAttachments, shell,
+  getWindowRoot: (sender) => workspaces.rootFor(sender.id),
+});
+// Módulos nativos: um processo utilitário compartilhado, criado sob demanda.
+const { createWorkerHost } = require('./modules/worker-host');
+const modulesWorker = createWorkerHost({ script: path.join(__dirname, 'modules/worker.js'), idleMs: 20000 });
+const modulesDeps = {
+  guardFor,
+  getWindowRoot: (sender) => workspaces.rootFor(sender.id),
+  settingsStore, userDataDir: app.getPath('userData'), workerHost: modulesWorker };
+require('./ipc/broom').register(ipcMain, modulesDeps);
+require('./ipc/envvault').register(ipcMain, modulesDeps);
+require('./ipc/chat-history').register(ipcMain, {
+  ...deps, BrowserWindow, attachments: chatAttachments,
+  getRecentFolders: () => settingsStore.load().recentFolders || [],
+});
 require('./ipc/app-info').register(ipcMain, deps);
 const updater = require('./updater').createUpdater({
   app,
-  notify: (notice) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:notice', notice);
-  },
+  // Um aviso só, na janela focada (evita um confirm por janela).
+  notify: (notice) => sendToTarget('update:notice', notice),
 });
 ipcMain.handle('update:check', () => updater.checkForUpdates({ manual: true }));
 ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
@@ -283,6 +398,8 @@ ipcMain.handle('update:install', () => updater.installDownloadedUpdate());
 /*  Lifecycle                                                                   */
 /* -------------------------------------------------------------------------- */
 app.whenReady().then(() => {
+  protocol.handle(fileProtocol.SCHEME, fileProtocol.createFileProtocolHandler({ guardForHost: windowGuards.guardForToken }));
+
   // Migra chaves guardadas em texto puro pela v0.1 para o cofre do SO
   const migrated = migrateLegacySecrets(settingsStore.load(), secretStore);
   // Em seguida, associa o provider antigo à chave já guardada em ai.legacy.
@@ -306,6 +423,8 @@ app.whenReady().then(() => {
     try { app.setBadgeCount?.(0); } catch { /* ignora */ }
   }
 
+  // Windows/Linux: null tira também o menu padrão do Electron (que reapareceria com Alt).
+  Menu.setApplicationMenu(isMac ? buildAppMenu() : null);
   createSplash();
   // Atrasa um pouquinho pra splash renderizar com calma
   setTimeout(() => createMainWindow(), 350);
@@ -321,19 +440,25 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   aiSessions.cancelAll();
   agentSessions.cancelAll();
+  modulesWorker.dispose();
   // Encerra shells abertos
   require('./ipc/term').killAll();
   if (process.platform !== 'darwin') app.quit();
 });
 
 // Hardening extra
+const RENDERER_URL = require('url').pathToFileURL(path.join(__dirname, '..', 'renderer') + path.sep).href;
 app.on('web-contents-created', (_e, contents) => {
+  // Nenhuma janela nova dentro do app (inclui middle-click/target=_blank em qualquer webContents).
+  contents.setWindowOpenHandler(({ url }) => {
+    openExternalSafe(shell, url);
+    return { action: 'deny' };
+  });
   contents.on('will-navigate', (event, url) => {
-    // Bloqueia navegação para URLs externas dentro do app
-    const isLocal = url.startsWith('file://');
-    if (!isLocal) {
-      event.preventDefault();
-      shell.openExternal(url);
-    }
+    // Só navega dentro das páginas do próprio app; o resto é bloqueado e, se for
+    // http(s)/mailto, abre fora (nunca file: de fora do app nem outros esquemas).
+    if (url.startsWith(RENDERER_URL)) return;
+    event.preventDefault();
+    openExternalSafe(shell, url);
   });
 });

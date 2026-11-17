@@ -64,3 +64,20 @@ test('getFolderIconMeta trata estados de expansão e pastas especiais', async ()
   const nodeModules = getFolderIconMeta(false, 'node_modules');
   assert.equal(nodeModules.icon, 'folder-code');
 });
+
+test('getFileIconMeta cobre os tipos dos visualizadores', async () => {
+  const { getFileIconMeta } = await import('../../src/renderer/scripts/icon-theme.js');
+  for (const ext of ['png', 'jpg', 'avif', 'bmp', 'apng', 'heic', 'heif', 'tiff', 'tif', 'psd', 'svg', 'ico', 'webp', 'gif']) {
+    assert.equal(getFileIconMeta(`a.${ext}`).icon, 'file-image', ext);
+  }
+  for (const ext of ['mp4', 'webm', 'mov', 'm4v', 'mkv', 'avi', 'ogv']) {
+    assert.equal(getFileIconMeta(`a.${ext}`).icon, 'file-video-camera', ext);
+  }
+  for (const ext of ['mp3', 'wav', 'ogg', 'oga', 'flac', 'm4a', 'aac', 'opus']) {
+    assert.equal(getFileIconMeta(`a.${ext}`).icon, 'file-music', ext);
+  }
+  assert.equal(getFileIconMeta('a.PDF').badge, 'PDF');
+  for (const ext of ['doc', 'docx', 'odt', 'rtf']) assert.equal(getFileIconMeta(`a.${ext}`).icon, 'file-text', ext);
+  for (const ext of ['xls', 'xlsx', 'ods', 'csv', 'tsv']) assert.equal(getFileIconMeta(`a.${ext}`).icon, 'file-spreadsheet', ext);
+  for (const ext of ['ppt', 'pptx', 'odp']) assert.equal(getFileIconMeta(`a.${ext}`).icon, 'presentation', ext);
+});

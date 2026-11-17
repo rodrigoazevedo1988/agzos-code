@@ -56,6 +56,9 @@ export function matchShortcut(e, { isMac = false } = {}) {
   const alt = !!e.altKey;
   const k = keyId(e);
 
+  // F11: tela cheia (sem modificadores)
+  if (e.key === 'F11' && !ctrl && !shift && !alt) return 'window.fullscreen';
+
   if (ctrl && !alt) {
     // Ctrl+PageUp/PageDown: sessão anterior/seguinte (app.js só age com foco no terminal).
     if (!shift && e.key === 'PageUp') return 'terminal.prev';
@@ -66,15 +69,23 @@ export function matchShortcut(e, { isMac = false } = {}) {
       // Ctrl+Shift+5 divide (layout US entrega '%'; e.code cobre os demais).
       if (k === '%' || e.code === 'Digit5' || e.code === 'Numpad5') return 'terminal.split';
       if (k === 'a') return 'ai.focus';
+      if (k === 'n') return 'window.new';
+      if (k === 's') return 'file.saveAs';
+      if (k === 'b') return 'task.build';
+      if (k === 'i') return 'window.devtools';
       if (k === 'p') return 'palette.commands';
       if (k === 'e') return 'view.explorer';
       if (k === 'f') return 'view.search';
       if (k === 'g') return 'view.git';
-      if (k === 'x') return 'view.extensions';
+      if (k === 'x') return 'view.modules';
+      if (k === 'v') return 'markdown.previewSide';
       if (k === '+') return 'zoom.in';
       return null;
     }
     if (k === 'l') return 'ai.sendSelection';
+    if (k === 'n') return 'file.newUntitled';
+    if (k === 'o') return 'file.openFolder';
+    if (k === 'q') return 'app.quit';
     if (k === 'p') return 'palette.quickOpen';
     if (k === 'w') return 'tab.close';
     if (k === 'f') return 'editor.find';
@@ -107,6 +118,9 @@ export const GLOBAL_IN_EDITABLE = new Set([
   'terminal.next',
   'settings.open',
   'sidebar.toggle',
+  'window.new',
+  'window.fullscreen',
+  'window.devtools',
 ]);
 
 export function shouldHandleInTarget(action, inEditable) {
@@ -127,6 +141,19 @@ export function isEditableTarget(target) {
 
 export function isMonacoTarget(target) {
   return !!(target && typeof target.closest === 'function' && target.closest('.monaco-editor'));
+}
+
+/**
+ * Alt+letra (sem Ctrl/Shift/Meta) que pode abrir um menu da barra: devolve a letra
+ * minúscula ou null. Alt+Z fica de fora (quebra de linha, ver matchShortcut).
+ * Usa e.code: no mac Option+A gera 'å'.
+ */
+export function isMenuMnemonicKey(e) {
+  if (!e || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
+  const m = /^Key([A-Z])$/.exec(e.code || '');
+  const letter = m ? m[1].toLowerCase() : null;
+  if (!letter || letter === 'z') return null;
+  return letter;
 }
 
 /** Segunda tecla de um chord iniciado por Ctrl+K. */

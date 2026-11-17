@@ -7,14 +7,76 @@
  *   { title, category: 'read'|'write'|'destructive'|'command', preview, risky, riskReason,
  *     sessionKey, execute({ onOutput, signal }) → { ok, result, summary, meta, changed } }
  * Entrada inválida ou caminho fora da raiz → lança ToolError (negado, não perguntado).
+ *
+ * Ferramentas extras (módulos nativos, ver src/main/modules/agent-tools.js):
+ *   { definition: { name, description, input_schema }, kind: 'read'|'write'|'command',
+ *     prepare(input, ctx) → { title, preview?, run({ signal, onOutput }) → Promise<{ summary, meta?, output?, changed?, ok? }> } }
+ *   ctx = { resolvePath, rel, checkpoint, readTextFile, root }. prepare pode ser assíncrono
+ *   (então toolbox.prepare devolve Promise). preview.risk = '<motivo>' força aprovação em
+ *   qualquer modo. `changed` (caminhos absolutos) vira evento file_changed.
+ *   Opcional: commandRisk(command, { cwd, root }) → string|null|Promise<string|null>, consultado
+ *   no preparo do run_command (ex.: Cofre .env marca `git commit` com segredos no stage como risco).
+ *   Só comandos para os quais algum gancho devolve Promise tornam o preparo assíncrono.
+ *
+ * Segredos: a saída de run_command e de toda ferramenta extra passa por `redact(secrets)`
+ * (variáveis sensíveis do ambiente + chave da API + valores dos `.env*` da raiz) e pelo
+ * detector do Cofre (redactSecrets). read_file/search de `.env`/`.env.*` (exceto
+ * .example/.sample/.template) mostram `CHAVE=****`; para chaves, o agente usa env_check.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { createPathGuard } = require('../lib/path-guard');
 const { assessCommand } = require('./risk');
-const { lineStats, truncateMiddle, stripAnsi, redact } = require('./text');
+const { lineStats, truncateMiddle, stripAnsi, redact, SECRET_NAME } = require('./text');
 const { runCommand: defaultRunCommand } = require('./exec');
+const { redactSecrets, isPlaceholder, shannon } = require('../modules/envvault/detect');
+const { _scan: scanEnv } = require('../modules/envvault/parse');
+
+const ENV_FILE_RE = /^\.env(?:\..+)?$/;
+const ENV_TEMPLATE_RE = /\.(?:example|sample|template)$/i;
+
+/** `.env` ou `.env.*` com valores reais (modelos .example/.sample/.template ficam de fora). */
+function isSecretEnvFile(name) {
+  return ENV_FILE_RE.test(name) && !ENV_TEMPLATE_RE.test(name);
+}
+
+/** Texto de um .env com cada valor não vazio trocado por `****` (chaves e comentários ficam). */
+function maskEnvText(text) {
+  let out = '';
+  let pos = 0;
+  for (const e of scanEnv(String(text))) {
+    if (e.value === '') continue;
+    out += text.slice(pos, e.start) + e.head + '****';
+    pos = e.end;
+  }
+  return out + text.slice(pos);
+}
+
+/**
+ * Valores dos `.env*` da raiz (sem modelos), para redigir saídas: chave com nome sensível
+ * (TOKEN/KEY/SECRET/PASSWORD…) ou valor com cara de segredo (≥ 16 chars, alta entropia).
+ * Valores comuns (PORT=3000, NODE_ENV=production) ficam de fora para não poluir a saída.
+ */
+function envFileSecretValues(root) {
+  const values = [];
+  let names = [];
+  try { names = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isFile() && isSecretEnvFile(d.name)).map((d) => d.name); } catch { return values; }
+  for (const name of names.slice(0, 20)) {
+    try {
+      const file = path.join(root, name);
+      if (fs.statSync(file).size > 1024 * 1024) continue;
+      for (const e of scanEnv(fs.readFileSync(file, 'utf8'))) {
+        const v = e.value;
+        if (typeof v !== 'string' || v.length < 8 || isPlaceholder(v)) continue;
+        if (SECRET_NAME.test(e.key) || (v.length >= 16 && shannon(v) >= 3.5)) values.push(v);
+      }
+    } catch { /* arquivo ilegível: ignora */ }
+  }
+  return values;
+}
+
+const EXTRA_KINDS = ['read', 'write', 'command'];
 
 const LIMITS = {
   readLines: 2000,
@@ -166,13 +228,24 @@ function formatSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
+/** Ferramentas de módulos podem declarar `input_schema` (estilo Anthropic); os providers leem `parameters`. */
+function normalizeDefinition(def) {
+  const schema = def.parameters || def.input_schema || { type: 'object', properties: {} };
+  const out = { ...def, parameters: schema };
+  delete out.input_schema;
+  return out;
+}
+
 function createToolbox({
   root, checkpoint, platform = process.platform, runCommand = defaultRunCommand,
-  shell, env, secrets = [],
+  shell, env, secrets = [], extraTools = [],
 }) {
   const rootAbs = path.resolve(root);
   const guard = createPathGuard({ platform });
   guard.allow(rootAbs);
+  // Segredos conhecidos (ambiente/chave) + valores dos .env* da raiz; mais longos primeiro.
+  const allSecrets = [...new Set([...(secrets || []), ...envFileSecretValues(rootAbs)])].sort((a, b) => b.length - a.length);
+  const scrub = (text) => redactSecrets(redact(text, allSecrets));
 
   const rel = (abs) => (path.relative(rootAbs, abs) || '.').split(path.sep).join('/');
 
@@ -244,7 +317,8 @@ function createToolbox({
       title: `Ler ${rel(abs)}`,
       category: 'read',
       execute: async () => {
-        const text = readTextFile(abs);
+        const raw = readTextFile(abs);
+        const text = isSecretEnvFile(path.basename(abs)) ? maskEnvText(raw) : raw;
         const all = text.split(/\r?\n/);
         if (all.length > 1 && all[all.length - 1] === '') all.pop();
         const out = [];
@@ -311,7 +385,8 @@ function createToolbox({
             let buf;
             try { buf = fs.readFileSync(full); } catch { continue; }
             if (isBinary(buf)) continue;
-            const lines = buf.toString('utf8').split(/\r?\n/);
+            const content = buf.toString('utf8');
+            const lines = (isSecretEnvFile(d.name) ? maskEnvText(content) : content).split(/\r?\n/);
             for (let i = 0; i < lines.length; i++) {
               if (!matcher(lines[i])) continue;
               results.push(`${r}:${i + 1}: ${lines[i].trim().slice(0, 300)}`);
@@ -499,7 +574,7 @@ function createToolbox({
       Math.max(1, Number.parseInt(input.timeout_s, 10) || LIMITS.commandTimeoutDefault));
     const risk = assessCommand(input.command);
     const cmd = input.command.trim();
-    return {
+    const prepared = {
       title: `Executar ${cmd.length > 80 ? `${cmd.slice(0, 77)}…` : cmd}`,
       category: 'command',
       risky: risk.risky,
@@ -510,11 +585,11 @@ function createToolbox({
         const res = await runCommand({
           command: cmd, cwd, timeoutMs: timeoutS * 1000, signal, platform, shell, env,
           onOutput: (chunk) => {
-            const clean = redact(stripAnsi(chunk), secrets);
+            const clean = redact(stripAnsi(chunk), allSecrets);
             if (clean) onOutput(clean);
           },
         });
-        const output = redact(stripAnsi(res.output), secrets);
+        const output = redact(stripAnsi(res.output), allSecrets);
         let header = `exit code: ${res.exitCode} (${(res.durationMs / 1000).toFixed(1)}s)`;
         if (res.timedOut) header += ` — tempo esgotado após ${timeoutS}s; processo encerrado`;
         if (res.cancelled) header += ' — cancelado pelo usuário';
@@ -527,6 +602,26 @@ function createToolbox({
         };
       },
     };
+    return withCommandRisk(prepared, cmd, cwd);
+  }
+
+  /** Ganchos `commandRisk` das ferramentas extras: o primeiro motivo encontrado vira risco. */
+  function withCommandRisk(prepared, cmd, cwd) {
+    const hooks = [...EXTRA.values()].filter((t) => typeof t.commandRisk === 'function');
+    const results = [];
+    for (const t of hooks) {
+      try { results.push(t.commandRisk(cmd, { cwd, root: rootAbs })); } catch { /* gancho com erro é ignorado */ }
+    }
+    const markRisk = (reasons) => {
+      const reason = reasons.find((r) => typeof r === 'string' && r);
+      if (!reason || prepared.risky) return prepared;
+      prepared.risky = true;
+      prepared.riskReason = reason;
+      prepared.preview = { ...prepared.preview, risky: true, reason };
+      return prepared;
+    };
+    if (!results.some((r) => r && typeof r.then === 'function')) return markRisk(results);
+    return Promise.all(results.map((r) => Promise.resolve(r).catch(() => null))).then(markRisk);
   }
 
   const PREPARE = {
@@ -541,15 +636,63 @@ function createToolbox({
     run_command: command,
   };
 
-  function prepare(name, input) {
-    const fn = PREPARE[name];
-    if (!fn) throw new ToolError(`Ferramenta desconhecida: ${name}`);
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ToolError('Entrada inválida');
-    if (Object.hasOwn(input, '__invalid')) throw new ToolError('Argumentos JSON inválidos; envie um objeto JSON válido');
-    return fn(input);
+  // ------------------------------------------------- ferramentas extras (módulos)
+  const extraCtx = { resolvePath, rel, checkpoint, readTextFile, root: rootAbs };
+  const EXTRA = new Map();
+  for (const tool of Array.isArray(extraTools) ? extraTools : []) {
+    const name = tool?.definition?.name;
+    if (typeof name !== 'string' || !name || typeof tool.prepare !== 'function') continue;
+    if (Object.hasOwn(PREPARE, name) || EXTRA.has(name)) continue;
+    EXTRA.set(name, tool);
+  }
+  const definitions = EXTRA.size ? [...DEFINITIONS, ...[...EXTRA.values()].map((t) => normalizeDefinition(t.definition))] : DEFINITIONS;
+
+  function adaptExtra(tool, input, prepared) {
+    if (!prepared || typeof prepared.run !== 'function') throw new ToolError(`Ferramenta ${tool.definition.name} inválida`);
+    const category = EXTRA_KINDS.includes(tool.kind) ? tool.kind : 'command';
+    const preview = prepared.preview || {};
+    const risk = typeof preview.risk === 'string' && preview.risk ? preview.risk : null;
+    const name = tool.definition.name;
+    let sessionKey;
+    if (category === 'write') sessionKey = name;
+    else if (category === 'command') sessionKey = `${name}:${JSON.stringify(input)}`;
+    return {
+      title: prepared.title || name,
+      category,
+      risky: Boolean(risk),
+      riskReason: risk,
+      sessionKey,
+      preview,
+      execute: async ({ onOutput = () => {}, signal } = {}) => {
+        // Saída de módulos/renderer (terminal, problemas…) também é redigida antes do modelo.
+        const r = (await prepared.run({ signal, onOutput: (chunk) => onOutput(scrub(chunk)) })) || {};
+        const summary = typeof r.summary === 'string' ? scrub(r.summary) : '';
+        return {
+          ok: r.ok !== false,
+          result: typeof r.output === 'string' && r.output ? scrub(r.output) : (summary || 'ok'),
+          summary,
+          meta: r.meta || {},
+          changed: Array.isArray(r.changed) ? r.changed : [],
+        };
+      },
+    };
   }
 
-  return { definitions: DEFINITIONS, prepare, root: rootAbs, rel };
+  function prepare(name, input) {
+    const fn = PREPARE[name];
+    const extra = fn ? null : EXTRA.get(name);
+    if (!fn && !extra) throw new ToolError(`Ferramenta desconhecida: ${name}`);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ToolError('Entrada inválida');
+    if (Object.hasOwn(input, '__invalid')) throw new ToolError('Argumentos JSON inválidos; envie um objeto JSON válido');
+    if (fn) return fn(input);
+    const prepared = extra.prepare(input, extraCtx);
+    if (prepared && typeof prepared.then === 'function') return prepared.then((p) => adaptExtra(extra, input, p));
+    return adaptExtra(extra, input, prepared);
+  }
+
+  return { definitions, prepare, root: rootAbs, rel };
 }
 
-module.exports = { createToolbox, ToolError, DEFINITIONS, LIMITS, IGNORED_DIRS, globToRegExp };
+module.exports = {
+  createToolbox, ToolError, DEFINITIONS, LIMITS, IGNORED_DIRS, globToRegExp, EXTRA_KINDS, isSecretEnvFile, maskEnvText,
+};

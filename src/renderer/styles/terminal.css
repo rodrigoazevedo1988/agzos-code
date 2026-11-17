@@ -128,10 +128,28 @@ body.resizing-col .xterm { pointer-events: none; }
   border: 1px solid var(--accent); border-radius: 3px; outline: none;
 }
 
+/* Botão recolher/expandir nomes, no topo da lista */
+.term-list-toggle {
+  display: flex; align-items: center; justify-content: flex-end; width: 100%;
+  height: 20px; padding: 0 6px; margin-bottom: 2px; border: none; background: transparent;
+  color: var(--fg-mute); cursor: pointer;
+}
+.term-list-toggle:hover { color: var(--fg); background: var(--hover); }
+
+/* Lista recolhida pelo usuário: só ícones (mesmo visual do painel estreito) */
+.term-sessions.collapsed { flex-basis: 40px; }
+.term-sessions.collapsed .term-list-toggle { justify-content: center; padding: 0; }
+.term-sessions.collapsed .term-session-row { justify-content: center; padding: 0; }
+.term-sessions.collapsed .term-session-glyph,
+.term-sessions.collapsed .term-session-title,
+.term-sessions.collapsed .term-session-status,
+.term-sessions.collapsed .term-session-kill { display: none; }
+.term-sessions.collapsed .term-session-row .term-rename-input { position: absolute; left: 2px; right: 2px; z-index: 2; }
+
 /* Painel estreito (lateral): a lista vira uma coluna só de ícones */
 @container termpane (max-width: 520px) {
   .term-sessions { flex-basis: 40px; }
-  .term-session-row { justify-content: center; padding: 0; }
+  .term-session-row, .term-list-toggle { justify-content: center; padding: 0; }
   .term-session-glyph, .term-session-title, .term-session-status, .term-session-kill { display: none; }
   .term-session-row .term-rename-input { position: absolute; left: 2px; right: 2px; z-index: 2; }
 }

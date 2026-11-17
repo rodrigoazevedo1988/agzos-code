@@ -4,13 +4,17 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: agzos-file:; media-src agzos-file:; frame-src 'self' blob: agzos-file:; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:;" />
   <title>Agzos Code</title>
   <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg" />
   <link rel="stylesheet" href="styles/app.css" />
   <link rel="stylesheet" href="styles/ai-panel.css" />
   <link rel="stylesheet" href="styles/terminal.css" />
   <link rel="stylesheet" href="styles/git.css" />
+  <link rel="stylesheet" href="styles/modules.css" />
+  <link rel="stylesheet" href="styles/broom.css" />
+  <link rel="stylesheet" href="styles/envvault.css" />
+  <link rel="stylesheet" href="styles/viewers.css" />
 </head>
 
 <body class="theme-agzos-dark">
@@ -18,6 +22,8 @@
   <header id="topbar">
     <div class="topbar-left">
       <img src="assets/logo-icon.svg" alt="Agzos Code" class="topbar-logo" />
+      <!-- Barra de menus in-app (Windows/Linux): preenchida por menubar.js -->
+      <nav id="menubar" class="menubar" role="menubar" aria-label="Menu principal" hidden></nav>
       <span class="topbar-title">Agzos Code</span>
       <span class="topbar-section" id="topbar-workspace">— Sem pasta aberta</span>
     </div>
@@ -39,7 +45,7 @@
       <button class="activity-btn active icon-host" data-view="explorer" title="Explorer (Ctrl+Shift+E)"></button>
       <button class="activity-btn icon-host" data-view="search" title="Buscar (Ctrl+Shift+F)"></button>
       <button class="activity-btn icon-host" data-view="git" title="Controle de Versão (Ctrl+Shift+G)"></button>
-      <button class="activity-btn icon-host" data-view="extensions" title="Extensões (Ctrl+Shift+X)"></button>
+      <button class="activity-btn icon-host" data-view="modules" title="Módulos Agzos (Ctrl+Shift+X)"></button>
       <button class="activity-btn icon-host" data-view="ai" title="Agzos IA"></button>
       <div class="activity-spacer"></div>
       <button class="activity-btn icon-host" id="btn-activity-settings" title="Configurações (Ctrl+,)"></button>
@@ -49,9 +55,12 @@
     <aside id="sidebar">
       <div class="sidebar-header">
         <span id="sidebar-title">EXPLORER</span>
-        <button class="icon-btn icon-host" id="btn-new-file" title="Novo Arquivo"></button>
-        <button class="icon-btn icon-host" id="btn-new-folder" title="Nova Pasta"></button>
-        <button class="icon-btn icon-host" id="btn-open-folder" title="Abrir Pasta"></button>
+        <div class="sidebar-actions" id="explorer-actions">
+          <button class="icon-btn icon-host" id="btn-new-file" title="Novo Arquivo…"></button>
+          <button class="icon-btn icon-host" id="btn-new-folder" title="Nova Pasta…"></button>
+          <button class="icon-btn icon-host" id="btn-refresh-explorer" title="Atualizar Explorer"></button>
+          <button class="icon-btn icon-host" id="btn-collapse-folders" title="Recolher Pastas no Explorer"></button>
+        </div>
       </div>
       <div class="sidebar-content" id="sidebar-content">
         <div class="empty-state" id="empty-explorer">
@@ -65,9 +74,8 @@
         </div>
         <!-- Controle de versão: preenchido por git-panel.js -->
         <div class="panel" id="panel-git" hidden aria-label="Controle de versão"></div>
-        <div class="panel" id="panel-extensions" hidden>
-          <p class="hint">Extensões — Open VSX será plugado na próxima fase.</p>
-        </div>
+        <!-- Hub "Módulos Agzos": preenchido por modules-hub.js -->
+        <div class="panel" id="panel-modules" hidden aria-label="Módulos Agzos"></div>
         <!-- Host "left" do Agzos IA. O #ai-panel é movido entre hosts por ai-dock.js
              (sidebar, #right-dock, #pane-ai) e preenchido por ai-chat.js. -->
         <div class="panel" id="panel-ai" hidden>
@@ -79,10 +87,19 @@
     <!-- Workbench body (Editor + Resizer + Terminal/Bottom Panel) -->
     <div id="workbench-body" class="panel-bottom">
       <main id="editor-area">
-        <div id="tabs"></div>
-        <div id="editor-host">
-          <!-- Welcome screen do editor (preenchido por welcome.js) -->
-          <div class="welcome" id="welcome"></div>
+        <div id="tabs-bar">
+          <div id="tabs"></div>
+          <!-- Ações do editor ativo (ex.: pré-visualização de Markdown) -->
+          <div id="editor-actions" hidden></div>
+        </div>
+        <div id="editor-row">
+          <div id="editor-host">
+            <!-- Welcome screen do editor (preenchido por welcome.js).
+                 #viewer-host (abas de visualização) é criado aqui por viewers/index.js -->
+            <div class="welcome" id="welcome"></div>
+          </div>
+          <!-- Pré-visualização de Markdown ao lado (viewers/markdown-side.js) -->
+          <aside id="md-preview-side" aria-label="Pré-visualização de Markdown" hidden></aside>
         </div>
       </main>
 
@@ -152,12 +169,14 @@
   <!-- STATUS BAR -->
   <footer id="statusbar">
     <div class="status-left">
+      <button type="button" class="status-item icon-host" id="status-remote-host" title="Abrir uma conexão remota" aria-label="Abrir uma conexão remota"><span class="status-remote-label"></span></button>
       <span class="status-item icon-host" id="status-remote"></span>
       <span class="status-item" id="status-sync" hidden></span>
     </div>
     <div class="status-right">
       <span class="status-item icon-host" id="status-perf"></span>
       <span class="status-item icon-host" id="status-ai"></span>
+      <span class="status-item" id="status-broom" hidden role="button" tabindex="0" title="Vassoura de Produção: itens para limpar neste arquivo (clique para ver)"></span>
       <span class="status-item" id="status-lang">Texto Simples</span>
       <span class="status-item" id="status-pos">Ln 1, Col 1</span>
       <span class="status-item" id="status-encoding">UTF-8</span>

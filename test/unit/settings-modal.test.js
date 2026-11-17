@@ -14,7 +14,7 @@ test('settings-modal.js existe e exporta as funções necessárias', () => {
   assert.ok(content.includes('export function updateOTAProgress'), 'deve exportar updateOTAProgress');
 });
 
-test('settings-modal contempla as 8 categorias e filtro @modified', () => {
+test('settings-modal contempla as 9 categorias e filtro @modified', () => {
   const filePath = path.join(__dirname, '../../src/renderer/scripts/settings-modal.js');
   const content = fs.readFileSync(filePath, 'utf-8');
 
@@ -27,6 +27,7 @@ test('settings-modal contempla as 8 categorias e filtro @modified', () => {
     'git',
     'update',
     'privacy',
+    'modules',
   ];
 
   for (const cat of requiredCategories) {
@@ -35,4 +36,13 @@ test('settings-modal contempla as 8 categorias e filtro @modified', () => {
 
   assert.ok(content.includes('@modified'), 'deve suportar filtro de configurações modificadas @modified');
   assert.ok(content.includes('btn-toggle-settings-json'), 'deve suportar alternância para modo JSON');
+});
+
+test('settings-modal: "Confirmar antes de sair" (window.confirmBeforeQuit) em Aparência, padrão true', () => {
+  const content = fs.readFileSync(path.join(__dirname, '../../src/renderer/scripts/settings-modal.js'), 'utf-8');
+  const m = /key: 'window\.confirmBeforeQuit',[\s\S]*?categories: \[([^\]]*)\][\s\S]*?type: '(\w+)'/.exec(content);
+  assert.ok(m, 'item window.confirmBeforeQuit no SETTINGS_DEF');
+  assert.match(m[1], /'appearance'/);
+  assert.equal(m[2], 'boolean');
+  assert.match(content, /window: \{\s*confirmBeforeQuit: true,?\s*\}/, 'DEFAULTS.window.confirmBeforeQuit');
 });

@@ -5,8 +5,12 @@
  */
 
 import { toast } from './toast.js';
-import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings } from './editor.js';
-import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette, showShortcutsModal, invalidateQuickOpenCache } from './command-palette.js';
+import { setupEditor, openFile, saveActive, getActiveEditor, applyEditorSettings, openMarkdownPreview } from './editor.js';
+import { setupMarkdownSide } from './viewers/markdown-side.js';
+import { setupFileDrop } from './viewers/drop.js';
+import { setupCommandPalette, showCommandPalette, showQuickOpen, hideCommandPalette, showShortcutsModal, invalidateQuickOpenCache, runCommand } from './command-palette.js';
+import { setupMenuActions, applyStatusBarVisibility } from './menu-actions.js';
+import { setupMenubar } from './menubar.js';
 import { setupAI, sendToChat } from './ai-chat.js';
 import { captureAITarget, setAITarget } from './ai-apply.js';
 import { setupSearch } from './search.js';
@@ -15,8 +19,12 @@ import {
   createTerminal, splitTerminal, focusNextTerminal,
 } from './terminal.js';
 import { setupAiDock } from './ai-dock.js';
-import { openWorkspace } from './file-tree.js';
+import { openWorkspace, refreshTree, collapseAllFolders } from './file-tree.js';
 import { setupGitPanel } from './git-panel.js';
+import { setupModulesHub } from './modules-hub.js';
+import { setupBroom } from './broom.js';
+import { setupEnvVault } from './envvault.js';
+import { setupSsh } from './ssh.js';
 import { lucideIcon } from './lucide.js';
 import { perfLabel } from './labels.js';
 import { showWelcome, showEditorWelcome } from './welcome.js';
@@ -35,6 +43,13 @@ async function boot() {
   // 1) Carrega settings
   const s = await window.agzos.settings.load();
   Object.assign(State.settings, s);
+  // Outra janela salvou settings: atualiza a cópia local e reaplica tema/editor.
+  window.agzos.settings.onChanged?.((next) => {
+    const before = JSON.stringify(State.settings);
+    Object.assign(State.settings, next);
+    if (JSON.stringify(State.settings) === before) return;
+    import('./settings-modal.js').then((m) => m.applySettingsLive()).catch((e) => console.warn('[settings] sync', e));
+  });
 
   // 2) Carrega app info
   const info = await window.agzos.app.info();
@@ -60,11 +75,22 @@ async function boot() {
     return;
   }
 
+  // Visualizadores: pré-visualização de Markdown ao lado e arquivos soltos do SO.
+  setupMarkdownSide();
+  setupFileDrop(openFile);
+
   // 6) Aplica settings à UI
   applySettingsToUI();
 
-  // 7) Setup command palette
+  // 7) Setup command palette + comandos da barra de menus
   setupCommandPalette();
+  setupMenuActions();
+  // Barra de menus in-app: Windows/Linux. macOS usa o menu nativo do sistema.
+  try {
+    setupMenubar({ visible: info.platform !== 'darwin' });
+  } catch (e) {
+    console.error('[Menu] setupMenubar falhou:', e);
+  }
 
   // 8) Setup panels — o dock posiciona o #ai-panel antes de o chat renderizar nele
   aiDock = setupAiDock({ switchSidebarView, selectBottomTab, setBottomPanelVisible, getActiveBottomTab });
@@ -79,6 +105,20 @@ async function boot() {
     setupGitPanel({ switchSidebarView });
   } catch (e) {
     console.error('[Git] setupGitPanel falhou:', e);
+  }
+
+  // 8b) Módulos nativos (hub + Vassoura + Cofre .env). Falha de um módulo não derruba o boot.
+  try {
+    setupModulesHub({ switchSidebarView });
+  } catch (e) {
+    console.error('[Módulos] setupModulesHub falhou:', e);
+  }
+  for (const [name, setup] of [['Vassoura', setupBroom], ['Cofre .env', setupEnvVault], ['SSH', setupSsh]]) {
+    try {
+      setup();
+    } catch (e) {
+      console.error(`[Módulos] ${name} falhou:`, e);
+    }
   }
 
   // 9) Welcome do editor (estado vazio)
@@ -102,7 +142,8 @@ async function boot() {
   if (btnActSettings) btnActSettings.addEventListener('click', () => openSettingsModal());
 
   // 12) Botões do header da sidebar
-  document.getElementById('btn-open-folder').addEventListener('click', openFolderDialog);
+  document.getElementById('btn-refresh-explorer').addEventListener('click', () => { refreshTree(false); invalidateQuickOpenCache(); });
+  document.getElementById('btn-collapse-folders').addEventListener('click', collapseAllFolders);
   document.getElementById('btn-open-folder-2').addEventListener('click', openFolderDialog);
   document.getElementById('btn-new-file').addEventListener('click', newFileInRoot);
   document.getElementById('btn-new-folder').addEventListener('click', newFolderInRoot);
@@ -215,7 +256,8 @@ function hydrateLucideIcons() {
     'btn-activity-settings': 'settings',
     'btn-new-file': 'file-plus',
     'btn-new-folder': 'folder-plus',
-    'btn-open-folder': 'folder-open',
+    'btn-refresh-explorer': 'refresh-cw',
+    'btn-collapse-folders': 'copy-minus',
     'btn-pos-terminal': 'panel-right',
     'btn-maximize-bottom': 'maximize-2',
     'btn-close-bottom': 'x',
@@ -229,7 +271,7 @@ function hydrateLucideIcons() {
     'explorer': 'folder-tree',
     'search': 'search',
     'git': 'git-branch',
-    'extensions': 'puzzle',
+    'modules': 'blocks',
     'ai': 'sparkles',
   };
   document.querySelectorAll('.activity-btn').forEach((btn) => {
@@ -265,6 +307,7 @@ function applySettingsToUI() {
   if (fsEl) fsEl.value = s.fontSize;
   const statusPerf = document.getElementById('status-perf');
   if (statusPerf) statusPerf.textContent = perfLabel(s.performanceMode);
+  applyStatusBarVisibility();
 }
 
 function bindSettingsInputs() {
@@ -287,6 +330,10 @@ function updateStatusAI() {
 /* --------------------------------------------------------------------------
    Atalhos
    -------------------------------------------------------------------------- */
+// Ação do keymap → id do comando (quando diferem)
+const MENU_SHORTCUT_COMMANDS = { 'window.fullscreen': 'window.toggleFullScreen' };
+const NATIVE_MENU_ON_MAC = new Set(['window.new', 'file.openFolder', 'app.quit']);
+
 const isMacPlatform = () => /mac/i.test(navigator.platform || '') || State.platform === 'darwin';
 const shortcutChord = createChord();
 
@@ -384,6 +431,10 @@ function bindShortcuts() {
         e.preventDefault();
         showCommandPalette();
         break;
+      case 'markdown.previewSide':
+        e.preventDefault(); e.stopPropagation();
+        openMarkdownPreview(State.activePath, 'side');
+        break;
       case 'palette.quickOpen':
         e.preventDefault();
         showQuickOpen();
@@ -457,16 +508,29 @@ function bindShortcuts() {
         break;
       case 'view.search':
         e.preventDefault();
-        switchSidebarView('search');
-        setTimeout(() => document.getElementById('search-text')?.focus(), 50);
+        runCommand('search.findInFiles');
         break;
       case 'view.git':
         e.preventDefault();
         switchSidebarView('git');
         break;
-      case 'view.extensions':
+      case 'view.modules':
         e.preventDefault();
-        switchSidebarView('extensions');
+        switchSidebarView('modules');
+        break;
+      // Atalhos da barra de menus (antes só no menu nativo): mesmo comando do menu/paleta
+      case 'window.new':
+      case 'file.newUntitled':
+      case 'file.openFolder':
+      case 'file.saveAs':
+      case 'task.build':
+      case 'window.devtools':
+      case 'app.quit':
+      case 'window.fullscreen':
+        // macOS: o menu nativo já tem esses aceleradores (não abrir 2 janelas)
+        if (isMacPlatform() && NATIVE_MENU_ON_MAC.has(action)) break;
+        e.preventDefault(); e.stopPropagation();
+        runCommand(MENU_SHORTCUT_COMMANDS[action] || action);
         break;
       // 'settings.open' é tratado em settings-modal.js (abre de forma idempotente)
       default:
@@ -494,13 +558,15 @@ function switchSidebarView(view) {
     explorer: { panel: 'file-tree', title: 'EXPLORER' },
     search:   { panel: 'panel-search', title: 'BUSCAR' },
     git:      { panel: 'panel-git', title: 'GIT' },
-    extensions: { panel: 'panel-extensions', title: 'EXTENSÕES' },
+    modules:  { panel: 'panel-modules', title: 'MÓDULOS AGZOS' },
     ai:       { panel: 'panel-ai', title: 'AGZOS IA' },
   };
   const cfg = map[view];
   if (!cfg) return;
   document.getElementById('sidebar-title').textContent = cfg.title;
-  ['file-tree','empty-explorer','panel-search','panel-git','panel-extensions','panel-ai'].forEach((id) => {
+  const explorerActions = document.getElementById('explorer-actions');
+  if (explorerActions) explorerActions.hidden = view !== 'explorer';
+  ['file-tree','empty-explorer','panel-search','panel-git','panel-modules','panel-ai'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });

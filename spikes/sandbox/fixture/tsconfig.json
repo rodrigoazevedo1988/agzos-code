@@ -1,0 +1,12 @@
+{
+  // fixture que imita um projeto Next 14/15 (comentários e vírgula final de propósito: tsconfig é JSONC)
+  "compilerOptions": {
+    "target": "ES2020",
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "~ui/*": ["./src/components/ui/*"],
+    },
+  },
+}

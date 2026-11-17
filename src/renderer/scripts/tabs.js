@@ -59,6 +59,7 @@ export function focusTab(filePath) {
 
 function basename(p) {
   if (!p) return '';
+  if (p.startsWith('untitled:')) return p.slice('untitled:'.length);
   return p.split(/[\\/]/).filter(Boolean).pop() || p;
 }
 function cssEscape(s) { return s.replace(/[\\"]/g, '\\$&'); }

@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { launchApp } = require('./helpers');
+const { launchApp, readSettings } = require('./helpers');
 
 test('modal de configurações abre com Ctrl+,, navega por categorias, busca e reseta', async () => {
   const { app, page } = await launchApp({
@@ -65,6 +65,45 @@ test('modal de configurações abre com Ctrl+,, navega por categorias, busca e r
     // 9. Fechar modal com Escape
     await page.keyboard.press('Escape');
     await expect(overlay).toBeHidden();
+  } finally {
+    await app.close();
+  }
+});
+
+test('categoria Módulos Agzos mostra Vassoura e Cofre e persiste blockCommits=false', async () => {
+  const { app, page, userData } = await launchApp({
+    settings: { welcomeSeen: true, onboardingCompleted: true },
+  });
+  try {
+    await page.click('#btn-settings');
+    const cat = page.locator('.settings-category-item[data-cat="modules"]');
+    await expect(cat).toContainText('Módulos Agzos');
+    await cat.click();
+    await expect(page.locator('.settings-category-title')).toHaveText('Módulos Agzos');
+    const main = page.locator('#settings-main');
+    await expect(main.locator('.settings-subsection-title', { hasText: 'Vassoura de Produção' })).toBeVisible();
+    await expect(main.locator('.settings-subsection-title', { hasText: 'Cofre .env' })).toBeVisible();
+    for (const key of [
+      'modules.broom.enabled', 'modules.broom.rules.console', 'modules.broom.rules.comments',
+      'modules.broom.rules.unusedImports', 'modules.broom.rules.deadCode', 'modules.broom.keepConsole',
+      'modules.broom.statusBar', 'modules.envVault.enabled', 'modules.envVault.blockCommits',
+      'modules.envVault.revealTimeoutSec',
+    ]) {
+      await expect(main.locator(`.setting-item-row[data-key="${key}"]`)).toBeVisible();
+    }
+
+    const row = main.locator('.setting-item-row[data-key="modules.envVault.blockCommits"]');
+    await row.locator('input[type="checkbox"]').uncheck();
+    await expect(row).toHaveClass(/modified/);
+    await expect.poll(() => readSettings(userData).modules?.envVault?.blockCommits).toBe(false);
+
+    // lista de métodos de console mantidos (texto separado por vírgula → array)
+    const kc = main.locator('.setting-item-row[data-key="modules.broom.keepConsole"] input');
+    await kc.fill('error, info');
+    await kc.dispatchEvent('change');
+    await expect.poll(() => readSettings(userData).modules?.broom?.keepConsole).toEqual(['error', 'info']);
+    // a outra seção continua intacta
+    expect(readSettings(userData).modules.envVault.blockCommits).toBe(false);
   } finally {
     await app.close();
   }

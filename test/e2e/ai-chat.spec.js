@@ -173,6 +173,7 @@ test('nova conversa e volta pela lista de conversas', async () => {
     // apagar a conversa ativa volta para a outra
     await page.locator('#ai-history-btn').click();
     await page.locator('.ai-history-item.is-active .ai-history-delete').click();
+    await page.locator('.ai-history-confirm-yes').click();
     await expect(page.locator('.ai-history-open')).toHaveCount(1);
     await expect.poll(() => page.evaluate(async () => (await window.agzos.chat.loadHistory(null)).conversations.length)).toBe(1);
   } finally { await app.close(); await fake.close(); }
