@@ -267,3 +267,89 @@ test('sessão: allow_session vale para a conversa (conversationId) entre pedidos
   assert.equal(sent.filter(([id, e]) => id === 'r6' && e.type === 'approval').length, 0);
   assert.ok(fs.existsSync(path.join(root, 'b.txt')));
 });
+
+// ------------------------------------------------- ferramentas extras (módulos)
+function modTool({ kind = 'write', risk } = {}) {
+  return {
+    definition: { name: 'mod_tool', description: 'teste', input_schema: { type: 'object' } },
+    kind,
+    prepare(input, ctx) {
+      const abs = ctx.resolvePath(input.path || 'app.js');
+      return {
+        title: 'mod',
+        preview: risk ? { path: abs, risk } : { path: abs },
+        run: async () => {
+          ctx.checkpoint?.record(abs);
+          fs.writeFileSync(abs, 'mod\n');
+          return { summary: 'ok', changed: [abs] };
+        },
+      };
+    },
+  };
+}
+
+function modHarness({ mode, tool, decide = () => 'allow' }) {
+  const events = [];
+  const provider = fakeProvider([{ calls: [{ name: 'mod_tool', input: { path: 'app.js' } }] }, { text: 'fim' }]);
+  const checkpoint = createCheckpointStore({}).create({ root });
+  const toolbox = createToolbox({ root, checkpoint, extraTools: [tool] });
+  const approvals = [];
+  const promise = runAgent({
+    provider, model: 'm', history: [{ role: 'user', content: 'x' }], mode, toolbox, checkpoint,
+    emit: (e) => events.push(e), systemPrompt: 'S',
+    requestApproval: async (id) => { approvals.push(id); return decide(); },
+  });
+  return { events, approvals, promise, provider };
+}
+
+test('extra: kind write pede OK no modo ask e não no modo edit', async () => {
+  const ask = modHarness({ mode: 'ask', tool: modTool() });
+  await ask.promise;
+  assert.equal(ask.approvals.length, 1);
+  assert.ok(ask.provider.seen[0].tools.some((t) => t.name === 'mod_tool'));
+  const edit = modHarness({ mode: 'edit', tool: modTool() });
+  await edit.promise;
+  assert.equal(edit.approvals.length, 0);
+  assert.ok(edit.events.some((e) => e.type === 'file_changed' && e.path === path.join(root, 'app.js')));
+  assert.equal(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), 'mod\n');
+  // read nunca pede; command segue a regra de comando (edit pede)
+  const read = modHarness({ mode: 'ask', tool: modTool({ kind: 'read' }) });
+  await read.promise;
+  assert.equal(read.approvals.length, 0);
+  const cmd = modHarness({ mode: 'edit', tool: modTool({ kind: 'command' }) });
+  await cmd.promise;
+  assert.equal(cmd.approvals.length, 1);
+});
+
+test('extra: preview.risk força aprovação no modo auto', async () => {
+  const h = modHarness({ mode: 'auto', tool: modTool({ risk: 'commit com possíveis segredos' }), decide: () => 'deny' });
+  await h.promise;
+  assert.equal(h.approvals.length, 1);
+  const approval = h.events.find((e) => e.type === 'approval');
+  assert.equal(approval.risky, true);
+  assert.equal(approval.reason, 'commit com possíveis segredos');
+  assert.equal(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), 'let x = 1;\n');
+  // risco vale mesmo para kind read
+  const r = modHarness({ mode: 'auto', tool: modTool({ kind: 'read', risk: 'x' }), decide: () => 'deny' });
+  await r.promise;
+  assert.equal(r.approvals.length, 1);
+});
+
+test('sessão: getExtraTools passa ferramentas de módulos ao toolbox', async () => {
+  const provider = fakeProvider([{ calls: [{ name: 'mod_tool', input: { path: 'app.js' } }] }, { text: 'fim' }]);
+  const sent = [];
+  const s = createAgentSessions({
+    getRoot: () => root,
+    getProvider: () => ({ provider, model: 'm' }),
+    getMode: () => 'edit',
+    checkpoints: createCheckpointStore({}),
+    send: (id, evt) => sent.push([id, evt]),
+    getEnv: () => ({ ...process.env }),
+    getExtraTools: () => [modTool()],
+  });
+  s.run('rx', { messages: [{ role: 'user', content: 'x' }] });
+  await s.wait('rx');
+  assert.ok(provider.seen[0].tools.some((t) => t.name === 'mod_tool'));
+  assert.equal(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), 'mod\n');
+  assert.equal(sent.at(-1)[1].type, 'done');
+});

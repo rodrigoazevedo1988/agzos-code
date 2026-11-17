@@ -11,10 +11,10 @@ const { randomUUID } = require('crypto');
 const MAX_STEPS = 50;
 const MODES = ['ask', 'edit', 'auto'];
 
-/** Precisa de OK do usuário? (risco sempre pede; leitura nunca). */
+/** Precisa de OK do usuário? (risco sempre pede, inclusive leitura de módulo; leitura comum nunca). */
 function needsApproval(mode, prepared, sessionAllow) {
-  if (prepared.category === 'read') return false;
   if (prepared.risky) return true;
+  if (prepared.category === 'read') return false;
   if (mode === 'auto') return false;
   if (prepared.sessionKey && sessionAllow?.has(prepared.sessionKey)) return false;
   if (mode === 'edit') return prepared.category !== 'write';
@@ -58,7 +58,8 @@ async function runAgent({
     const input = call.input && typeof call.input === 'object' ? call.input : {};
     let prepared;
     try {
-      prepared = toolbox.prepare(call.name, input);
+      // ferramentas de módulos podem preparar de forma assíncrona
+      prepared = await toolbox.prepare(call.name, input);
     } catch (err) {
       emit({ type: 'tool_start', callId, tool: call.name, input, title: call.name });
       emit({ type: 'tool_end', callId, ok: false, summary: err.message, meta: {} });

@@ -17,11 +17,12 @@ const winEnv = require('../lib/win-env');
  *   getMode() → modo salvo nas settings
  *   checkpoints: createCheckpointStore(...)
  *   send(requestId, evt)
+ *   getExtraTools() → ferramentas extras dos módulos habilitados (ver modules/agent-tools.js)
  */
 function createAgentSessions({
   getRoot, getProvider, getMode = () => 'edit', checkpoints, send,
   platform = process.platform, getEnv = () => winEnv.freshEnv({ platform }),
-  runCommand, shell, maxSteps,
+  runCommand, shell, maxSteps, getExtraTools = () => [],
 }) {
   const active = new Map(); // requestId → { controller, pending: Map(callId → { resolve, reject }) }
   const conversations = new Map(); // conversationId → Set(sessionKey)
@@ -57,6 +58,7 @@ function createAgentSessions({
     const toolbox = createToolbox({
       root, checkpoint, platform, shell: sh, env, runCommand,
       secrets: secretValues(env, [resolved.apiKey]),
+      extraTools: safeExtraTools(getExtraTools),
     });
     const conversationKey = typeof payload.conversationId === 'string' && payload.conversationId
       ? `c:${payload.conversationId}` : `r:${requestId}`;
@@ -119,6 +121,17 @@ function createAgentSessions({
     wait: (requestId) => active.get(requestId)?.promise,
     isActive: (requestId) => active.has(requestId),
   };
+}
+
+/** Falha ao carregar ferramentas de módulos não derruba o agente. */
+function safeExtraTools(getExtraTools) {
+  try {
+    const tools = getExtraTools();
+    return Array.isArray(tools) ? tools : [];
+  } catch (err) {
+    console.error('[agent] ferramentas de módulos indisponíveis:', err.message);
+    return [];
+  }
 }
 
 /** Diretório existente? (para validar a raiz) */

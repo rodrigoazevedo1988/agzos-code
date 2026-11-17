@@ -7,6 +7,13 @@
  *   { title, category: 'read'|'write'|'destructive'|'command', preview, risky, riskReason,
  *     sessionKey, execute({ onOutput, signal }) → { ok, result, summary, meta, changed } }
  * Entrada inválida ou caminho fora da raiz → lança ToolError (negado, não perguntado).
+ *
+ * Ferramentas extras (módulos nativos, ver src/main/modules/agent-tools.js):
+ *   { definition: { name, description, input_schema }, kind: 'read'|'write'|'command',
+ *     prepare(input, ctx) → { title, preview?, run({ signal, onOutput }) → Promise<{ summary, meta?, output?, changed?, ok? }> } }
+ *   ctx = { resolvePath, rel, checkpoint, readTextFile, root }. prepare pode ser assíncrono
+ *   (então toolbox.prepare devolve Promise). preview.risk = '<motivo>' força aprovação em
+ *   qualquer modo. `changed` (caminhos absolutos) vira evento file_changed.
  */
 
 const fs = require('fs');
@@ -15,6 +22,8 @@ const { createPathGuard } = require('../lib/path-guard');
 const { assessCommand } = require('./risk');
 const { lineStats, truncateMiddle, stripAnsi, redact } = require('./text');
 const { runCommand: defaultRunCommand } = require('./exec');
+
+const EXTRA_KINDS = ['read', 'write', 'command'];
 
 const LIMITS = {
   readLines: 2000,
@@ -168,7 +177,7 @@ function formatSize(bytes) {
 
 function createToolbox({
   root, checkpoint, platform = process.platform, runCommand = defaultRunCommand,
-  shell, env, secrets = [],
+  shell, env, secrets = [], extraTools = [],
 }) {
   const rootAbs = path.resolve(root);
   const guard = createPathGuard({ platform });
@@ -541,15 +550,60 @@ function createToolbox({
     run_command: command,
   };
 
-  function prepare(name, input) {
-    const fn = PREPARE[name];
-    if (!fn) throw new ToolError(`Ferramenta desconhecida: ${name}`);
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ToolError('Entrada inválida');
-    if (Object.hasOwn(input, '__invalid')) throw new ToolError('Argumentos JSON inválidos; envie um objeto JSON válido');
-    return fn(input);
+  // ------------------------------------------------- ferramentas extras (módulos)
+  const extraCtx = { resolvePath, rel, checkpoint, readTextFile, root: rootAbs };
+  const EXTRA = new Map();
+  for (const tool of Array.isArray(extraTools) ? extraTools : []) {
+    const name = tool?.definition?.name;
+    if (typeof name !== 'string' || !name || typeof tool.prepare !== 'function') continue;
+    if (Object.hasOwn(PREPARE, name) || EXTRA.has(name)) continue;
+    EXTRA.set(name, tool);
+  }
+  const definitions = EXTRA.size ? [...DEFINITIONS, ...[...EXTRA.values()].map((t) => t.definition)] : DEFINITIONS;
+
+  function adaptExtra(tool, input, prepared) {
+    if (!prepared || typeof prepared.run !== 'function') throw new ToolError(`Ferramenta ${tool.definition.name} inválida`);
+    const category = EXTRA_KINDS.includes(tool.kind) ? tool.kind : 'command';
+    const preview = prepared.preview || {};
+    const risk = typeof preview.risk === 'string' && preview.risk ? preview.risk : null;
+    const name = tool.definition.name;
+    let sessionKey;
+    if (category === 'write') sessionKey = name;
+    else if (category === 'command') sessionKey = `${name}:${JSON.stringify(input)}`;
+    return {
+      title: prepared.title || name,
+      category,
+      risky: Boolean(risk),
+      riskReason: risk,
+      sessionKey,
+      preview,
+      execute: async ({ onOutput = () => {}, signal } = {}) => {
+        const r = (await prepared.run({ signal, onOutput })) || {};
+        const summary = typeof r.summary === 'string' ? r.summary : '';
+        return {
+          ok: r.ok !== false,
+          result: typeof r.output === 'string' && r.output ? r.output : (summary || 'ok'),
+          summary,
+          meta: r.meta || {},
+          changed: Array.isArray(r.changed) ? r.changed : [],
+        };
+      },
+    };
   }
 
-  return { definitions: DEFINITIONS, prepare, root: rootAbs, rel };
+  function prepare(name, input) {
+    const fn = PREPARE[name];
+    const extra = fn ? null : EXTRA.get(name);
+    if (!fn && !extra) throw new ToolError(`Ferramenta desconhecida: ${name}`);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ToolError('Entrada inválida');
+    if (Object.hasOwn(input, '__invalid')) throw new ToolError('Argumentos JSON inválidos; envie um objeto JSON válido');
+    if (fn) return fn(input);
+    const prepared = extra.prepare(input, extraCtx);
+    if (prepared && typeof prepared.then === 'function') return prepared.then((p) => adaptExtra(extra, input, p));
+    return adaptExtra(extra, input, prepared);
+  }
+
+  return { definitions, prepare, root: rootAbs, rel };
 }
 
-module.exports = { createToolbox, ToolError, DEFINITIONS, LIMITS, IGNORED_DIRS, globToRegExp };
+module.exports = { createToolbox, ToolError, DEFINITIONS, LIMITS, IGNORED_DIRS, globToRegExp, EXTRA_KINDS };

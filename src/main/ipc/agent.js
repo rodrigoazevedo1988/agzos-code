@@ -12,6 +12,7 @@ const { getActiveProfile, createProviderForProfile } = require('../ai/profiles')
 const { createAgentSessions, isDirectory } = require('../agent/session');
 const { createCheckpointStore } = require('../agent/checkpoints');
 const { MODES } = require('../agent/loop');
+const { getModuleTools } = require('../modules/agent-tools');
 
 function register(ipcMain, {
   settingsStore, store, guard, userDataDir, fetchImpl = fetch,
@@ -59,6 +60,7 @@ function register(ipcMain, {
         getRoot,
         getProvider,
         getMode: () => settingsStore.load().aiAgent?.mode,
+        getExtraTools: () => getModuleTools(settingsStore.load()),
         checkpoints,
         send: (requestId, evt) => { if (!sender.isDestroyed()) sender.send('agent:event', requestId, evt); },
         ...sessionOptions,
