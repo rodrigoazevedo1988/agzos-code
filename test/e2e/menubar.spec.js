@@ -237,3 +237,35 @@ test('Arquivo › Nova Janela abre uma 2ª janela independente, cada uma com sua
     await app.close();
   }
 });
+
+test('atalhos do antigo menu nativo: Ctrl+N (sem título), Ctrl+Shift+N (nova janela); Fechar Pasta', async () => {
+  const { app, page, errors } = await launchApp({ settings: SETTINGS });
+  try {
+    const dir = tmpDir('agzos-keys-', { 'a.txt': 'A' });
+    await openWorkspace(app, page, dir);
+    await page.evaluate(() => document.activeElement?.blur());
+
+    await page.keyboard.press('Control+n');
+    await expect(page.locator('#tabs .tab.active')).toContainText('Sem título-1');
+
+    const mainWindows = () => app.windows().filter((w) => w.url().endsWith('renderer/index.html'));
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Control+Shift+N');
+    await expect.poll(() => mainWindows().length, { timeout: 15000 }).toBe(2);
+    const page2 = mainWindows().find((w) => w !== page);
+    await page2.waitForFunction(() => !!window.AgzosEditor, null, { timeout: 15000 });
+    await page2.evaluate(() => window.agzos.window.close());
+    await expect.poll(() => mainWindows().length).toBe(1);
+
+    // Fechar Pasta: sem título não salvo pede confirmação → aceita
+    page.on('dialog', (d) => d.accept());
+    await title(page, 'Arquivo').click();
+    await item(page, 'file.closeFolder').click();
+    await expect.poll(() => page.evaluate(() => window.AgzosState.workspaceRoot)).toBe(null);
+    await expect(page.locator('#topbar-workspace')).toContainText('Sem pasta aberta');
+    await expect(page.locator('#empty-explorer')).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+  }
+});
