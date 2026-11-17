@@ -251,8 +251,10 @@ test('extra: kind inválido vira command; prepare assíncrono é aceito', async 
 test('getModuleTools ignora módulo desabilitado e stub null', () => {
   const { getModuleTools } = require('../../src/main/modules/agent-tools');
   const { DEFAULT_SETTINGS } = require('../../src/main/lib/settings');
-  // stubs reais (null) → nenhuma ferramenta
-  assert.deepEqual(getModuleTools(DEFAULT_SETTINGS), []);
+  // registro real: só ferramentas conhecidas dos módulos (stubs null não entram)
+  const real = getModuleTools(DEFAULT_SETTINGS).map((t) => t.definition.name);
+  assert.ok(real.every((n) => ['clean_code', 'env_check'].includes(n)), real.join(','));
+  assert.ok(!getModuleTools({ modules: { broom: { enabled: false } } }).some((t) => t.definition.name === 'clean_code'));
   const a = extraTool({ definition: { name: 'a_tool', description: 'a', input_schema: {} } });
   const b = extraTool({ definition: { name: 'b_tool', description: 'b', input_schema: {} } });
   const registry = [
