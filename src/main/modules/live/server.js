@@ -154,10 +154,28 @@ function createLiveServer({
     req.on('close', () => clients.delete(res));
   }
 
+  /**
+   * Caminho real (symlinks resolvidos) pode ser servido? → null (sim) | status HTTP.
+   * Além da raiz/guard, nenhum segmento do realpath relativo à raiz pode ser oculto (`.x`):
+   * o filtro da URL sozinho deixaria `a.txt -> .env` servir o `.env`.
+   */
+  function realDenied(real) {
+    if (!withinP(realRoot, real) || !isAllowed(real)) return 403;
+    const rel = real.slice(realRoot.length).split(/[\\/]+/).filter(Boolean);
+    if (rel.some((seg) => seg.startsWith('.'))) return 404;
+    return null;
+  }
+
   async function serveDirectory(req, res, abs, urlPath) {
     const index = joinP(abs, 'index.html');
     const st = await source.stat(index);
-    if (st?.isFile) return serveFile(req, res, index);
+    if (st?.isFile) {
+      let realIndex;
+      try { realIndex = await source.realpath(index); } catch { return send(res, 404, 'Não encontrado'); }
+      const denied = realDenied(realIndex);
+      if (denied) return send(res, denied, denied === 403 ? 'Proibido' : 'Não encontrado');
+      return serveFile(req, res, realIndex);
+    }
     const entries = (await source.readDir(abs))
       .filter((e) => !e.name.startsWith('.'))
       .sort((a, b) => (b.isDirectory - a.isDirectory) || a.name.localeCompare(b.name));
@@ -197,7 +215,8 @@ function createLiveServer({
     const abs = parsed.segments.length ? joinP(root, ...parsed.segments) : root;
     let real;
     try { real = await source.realpath(abs); } catch { return send(res, 404, 'Não encontrado'); }
-    if (!withinP(realRoot, real) || !isAllowed(real)) return send(res, 403, 'Proibido');
+    const denied = realDenied(real);
+    if (denied) return send(res, denied, denied === 403 ? 'Proibido' : 'Não encontrado');
     const st = await source.stat(real);
     if (!st) return send(res, 404, 'Não encontrado');
     if (st.isDirectory) {
