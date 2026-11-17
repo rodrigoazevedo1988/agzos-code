@@ -8,6 +8,7 @@
  * o resto ao disco local, como antes.
  */
 
+const { DEFAULT_FILES_EXCLUDE, normalizeFilesExclude, isExcludedName } = require('../lib/files-exclude');
 const path = require('path');
 const fsp = require('fs').promises;
 const os = require('os');
@@ -58,7 +59,11 @@ async function looksBinaryRemote(prov, p) {
 
 const LOCAL_ONLY = 'Indisponível em pasta remota.';
 
-function register(ipcMain, { guard, guardFor, shell }) {
+// Pastas pesadas fora do Quick Open (o Explorer continua mostrando).
+const QUICK_OPEN_IGNORED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', '.cache', 'coverage', '.idea']);
+
+function register(ipcMain, { guard, guardFor, shell, getFilesExclude = () => DEFAULT_FILES_EXCLUDE }) {
+  const excluded = (name) => isExcludedName(name, normalizeFilesExclude(getFilesExclude()));
   // Guard da janela que pediu (várias janelas: lib/window-guards.js).
   const guardOf = guardResolver({ guard, guardFor });
   ipcMain.handle('fs:readDir', async (evt, dirPath) => {
@@ -66,11 +71,11 @@ function register(ipcMain, { guard, guardFor, shell }) {
     const real = guardOf(evt?.sender).assertAllowed(dirPath);
     if (isRemote(dirPath)) {
       const list = await providerFor(real, evt?.sender).readDir(real);
-      return list.filter((e) => !e.name.startsWith('.') || e.name === '.gitignore');
+      return list.filter((e) => !excluded(e.name));
     }
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
     return Promise.all(entries
-      .filter((e) => !e.name.startsWith('.') || e.name === '.gitignore')
+      .filter((e) => !excluded(e.name))
       .map((e) => describeEntry(dirPath, e)));
   });
 
@@ -222,7 +227,7 @@ function register(ipcMain, { guard, guardFor, shell }) {
     const maxResults = Math.min(Math.max(Number(maxResultsArg) || 1000, 1), 5000);
 
     const results = [];
-    const ignoredDirs = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', '.cache', 'coverage', '.vscode', '.idea']);
+    const ignoredDirs = QUICK_OPEN_IGNORED_DIRS;
 
     async function scan(currentDir, relativePrefix = '', depth = 0) {
       if (depth > 12 || results.length >= maxResults) return;
@@ -235,7 +240,7 @@ function register(ipcMain, { guard, guardFor, shell }) {
 
       for (const entry of entries) {
         if (results.length >= maxResults) break;
-        if (entry.name.startsWith('.') && entry.name !== '.gitignore' && entry.name !== '.env') continue;
+        if (excluded(entry.name)) continue;
 
         const relPath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
         const fullPath = path.join(currentDir, entry.name);
@@ -269,7 +274,7 @@ function register(ipcMain, { guard, guardFor, shell }) {
     for (const rel of remoteSearch.parseFileList(res.stdout)) {
       if (out.length >= maxResults) break;
       const segs = rel.split('/');
-      if (segs.some((seg) => seg.startsWith('.') && seg !== '.gitignore' && seg !== '.env')) continue;
+      if (segs.some((seg) => excluded(seg) || QUICK_OPEN_IGNORED_DIRS.has(seg))) continue;
       out.push({ name: segs[segs.length - 1], path: prov.join(rootUri, rel), relativePath: rel });
     }
     return out;

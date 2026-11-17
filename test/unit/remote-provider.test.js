@@ -74,7 +74,7 @@ test('fs:readDir/readFile/stat/exists via SFTP, com guard', async () => {
   const list = await call('fs:readDir', rootUri);
   const names = list.map((e) => e.name).sort();
   assert.ok(names.includes('src') && names.includes(NASTY));
-  assert.ok(!names.includes('.oculto'));
+  assert.ok(names.includes('.oculto')); // arquivos com ponto aparecem (files.exclude)
   const src = list.find((e) => e.name === 'src');
   assert.equal(src.isDirectory, true);
   assert.equal(src.path, `${rootUri}/src`);
@@ -133,7 +133,7 @@ test('fs:findFiles remoto (rg/find) com exclusões e fs:searchText', async () =>
   assert.ok(rels.includes('src/app.js'));
   assert.ok(rels.includes('.env'));
   assert.ok(!rels.some((r) => r.startsWith('node_modules')));
-  assert.ok(!rels.includes('.oculto'));
+  assert.ok(rels.includes('.oculto'));
   assert.equal(files.find((f) => f.relativePath === 'src/app.js').path, `${rootUri}/src/app.js`);
   const res = await call('fs:searchText', rootUri, 'procurar aqui');
   assert.deepEqual(res.hits.map((h) => [h.file, h.line]), [[`${rootUri}/src/app.js`, 2]]);
