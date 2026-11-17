@@ -1,5 +1,9 @@
 # Changelog
 
+## Não lançado
+
+- Removidos os workflows do GitHub Actions (`ci.yml`, `release.yml`): testes, builds e publicação rodam na VPS (`npm run check`, `xvfb-run -a npx playwright test`, `electron-builder`, `tools/publish-vps-release.js`).
+
 ## 1.0.0 — 2026-11-16
 
 ### Agzos IA agêntico
