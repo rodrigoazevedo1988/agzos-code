@@ -21,6 +21,7 @@
 - **Histórico** de todas as conversas, de todas as pastas, com busca, renomear, apagar e exportar.
 - **Exportar conversa** em Markdown ou PDF, com as ações do agente e segredos redigidos.
 - Correção: "Nova conversa" e histórico ficavam sem resposta depois de uma resposta interrompida.
+- Provider sobrecarregado (429/502/503/504/529, comum no Gemini do AI Studio): tenta de novo sozinho 2 vezes e mostra a mensagem do provider, em vez de "Erro do provider (503):" vazio.
 
 ### Barra de menus e janelas
 
