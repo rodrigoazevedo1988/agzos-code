@@ -6,6 +6,7 @@
  */
 
 import { toast } from './toast.js';
+import { updateWindowTitle } from './window-title.js';
 import { renderTabs, focusTab } from './tabs.js';
 import { detectViewer, isViewerKind } from './viewers/detect.js';
 import { showViewer, hideViewer } from './viewers/index.js';
@@ -250,7 +251,7 @@ export async function openFile(filePath, contentOverride, opts = {}) {
   syncConflictBar();
   document.getElementById('welcome').style.display = 'none';
   // Atualiza título da janela
-  document.title = `${basename(filePath)} — Agzos Code`;
+  updateWindowTitle();
   notifyActiveChanged();
 }
 
@@ -431,7 +432,8 @@ export async function closeTab(filePath) {
     } else {
       activeEditor.setModel(monaco.editor.createModel('', 'plaintext'));
       document.getElementById('welcome').style.display = '';
-      document.title = 'Agzos Code';
+      State.activePath = null;
+      updateWindowTitle();
       notifyActiveChanged();
     }
   }

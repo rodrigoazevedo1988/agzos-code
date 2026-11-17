@@ -49,3 +49,19 @@ test('cabeçalho do Explorer: 4 ações, atualizar e recolher pastas', async () 
     fs.rmSync(ws, { recursive: true, force: true });
   }
 });
+
+test('título da janela mostra projeto › arquivo ativo', async () => {
+  const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agzos-title-')));
+  fs.writeFileSync(path.join(ws, 'README.md'), '# oi\n');
+  const { app, page } = await launchApp({ settings: { welcomeSeen: true, onboardingCompleted: true } });
+  try {
+    await app.evaluate((_e, d) => global.__agzosAllowRoot(d), ws);
+    await page.evaluate(async (d) => { const m = await import('./scripts/file-tree.js'); await m.openWorkspace(d); }, ws);
+    await expect(page).toHaveTitle(`${path.basename(ws)} — Agzos Code`);
+    await page.evaluate(async (f) => { const m = await import('./scripts/editor.js'); await m.openFile(f); }, path.join(ws, 'README.md'));
+    await expect(page).toHaveTitle(`${path.basename(ws)} › README.md — Agzos Code`);
+  } finally {
+    await app.close();
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});

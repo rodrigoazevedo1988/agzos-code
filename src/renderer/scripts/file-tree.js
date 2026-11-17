@@ -11,6 +11,7 @@
  */
 
 import { toast } from './toast.js';
+import { updateWindowTitle } from './window-title.js';
 import { openFile } from './editor.js';
 import { renderFileIcon, renderFolderIcon } from './icon-theme.js';
 import { invalidateQuickOpenCache } from './command-palette.js';
@@ -366,6 +367,7 @@ export async function openWorkspace(folderPath) {
     return;
   }
   State.workspaceRoot = folderPath;
+  updateWindowTitle();
   window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
   State.expandedDirs.add(folderPath);
   treeRoot = {
@@ -400,6 +402,7 @@ export async function closeWorkspace() {
   treeRoot = null;
   invalidateQuickOpenCache();
   try { await window.agzos.workspace.close(); } catch {}
+  updateWindowTitle();
   window.dispatchEvent(new CustomEvent('agzos:workspace-changed'));
   const topbar = document.getElementById('topbar-workspace');
   if (topbar) topbar.textContent = '— Sem pasta aberta';
