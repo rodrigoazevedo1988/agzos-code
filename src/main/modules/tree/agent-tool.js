@@ -4,7 +4,7 @@
  * Leitura via `generateTree` (fonte local; na pasta remota, trocar a fonte pelo provider).
  */
 
-const { generateTree } = require('./generate');
+const { generateTree, sourceFor } = require('./generate');
 
 const definition = {
   name: 'project_tree',
@@ -22,6 +22,7 @@ const definition = {
 module.exports = {
   definition,
   kind: 'read',
+  remote: true, // funciona na pasta remota (agent/remote-tools.js)
   prepare(input, ctx) {
     const abs = ctx.resolvePath(input.path ?? '.');
     const depth = Number.parseInt(input.depth, 10);
@@ -29,7 +30,8 @@ module.exports = {
       title: `Árvore de ${ctx.rel(abs)}`,
       preview: {},
       run: async () => {
-        const r = await generateTree(abs, { depth: Number.isInteger(depth) ? depth : undefined });
+        // Pasta remota: ctx.resolvePath devolve ssh:// e a fonte vem do provider da janela.
+        const r = await generateTree(abs, { depth: Number.isInteger(depth) ? depth : undefined }, sourceFor(abs));
         return {
           summary: `${r.count} entrada(s)${r.truncated ? ' (truncado)' : ''}`,
           output: r.text,

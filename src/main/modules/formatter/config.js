@@ -100,24 +100,36 @@ function parseSimpleYaml(text) {
   return out;
 }
 
-function readSmall(file) {
-  const st = fs.statSync(file);
-  if (!st.isFile()) return null;
+/**
+ * E/S da leitura da config. Padrão: disco local. A pasta remota (ipc/formatter.js) passa um
+ * io em memória (path POSIX) com os candidatos já lidos do host pelo provider.
+ * io: { path, stat(p) → { isFile, size }, readFile(p) → texto }
+ */
+const LOCAL_IO = {
+  path,
+  stat: (p) => { const st = fs.statSync(p); return { isFile: st.isFile(), size: st.size }; },
+  readFile: (p) => fs.readFileSync(p, 'utf8'),
+};
+
+function readSmall(file, io = LOCAL_IO) {
+  const st = io.stat(file);
+  if (!st.isFile) return null;
   if (st.size > MAX_CONFIG_BYTES) throw new Error('arquivo grande demais');
-  return fs.readFileSync(file, 'utf8');
+  return io.readFile(file);
 }
 
-function exists(file) {
-  try { return fs.statSync(file).isFile(); } catch { return false; }
+function exists(file, io = LOCAL_IO) {
+  try { return io.stat(file).isFile; } catch { return false; }
 }
 
 const codeWarning = (name) => `Configuração do Prettier ignorada: ${name} é código e o Agzos Formatador nunca executa código do projeto. Use .prettierrc ou .prettierrc.json.`;
 
 /** Lê uma pasta. → resultado (achou algo) ou null (nada aqui, continue subindo). */
-function readDir(dir) {
+function readDir(dir, io = LOCAL_IO) {
+  const P = io.path || path;
   for (const cand of CANDIDATES) {
-    const file = path.join(dir, cand.name);
-    if (!exists(file)) continue;
+    const file = P.join(dir, cand.name);
+    if (!exists(file, io)) continue;
     if (cand.kind === 'code') {
       return { config: null, ignored: file, warning: codeWarning(cand.name) };
     }
@@ -126,7 +138,7 @@ function readDir(dir) {
     }
     let text;
     try {
-      text = readSmall(file);
+      text = readSmall(file, io);
     } catch (e) {
       return { config: null, ignored: file, warning: `Configuração do Prettier ignorada (${cand.name}): ${e.message}.` };
     }
@@ -157,13 +169,14 @@ function readDir(dir) {
   return null;
 }
 
-function readPrettierConfig(dir, { root } = {}) {
-  let current = path.resolve(dir);
-  const stop = root ? path.resolve(root) : current;
-  const rel = path.relative(stop, current);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) return { config: null };
+function readPrettierConfig(dir, { root, io = LOCAL_IO } = {}) {
+  const P = io.path || path;
+  let current = P.resolve(dir);
+  const stop = root ? P.resolve(root) : current;
+  const rel = P.relative(stop, current);
+  if (rel.startsWith('..') || P.isAbsolute(rel)) return { config: null };
   for (;;) {
-    const found = readDir(current);
+    const found = readDir(current, io);
     if (found) {
       if (found.config !== null && !isPlainObject(found.config)) {
         return { config: null, ignored: found.file, warning: 'Configuração do Prettier inválida: precisa ser um objeto.' };
@@ -171,7 +184,7 @@ function readPrettierConfig(dir, { root } = {}) {
       return found;
     }
     if (current === stop) return { config: null };
-    const parent = path.dirname(current);
+    const parent = P.dirname(current);
     if (parent === current) return { config: null };
     current = parent;
   }
@@ -206,11 +219,11 @@ function matchesAny(patterns, relPath) {
   });
 }
 
-function optionsForFile(config, filePath, configDir) {
+function optionsForFile(config, filePath, configDir, P = path) {
   if (!isPlainObject(config)) return {};
   const out = sanitizeOptions(config);
   if (!Array.isArray(config.overrides) || !filePath) return out;
-  const rel = path.relative(configDir || path.dirname(filePath), filePath).split(path.sep).join('/');
+  const rel = P.relative(configDir || P.dirname(filePath), filePath).split(P.sep).join('/');
   for (const ov of config.overrides) {
     if (!isPlainObject(ov) || !matchesAny(ov.files, rel)) continue;
     if (ov.excludeFiles && matchesAny(ov.excludeFiles, rel)) continue;

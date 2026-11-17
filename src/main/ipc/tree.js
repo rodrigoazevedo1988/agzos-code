@@ -11,28 +11,39 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { generateTree, localSource } = require('../modules/tree/generate');
+const { generateTree, sourceFor } = require('../modules/tree/generate');
+const { isRemote } = require('../workspace/provider-for');
 const { normalizeModules } = require('../lib/settings');
 const { guardResolver } = require('../lib/window-guards');
 
 const CHANNELS = ['generate'];
 
-function register(ipcMain, { guard, guardFor, settingsStore, source = localSource } = {}) {
+function register(ipcMain, { guard, guardFor, settingsStore, source = null } = {}) {
   const guardOf = guardResolver({ guard, guardFor });
 
   ipcMain.handle('tree:generate', async (event, dir, opts = {}) => {
     if (!normalizeModules(settingsStore?.load?.()?.modules).tree.enabled) {
       throw new Error('A Agzos Árvore está desabilitada nas Configurações.');
     }
-    if (typeof dir !== 'string' || !dir || dir.includes('\0') || !path.isAbsolute(dir)) throw new Error('Caminho inválido');
+    const remote = isRemote(dir);
+    if (typeof dir !== 'string' || !dir || dir.includes('\0') || (!remote && !path.isAbsolute(dir))) throw new Error('Caminho inválido');
     const abs = guardOf(event?.sender).assertAllowed(dir);
-    let st;
-    try { st = await fs.promises.stat(abs); } catch { throw new Error(`Pasta não encontrada: ${dir}`); }
-    if (!st.isDirectory()) throw new Error(`${dir} não é uma pasta`);
+    // Pasta remota: stat e leitura pelo provider SSH da janela.
+    const src = source || sourceFor(abs, event?.sender);
+    if (remote) {
+      const { providerFor } = require('../workspace/provider-for');
+      let rst;
+      try { rst = await providerFor(abs, event?.sender).stat(abs); } catch { throw new Error(`Pasta não encontrada: ${dir}`); }
+      if (!rst.isDirectory) throw new Error(`${dir} não é uma pasta`);
+    } else {
+      let st;
+      try { st = await fs.promises.stat(abs); } catch { throw new Error(`Pasta não encontrada: ${dir}`); }
+      if (!st.isDirectory()) throw new Error(`${dir} não é uma pasta`);
+    }
     const o = opts && typeof opts === 'object' ? opts : {};
     return generateTree(abs, {
       depth: o.depth, gitignore: o.gitignore, dirsOnly: o.dirsOnly, hidden: o.hidden,
-    }, source);
+    }, src);
   });
 }
 

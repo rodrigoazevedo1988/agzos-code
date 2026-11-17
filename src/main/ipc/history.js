@@ -23,6 +23,7 @@ const history = require('../modules/history');
 const defaultIo = require('../modules/history/io');
 const { buildTimeline, readVersion, createLru } = require('../modules/history/timeline');
 const { normalizeModules } = require('../lib/settings');
+const { runAsOwner, isRemote, providerFor } = require('../workspace/provider-for');
 
 const CHANNELS = ['list', 'timeline', 'read', 'recordSave', 'restore', 'clear'];
 const CACHE_BYTES = 50 * 1024 * 1024;
@@ -99,6 +100,18 @@ function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = d
     restore: async (sender, p, versionId) => {
       const abs = filePath(sender, p);
       const buf = await versionContent(sender, abs, versionId);
+      if (isRemote(abs)) {
+        // Pasta remota: original lido no host vai ao histórico e ao checkpoint locais.
+        const prov = providerFor(abs, sender);
+        try { history.recordBefore(abs, 'externo', { content: await prov.readFile(abs) }); } catch { /* sumiu */ }
+        const cp = checkpoints.create({ root: null });
+        await cp.recordRemote(abs, prov);
+        await io.writeFileFor(abs, buf);
+        cp.noteRemote(abs, buf.toString('utf8'));
+        cp.finalize();
+        history.recordBefore(abs, 'restaurar', { content: buf });
+        return { checkpointId: cp.id };
+      }
       history.recordBefore(abs, 'externo');
       const cp = checkpoints.create({ root: path.dirname(abs) });
       cp.record(abs);
@@ -115,7 +128,7 @@ function register(ipcMain, { guard, guardFor, settingsStore, userDataDir, io = d
   };
 
   for (const name of CHANNELS) {
-    ipcMain.handle(`history:${name}`, async (e, ...args) => handlers[name](e?.sender, ...args));
+    ipcMain.handle(`history:${name}`, async (e, ...args) => runAsOwner(e?.sender, () => handlers[name](e?.sender, ...args)));
   }
   return { handlers };
 }

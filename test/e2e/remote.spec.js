@@ -289,3 +289,79 @@ test('pasta remota: terminal no host, git status/commit remoto e agente editando
     await server.close();
   }
 });
+
+test('pasta remota (integração): Git Slider/histórico, Agzos Árvore e Agzos Ao Vivo no host', async () => {
+  test.setTimeout(120000);
+  const http = require('http');
+  const { execFileSync } = require('child_process');
+  const { root, proj } = makeRemoteRoot();
+  fs.writeFileSync(path.join(proj, '.gitignore'), 'ignorado/\n');
+  fs.mkdirSync(path.join(proj, 'ignorado'));
+  fs.writeFileSync(path.join(proj, 'ignorado', 'x.txt'), 'x');
+  fs.writeFileSync(path.join(proj, 'index.html'), '<!doctype html><html><body><h1>Remoto ao vivo</h1></body></html>');
+  const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 'Teste', GIT_AUTHOR_EMAIL: 't@x.com', GIT_COMMITTER_NAME: 'Teste', GIT_COMMITTER_EMAIL: 't@x.com' };
+  execFileSync('git', ['init', '-q', '-b', 'main', proj]);
+  execFileSync('git', ['-C', proj, 'add', '-A'], { env: gitEnv });
+  execFileSync('git', ['-C', proj, 'commit', '-q', '-m', 'commit no host'], { env: gitEnv });
+  const server = await startServer(root);
+  const home = makeHome(server.port, { trust: server.hostPublic });
+  const { app, page, errors } = await launch(home);
+  const rootUri = `ssh://fixture${proj}`;
+  const fileUri = `${rootUri}/src/app.js`;
+  try {
+    await page.evaluate(async (uri) => {
+      await window.AgzosRemote.connect('fixture');
+      await window.AgzosRemote.openFolder(uri);
+    }, rootUri);
+    await expect.poll(() => page.evaluate(() => window.AgzosState.workspaceRoot)).toBe(rootUri);
+
+    // Git Slider: salvar 2 vezes → 2 marcadores locais; o commit feito no host aparece.
+    await page.evaluate((p) => window.AgzosEditor.openFile(p), fileUri);
+    for (const n of [2, 3]) {
+      await page.evaluate((v) => {
+        const model = window.monaco.editor.getModels().find((m) => m.getValue().includes('alvo'));
+        model.setValue(`const alvo = ${v};\n`);
+      }, n);
+      await page.evaluate(() => window.AgzosEditor.saveActive());
+      await expect.poll(() => fs.readFileSync(path.join(proj, 'src', 'app.js'), 'utf8')).toBe(`const alvo = ${n};\n`);
+    }
+    await expect.poll(async () => (await page.evaluate((p) => window.agzos.history.timeline(p), fileUri)).items.filter((i) => i.kind === 'local').length, { timeout: 15000 }).toBe(2);
+    const tl = await page.evaluate((p) => window.agzos.history.timeline(p), fileUri);
+    expect(tl.git).toBe(true);
+    const commit = tl.items.find((i) => i.kind === 'commit');
+    expect(commit.message).toBe('commit no host');
+    // Conteúdo do commit vem do host (git show) e o local guarda a cópia salva.
+    expect((await page.evaluate(([p, v]) => window.agzos.history.read(p, v), [fileUri, commit.versionId])).content).toBe('const alvo = 1;\n// agulha no palheiro\n');
+    const firstLocal = tl.items.find((i) => i.kind === 'local');
+    expect((await page.evaluate(([p, v]) => window.agzos.history.read(p, v), [fileUri, firstLocal.versionId])).content).toBe('const alvo = 2;\n');
+    // Restaurar a versão do commit escreve no host.
+    await page.evaluate(([p, v]) => window.agzos.history.restore(p, v), [fileUri, commit.versionId]);
+    expect(fs.readFileSync(path.join(proj, 'src', 'app.js'), 'utf8')).toBe('const alvo = 1;\n// agulha no palheiro\n');
+
+    // Agzos Árvore: lida do host, respeitando o .gitignore de lá.
+    const tree = await page.evaluate((d) => window.agzos.tree.generate(d, { depth: 3, gitignore: true }), rootUri);
+    expect(tree.text.split('\n')[0]).toBe('proj/');
+    expect(tree.text).toContain('app.js');
+    expect(tree.text).toContain('index.html');
+    expect(tree.text).not.toContain('ignorado');
+
+    // Agzos Ao Vivo: servidor em 127.0.0.1 servindo o arquivo do host (com script de recarga).
+    const live = await page.evaluate((p) => window.agzos.live.start(p, { open: false }), `${rootUri}/index.html`);
+    expect(live.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+    const get = (u) => new Promise((resolve, reject) => {
+      http.get(u, (res) => { let b = ''; res.on('data', (d) => { b += d; }); res.on('end', () => resolve({ status: res.statusCode, body: b })); }).on('error', reject);
+    });
+    const html = await get(live.openUrl);
+    expect(html.status).toBe(200);
+    expect(html.body).toContain('Remoto ao vivo');
+    expect(html.body).toContain('<script');
+    const png = await get(`${live.url}tiny.png`);
+    expect(png.status).toBe(200);
+    expect((await get(`${live.url}..%2f..%2ffora.txt`)).status).not.toBe(200);
+    await page.evaluate(() => window.agzos.live.stop());
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
+    await server.close();
+  }
+});

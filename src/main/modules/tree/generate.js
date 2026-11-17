@@ -40,6 +40,36 @@ const localSource = {
   basename: (p) => path.basename(p),
 };
 
+/**
+ * Fonte sobre um provider de workspace (pasta remota ssh://, workspace/provider-for.js).
+ * Links no host são resolvidos pelo provider; o limite de profundidade/entradas segura laços.
+ */
+function providerSource(prov) {
+  return {
+    async readDir(dir) {
+      return (await prov.readDir(dir)).map((e) => ({ name: e.name, isDirectory: !!e.isDirectory }));
+    },
+    async readFile(file) {
+      try {
+        const st = await prov.stat(file);
+        if (!st.isFile || st.size > 256 * 1024) return null;
+        return await prov.readFile(file, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    join: (a, b) => prov.join(a, b),
+    basename: (p) => path.posix.basename(p),
+  };
+}
+
+/** Fonte certa para o caminho: ssh:// → provider da janela (sender ou contexto); senão local. */
+function sourceFor(p, sender) {
+  if (typeof p !== 'string' || !p.startsWith('ssh://')) return localSource;
+  const { providerFor } = require('../../workspace/provider-for');
+  return providerSource(providerFor(p, sender));
+}
+
 function escapeRegex(ch) {
   return /[.+^${}()|\\]/.test(ch) ? `\\${ch}` : ch;
 }
@@ -179,4 +209,4 @@ async function generateTree(root, opts = {}, source = localSource) {
   return { text: lines.join('\n'), count, truncated };
 }
 
-module.exports = { generateTree, createIgnoreMatcher, normalizeOptions, localSource, LIMITS };
+module.exports = { generateTree, createIgnoreMatcher, normalizeOptions, localSource, providerSource, sourceFor, LIMITS };

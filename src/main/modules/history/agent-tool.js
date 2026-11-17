@@ -30,6 +30,7 @@ function describe(item) {
 module.exports = {
   definition,
   kind: 'read',
+  remote: true, // git no host + histórico local (agent/remote-tools.js)
   prepare(input, ctx) {
     const abs = ctx.resolvePath(input?.path);
     const rel = ctx.rel(abs);

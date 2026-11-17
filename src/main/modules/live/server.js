@@ -20,6 +20,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { isRemote, parseRemoteUri, remoteJoin, isWithinRemote } = require('../../workspace/remote-uri');
 const http = require('node:http');
 
 const HOST = '127.0.0.1';
@@ -85,6 +86,27 @@ function within(root, target) {
   return target === r || target.startsWith(r + path.sep);
 }
 
+/**
+ * Fonte sobre um provider de workspace (pasta remota ssh://). O servidor continua em
+ * 127.0.0.1; só a leitura vai ao host. Sem realpath remoto: o guard da janela confere a URI.
+ */
+function providerSource(prov) {
+  return {
+    realpath: async (p) => p,
+    async stat(p) {
+      try {
+        const st = await prov.stat(p);
+        return { isFile: !!st.isFile, isDirectory: !!st.isDirectory, size: st.size };
+      } catch {
+        return null;
+      }
+    },
+    readFile: (p) => prov.readFile(p),
+    createReadStream: (p) => prov.createReadStream(p),
+    readDir: async (p) => (await prov.readDir(p)).map((e) => ({ name: e.name, isDirectory: !!e.isDirectory })),
+  };
+}
+
 /** URL → segmentos decodificados, ou { status } quando recusado. */
 function parseUrlPath(rawUrl) {
   const raw = String(rawUrl || '/').split(/[?#]/)[0];
@@ -100,7 +122,11 @@ function parseUrlPath(rawUrl) {
 function createLiveServer({
   root, isAllowed = () => true, startPort = 5500, source = localSource,
 } = {}) {
-  if (typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('Raiz inválida para o Agzos Ao Vivo');
+  const remote = typeof root === 'string' && isRemote(root);
+  if (typeof root !== 'string' || (remote ? !parseRemoteUri(root) : !path.isAbsolute(root))) throw new Error('Raiz inválida para o Agzos Ao Vivo');
+  // URIs ssh:// juntam e comparam em POSIX (mesmo host).
+  const joinP = remote ? (a, ...parts) => remoteJoin(a, ...parts) : (a, ...parts) => path.join(a, ...parts);
+  const withinP = remote ? (r, t) => isWithinRemote(r, t) : within;
   const clients = new Set();
   const sockets = new Set();
   let server = null;
@@ -129,7 +155,7 @@ function createLiveServer({
   }
 
   async function serveDirectory(req, res, abs, urlPath) {
-    const index = path.join(abs, 'index.html');
+    const index = joinP(abs, 'index.html');
     const st = await source.stat(index);
     if (st?.isFile) return serveFile(req, res, index);
     const entries = (await source.readDir(abs))
@@ -153,7 +179,7 @@ function createLiveServer({
     const st = await source.stat(abs);
     res.writeHead(200, { ...baseHeaders, 'Content-Type': type, 'Content-Length': st.size });
     if (req.method === 'HEAD') return res.end();
-    const stream = source.createReadStream(abs);
+    const stream = await source.createReadStream(abs);
     stream.on('error', () => res.destroy());
     return stream.pipe(res);
   }
@@ -168,10 +194,10 @@ function createLiveServer({
     const parsed = parseUrlPath(req.url);
     if (parsed.status) return send(res, parsed.status, parsed.status === 400 ? 'Pedido inválido' : 'Proibido');
     if (parsed.segments.some((s) => s.startsWith('.'))) return send(res, 404, 'Não encontrado');
-    const abs = path.join(root, ...parsed.segments);
+    const abs = parsed.segments.length ? joinP(root, ...parsed.segments) : root;
     let real;
     try { real = await source.realpath(abs); } catch { return send(res, 404, 'Não encontrado'); }
-    if (!within(realRoot, real) || !isAllowed(real)) return send(res, 403, 'Proibido');
+    if (!withinP(realRoot, real) || !isAllowed(real)) return send(res, 403, 'Proibido');
     const st = await source.stat(real);
     if (!st) return send(res, 404, 'Não encontrado');
     if (st.isDirectory) {
@@ -251,9 +277,14 @@ function createLiveServer({
     /** Avisa os navegadores; com caminho, só se ele estiver dentro da raiz servida. */
     reload(changedPath) {
       if (changedPath !== undefined) {
-        if (typeof changedPath !== 'string' || !path.isAbsolute(changedPath)) return 0;
-        const p = path.resolve(changedPath);
-        if (!within(root, p) && !(realRoot && within(realRoot, p))) return 0;
+        if (typeof changedPath !== 'string') return 0;
+        if (remote) {
+          if (!parseRemoteUri(changedPath) || !withinP(root, changedPath)) return 0;
+        } else {
+          if (!path.isAbsolute(changedPath)) return 0;
+          const p = path.resolve(changedPath);
+          if (!within(root, p) && !(realRoot && within(realRoot, p))) return 0;
+        }
       }
       for (const c of clients) c.write('data: reload\n\n');
       return clients.size;
@@ -263,5 +294,5 @@ function createLiveServer({
 }
 
 module.exports = {
-  createLiveServer, injectReload, mimeFor, parseUrlPath, localSource, RELOAD_PATH, EVENTS_PATH, HOST,
+  createLiveServer, injectReload, mimeFor, parseUrlPath, localSource, providerSource, RELOAD_PATH, EVENTS_PATH, HOST,
 };

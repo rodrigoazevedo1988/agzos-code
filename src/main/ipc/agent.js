@@ -29,7 +29,7 @@ const fs = require('fs');
 const { randomUUID } = require('crypto');
 const { getModuleTools } = require('../modules/agent-tools');
 const { guardResolver } = require('../lib/window-guards');
-const { providerFor, isRemote } = require('../workspace/provider-for');
+const { providerFor, isRemote, runAsOwner } = require('../workspace/provider-for');
 const {
   loadSkills, describeSkill, SKILL_TEMPLATE, pickSkill, trustRecord, isSkillTrusted,
 } = require('../agent/skills');
@@ -128,7 +128,8 @@ function register(ipcMain, {
         // Pasta remota: só as ferramentas do renderer (as dos módulos leem o disco local).
         getExtraTools: ({ remote = false } = {}) => [
           ...createRendererTools((what, args) => queryRenderer(sender, what, args)),
-          ...(remote ? [] : getModuleTools(settingsStore.load())),
+          // Na pasta remota, só as ferramentas de módulo marcadas `remote: true` (Árvore, histórico).
+          ...getModuleTools(settingsStore.load()).filter((t) => !remote || t.remote === true),
         ],
         providerFor: (root) => providerFor(root, sender),
         getSkill: (id, root) => pickSkill(skillsFor(root).skills, id, { trusted: trustedSkills(), kind: 'agent' }),
@@ -146,7 +147,8 @@ function register(ipcMain, {
     return sessions.get(sender);
   }
 
-  ipcMain.handle('agent:run', (event, requestId, payload) => forSender(event.sender).run(requestId, payload || {}));
+  // runAsOwner: o laço (e o runGit/provider sem sender) usa a conexão SSH desta janela.
+  ipcMain.handle('agent:run', (event, requestId, payload) => runAsOwner(event.sender, () => forSender(event.sender).run(requestId, payload || {})));
   ipcMain.handle('agent:approve', (event, requestId, callId, decision) => sessions.get(event.sender)?.approve(requestId, callId, decision) ?? false);
   ipcMain.handle('agent:steer', (event, requestId, payload) => sessions.get(event.sender)?.steer(requestId, payload || {}) ?? false);
   ipcMain.handle('agent:query:reply', (event, id, result) => {

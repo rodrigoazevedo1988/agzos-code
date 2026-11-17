@@ -12,7 +12,43 @@
 
 const path = require('path');
 const { guardResolver } = require('../lib/window-guards');
-const { readPrettierConfig, optionsForFile } = require('../modules/formatter/config');
+const { readPrettierConfig, optionsForFile, CANDIDATES } = require('../modules/formatter/config');
+const { isRemote, parseRemoteUri, providerFor, toRemoteUri } = require('../workspace/provider-for');
+
+const MAX_REMOTE_CONFIG = 256 * 1024;
+
+/**
+ * Pasta remota: lê do host (provider da janela) os candidatos de config entre a pasta do
+ * arquivo e a raiz, e devolve um io em memória (POSIX) para readPrettierConfig.
+ * Só texto JSON/YAML é interpretado; nada do projeto executa.
+ */
+async function remoteConfigIo(prov, dirPath, rootPath) {
+  const files = new Map();
+  let cur = dirPath;
+  for (let i = 0; i < 64; i++) {
+    for (const cand of CANDIDATES) {
+      const p = path.posix.join(cur, cand.name);
+      try {
+        const st = await prov.stat(toRemoteUri(prov.authority, p));
+        if (!st.isFile) continue;
+        const text = st.size > MAX_REMOTE_CONFIG || cand.kind === 'code' || cand.kind === 'unsupported'
+          ? '' : await prov.readFile(toRemoteUri(prov.authority, p), 'utf8');
+        files.set(p, { size: st.size, text });
+      } catch { /* não existe */ }
+    }
+    if (cur === rootPath || cur === '/') break;
+    cur = path.posix.dirname(cur);
+  }
+  return {
+    path: path.posix,
+    stat: (p) => {
+      const f = files.get(p);
+      if (!f) throw Object.assign(new Error('não encontrado'), { code: 'ENOENT' });
+      return { isFile: true, size: f.size };
+    },
+    readFile: (p) => files.get(p).text,
+  };
+}
 
 const MAX_TEXT = 4 * 1024 * 1024;
 
@@ -43,6 +79,24 @@ function register(ipcMain, { guard, guardFor, getWindowRoot, settingsStore, work
       if (req.path.includes('\0')) throw new Error('Caminho inválido');
       filepath = guardOf(event.sender).assertAllowed(req.path);
       const root = typeof getWindowRoot === 'function' ? getWindowRoot(event.sender) : null;
+      if (isRemote(filepath)) {
+        const prov = providerFor(filepath, event.sender);
+        const filePosix = parseRemoteUri(filepath).path;
+        const dirPosix = path.posix.dirname(filePosix);
+        const rootPosix = root && isRemote(root) && parseRemoteUri(root).authority === prov.authority ? parseRemoteUri(root).path : null;
+        const inside = rootPosix && (dirPosix === rootPosix || dirPosix.startsWith(`${rootPosix === '/' ? '' : rootPosix}/`));
+        const io = await remoteConfigIo(prov, dirPosix, inside ? rootPosix : dirPosix);
+        const found = readPrettierConfig(dirPosix, { ...(inside ? { root: rootPosix } : {}), io });
+        if (found.config) {
+          project = optionsForFile(found.config, filePosix, path.posix.dirname(found.file), path.posix);
+          configFile = toRemoteUri(prov.authority, found.file);
+        }
+        if (found.warning) warning = found.warning;
+        const out = await workerHost.call('formatter.format', {
+          text, filepath: filePosix, languageId, options: { ...base, ...project },
+        });
+        return { text: out.text, parser: out.parser, ...(configFile ? { configFile } : {}), ...(warning ? { warning } : {}) };
+      }
       const dir = path.dirname(filepath);
       const found = readPrettierConfig(dir, root && isInside(root, dir) ? { root } : {});
       if (found.config) {

@@ -18,6 +18,9 @@
 
 const path = require('node:path');
 
+// URIs ssh:// (pasta remota) usam path POSIX.
+const pathMod = (p) => (String(p).startsWith('ssh://') ? path.posix : path);
+
 const RS = '\x1e';
 const US = '\x1f';
 const SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -78,7 +81,7 @@ function parseVersionId(versionId) {
 
 async function gitCommits(absPath, { runGitFor, maxCommits }) {
   try {
-    const { stdout } = await runGitFor(path.dirname(absPath), gitLogArgs(path.basename(absPath), maxCommits));
+    const { stdout } = await runGitFor(pathMod(absPath).dirname(absPath), gitLogArgs(pathMod(absPath).basename(absPath), maxCommits));
     return { git: true, commits: parseGitLog(stdout) };
   } catch {
     return { git: false, commits: [] };
@@ -106,7 +109,7 @@ async function readVersion(absPath, versionId, { store, runGitFor, cache, maxCom
     known?.set(absPath, ids);
   }
   if (!ids.has(versionId)) throw new Error('Versão não encontrada na linha do tempo do arquivo');
-  const { stdout } = await runGitFor(path.dirname(absPath), ['show', `${v.sha}:${v.rel}`]);
+  const { stdout } = await runGitFor(pathMod(absPath).dirname(absPath), ['show', `${v.sha}:${v.rel}`]);
   const buf = Buffer.from(stdout, 'utf8');
   cache?.set(versionId, buf);
   return buf;

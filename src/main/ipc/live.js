@@ -17,7 +17,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { createLiveServer } = require('../modules/live/server');
+const { createLiveServer, providerSource } = require('../modules/live/server');
+const { isRemote, providerFor, parseRemoteUri, toRemoteUri } = require('../workspace/provider-for');
+const { isWithinRemote } = require('../workspace/remote-uri');
 const { normalizeModules } = require('../lib/settings');
 const { guardResolver } = require('../lib/window-guards');
 
@@ -55,10 +57,15 @@ function register(ipcMain, {
   ipcMain.handle('live:start', async (event, target, opts = {}) => {
     const sender = event?.sender;
     if (!options().enabled) throw new Error('O Agzos Ao Vivo está desabilitado nas Configurações.');
-    if (typeof target !== 'string' || !target || target.includes('\0') || !path.isAbsolute(target)) throw new Error('Caminho inválido');
+    const remote = isRemote(target);
+    if (typeof target !== 'string' || !target || target.includes('\0') || (!remote && !path.isAbsolute(target))) throw new Error('Caminho inválido');
     const g = guardOf(sender);
     const abs = g.assertAllowed(target);
-    const st = await fs.promises.stat(abs).catch(() => null);
+    // Pasta remota: stat pelo provider SSH da janela; caminhos em POSIX/URI.
+    const prov = remote ? providerFor(abs, sender) : null;
+    const st = remote
+      ? await prov.stat(abs).then((x) => ({ isDirectory: () => x.isDirectory }), () => null)
+      : await fs.promises.stat(abs).catch(() => null);
     if (!st) throw new Error(`Não encontrado: ${target}`);
     let root = abs;
     let rel = '';
@@ -66,15 +73,24 @@ function register(ipcMain, {
       if (!/\.html?$/i.test(abs)) throw new Error('O Agzos Ao Vivo abre arquivos .html ou pastas.');
       const own = typeof getWindowRoot === 'function' ? getWindowRoot(sender) : null;
       const ownReal = typeof own === 'string' && own && g.isAllowed(own) ? g.assertAllowed(own) : null;
-      root = ownReal && within(ownReal, abs) ? ownReal : path.dirname(abs);
-      rel = path.relative(root, abs).split(path.sep).map(encodeURIComponent).join('/');
+      if (remote) {
+        const dir = toRemoteUri(parseRemoteUri(abs).authority, path.posix.dirname(parseRemoteUri(abs).path));
+        root = ownReal && isWithinRemote(ownReal, abs) ? ownReal : dir;
+        rel = path.posix.relative(parseRemoteUri(root).path, parseRemoteUri(abs).path).split('/').map(encodeURIComponent).join('/');
+      } else {
+        root = ownReal && within(ownReal, abs) ? ownReal : path.dirname(abs);
+        rel = path.relative(root, abs).split(path.sep).map(encodeURIComponent).join('/');
+      }
     }
 
     const id = sender?.id;
     let entry = servers.get(id);
     if (entry && entry.root !== root) { await stopFor(id); entry = null; }
     if (!entry) {
-      const server = createServer({ root, isAllowed: (p) => guardOf(sender).isAllowed(p), startPort: options().startPort });
+      const server = createServer({
+        root, isAllowed: (p) => guardOf(sender).isAllowed(p), startPort: options().startPort,
+        ...(remote ? { source: providerSource(prov) } : {}),
+      });
       entry = { server, root, sender };
       servers.set(id, entry);
       try {
