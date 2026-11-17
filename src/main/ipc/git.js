@@ -139,13 +139,14 @@ function register(ipcMain, { guard, accounts, commitGuard }) {
     return queue(dir, async () => {
       const sg = secretsGuard();
       let findings = [];
+      let root = null;
       if (sg) {
-        const root = await repoRoot(dir);
+        root = await repoRoot(dir);
         if (root) ({ findings } = await sg.check(root));
         if (findings.length && !options?.ignoreSecretsOnce) throw new SecretsDetectedError(findings);
       }
       const res = await ops.commit(dir, message, { amend: !!options?.amend, identity: identityFor(account) });
-      if (findings.length) sg.logOverride(await repoRoot(dir), findings);
+      if (findings.length) sg.logOverride(root, findings);
       return res;
     });
   }));
